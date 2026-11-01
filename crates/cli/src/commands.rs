@@ -330,7 +330,9 @@ fn build_for(
         Err(code) => return code,
     };
     if !target.builds_here() {
-        let reason = if target.state >= sayon_target::State::Buildable {
+        let reason = if target.built_across_processors() {
+            format!("programs for {target} are built on Linux, with the C library of its processor")
+        } else if target.state >= sayon_target::State::Buildable {
             format!("so far, programs for {target} are built on {target} itself")
         } else {
             format!(
@@ -512,6 +514,8 @@ pub fn target_setup(name: &str) -> u8 {
         );
     } else if target.platform == "android" && target.built_anywhere() {
         android_setup(target);
+    } else if target.built_across_processors() {
+        linux_setup(target);
     } else if target.state >= sayon_target::State::Buildable {
         println!("So far, programs for {target} are built on {target} itself.");
     } else {
@@ -527,6 +531,39 @@ pub fn target_setup(name: &str) -> u8 {
         println!("Lacks: {}", lacks.join(", "));
     }
     status::SUCCESS
+}
+
+/// What building for Linux of another processor needs, and whether this
+/// computer has it.
+fn linux_setup(target: &'static Target) {
+    use sayon_codegen::linux;
+    let names = linux::cross(target);
+    println!(
+        "Built on Linux computers with clang, the GNU C library for {}, and the runtime for {}. \
+         On Debian and Ubuntu, the system's cross packages install the library:",
+        names.processor, target.triple,
+    );
+    println!("  sudo apt install {}", names.packages);
+    println!(
+        "The programs run on {target}, and on Linux of another processor under QEMU's user-mode \
+         emulator (the qemu-user package): `{} -L /usr/{} program`.",
+        names.emulator, names.gnu_triple,
+    );
+    if !target.builds_here() {
+        println!("This computer does not build for it: it is not a Linux computer.");
+        return;
+    }
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf));
+    match sayon_codegen::Toolchain::locate(exe_dir.as_deref(), target) {
+        Ok(toolchain) => println!(
+            "This computer has what it needs: clang at {} and the runtime at {}.",
+            toolchain.clang.display(),
+            toolchain.runtime.display()
+        ),
+        Err(message) => println!("This computer lacks something: {message}"),
+    }
 }
 
 /// What building for Android needs, and which of it this computer has.
@@ -1022,17 +1059,22 @@ pub fn doctor() -> u8 {
             line(false, "native toolchain", first);
         }
     }
-    // Building for WebAssembly and Android is optional: without it, the
-    // rest works.
+    // Building for WebAssembly, Android, and Linux of another processor is
+    // optional: without it, the rest works.
     for (name, label) in [
         ("wasi", "WASI runtime"),
         ("web", "web runtime"),
         ("android-x64", "Android x64"),
         ("android-arm64", "Android ARM64"),
+        ("linux-x64", "Linux x64"),
+        ("linux-arm64", "Linux ARM64"),
     ] {
         let Some(target) = sayon_target::find(name) else {
             continue;
         };
+        if target.is_host() || !target.builds_here() {
+            continue;
+        }
         let (state, detail) = match sayon_codegen::Toolchain::locate(exe_dir.as_deref(), target) {
             Ok(toolchain) => (
                 "ok",

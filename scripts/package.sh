@@ -14,6 +14,8 @@
 #   lib/wasm32-unknown-unknown/  the runtime for web pages
 #   lib/x86_64-linux-android/, lib/aarch64-linux-android/  the runtimes for
 #                                Android apps (x86-64 for emulators, ARM64 for phones)
+#   lib/aarch64-unknown-linux-gnu/  on Linux x64, the runtime for Linux ARM64
+#                                (on Linux ARM64, lib/x86_64-unknown-linux-gnu/)
 #   stdlib/                      the standard library
 #   licenses/                    the license texts docs/licenses.md names
 #   docs/, examples/, assets/, README.md, LICENSE, INSTALL.txt
@@ -51,6 +53,18 @@ android_triples="x86_64-linux-android aarch64-linux-android"
 for triple in $android_triples; do
     cargo build --release -p sayon-runtime --target "$triple"
 done
+# Linux of the other processor, built for with that processor's C library
+# from the system's cross packages.
+cross_triple=""
+if [ "$system" = linux ]; then
+    case "$processor" in
+        x64) cross_triple=aarch64-unknown-linux-gnu; cross_target=linux-arm64
+             cross_packages="gcc-aarch64-linux-gnu libc6-dev-arm64-cross" ;;
+        arm64) cross_triple=x86_64-unknown-linux-gnu; cross_target=linux-x64
+               cross_packages="gcc-x86-64-linux-gnu libc6-dev-amd64-cross" ;;
+    esac
+    cargo build --release -p sayon-runtime --target "$cross_triple"
+fi
 # WASI's C library (wasi-libc), as the Rust toolchain ships it.
 wasi_libc="$(rustc --print sysroot)/lib/rustlib/wasm32-wasip1/lib/self-contained"
 
@@ -78,6 +92,14 @@ for triple in $android_triples; do
     mkdir -p "$stage/lib/$triple"
     cp "target/$triple/release/libsayon_runtime.a" "$stage/lib/$triple/"
 done
+cross_note=""
+if [ -n "$cross_triple" ]; then
+    mkdir -p "$stage/lib/$cross_triple"
+    cp "target/$cross_triple/release/libsayon_runtime.a" "$stage/lib/$cross_triple/"
+    cross_note="\`sayon build --target $cross_target\` builds programs for $cross_target, given its
+processor's C library from your system's cross packages (for example
+\`sudo apt install $cross_packages\`); \`sayon target setup $cross_target\` says more."
+fi
 cp stdlib/*.sayon "$stage/stdlib/"
 cp docs/*.md "$stage/docs/"
 cp examples/*.sayon "$stage/examples/"
@@ -125,6 +147,7 @@ https://releases.llvm.org; then run \`sayon doctor\` again.
 host such as wasmtime, and \`sayon build --target web\` ones for web pages, with
 the JavaScript that runs them and a page; they use the same clang, with its
 WebAssembly linker.
+$cross_note
 TLS (https:// and network.connect_secure) uses the system's OpenSSL 3
 (libssl.so.3), which most systems have.
 $requirement

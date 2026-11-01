@@ -255,6 +255,127 @@ fn wasi_programs_match_the_interpreter() {
     built.finish("WASI", failures);
 }
 
+/// Builds every example for Linux ARM64 and runs it under QEMU's user-mode
+/// emulator with the ARM64 C library: it must behave exactly like the
+/// interpreter and release every allocation it made. This is evidence for
+/// the ARM64 build, not for ARM hardware. It runs on Linux x64 with
+/// `qemu-aarch64` and the ARM64 C library (on Debian and Ubuntu, the
+/// packages `qemu-user`, `gcc-aarch64-linux-gnu`, and
+/// `libc6-dev-arm64-cross`) and the Rust target `aarch64-unknown-linux-gnu`;
+/// elsewhere, or without them, the check says it skipped. Set
+/// `SAYON_SKIP_ARM64=1` to skip.
+#[test]
+fn linux_arm64_programs_match_the_interpreter_under_qemu() {
+    if std::env::var_os("SAYON_SKIP_ARM64").is_some() {
+        eprintln!("SKIPPED: Linux ARM64 checks (SAYON_SKIP_ARM64 is set)");
+        return;
+    }
+    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        eprintln!("SKIPPED: Linux ARM64 checks (they run on Linux x64)");
+        return;
+    }
+    let sysroot = Path::new("/usr/aarch64-linux-gnu");
+    let emulator = "qemu-aarch64";
+    let missing = if !Command::new(emulator)
+        .arg("--version")
+        .output()
+        .is_ok_and(|out| out.status.success())
+    {
+        Some("qemu-aarch64, from qemu-user")
+    } else if !sysroot.join("lib").join("crt1.o").is_file() {
+        Some("the ARM64 C library, from gcc-aarch64-linux-gnu and libc6-dev-arm64-cross")
+    } else if !rust_target_installed("aarch64-unknown-linux-gnu") {
+        Some("the Rust target aarch64-unknown-linux-gnu")
+    } else {
+        None
+    };
+    if let Some(missing) = missing {
+        eprintln!("SKIPPED: Linux ARM64 checks (this computer lacks {missing})");
+        return;
+    }
+    prepare_runtime("aarch64-unknown-linux-gnu", &[]);
+    serve_http();
+    let dir = tests_dir().join("programs");
+    let mut built = build_programs(&dir, "linux-arm64", "qemu", "", &[]);
+    let mut failures = std::mem::take(&mut built.failures);
+    built.programs.retain(|(source, _)| {
+        let file = source.file_name().unwrap().to_string_lossy().to_string();
+        !LINUX_ARM64_EMULATED_LEFT_OUT.contains(&file.as_str())
+    });
+    built.lacking.extend(
+        LINUX_ARM64_EMULATED_LEFT_OUT
+            .iter()
+            .map(|name| format!("{name} (left out)")),
+    );
+    for (source, program) in &built.programs {
+        let input = read_expectation(&source.with_extension("stdin"));
+        let outcome = run_emulated(emulator, sysroot, &dir, program, input.as_deref());
+        compare_with_interpreter(&mut failures, source, outcome, "Linux ARM64 under QEMU");
+    }
+    built.finish("Linux ARM64, emulated", failures);
+}
+
+/// Whether the Rust toolchain the repository uses has the standard library
+/// for `triple`.
+fn rust_target_installed(triple: &str) -> bool {
+    Command::new("rustc")
+        .args(["--print", "sysroot"])
+        .current_dir(tests_dir().join(".."))
+        .output()
+        .is_ok_and(|out| {
+            PathBuf::from(String::from_utf8_lossy(&out.stdout).trim())
+                .join("lib")
+                .join("rustlib")
+                .join(triple)
+                .is_dir()
+        })
+}
+
+/// Runs a program for another processor under QEMU's user-mode `emulator`,
+/// with the C library in `sysroot`, in `dir`, which it may use, with
+/// `SAYON_DEBUG_ALLOC` set and `input` as its standard input.
+fn run_emulated(
+    emulator: &str,
+    sysroot: &Path,
+    dir: &Path,
+    program: &Path,
+    input: Option<&str>,
+) -> Outcome {
+    let mut child = Command::new(emulator)
+        .arg("-L")
+        .arg(sysroot)
+        .arg(program)
+        .current_dir(dir)
+        .env("SAYON_DEBUG_ALLOC", "1")
+        .env(CLOSE_WINDOWS.0, CLOSE_WINDOWS.1)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run the emulator");
+    let mut stdin = child.stdin.take().expect("standard input");
+    if let Some(input) = input {
+        stdin.write_all(input.as_bytes()).expect("write input");
+    }
+    drop(stdin);
+    let output = child.wait_with_output().expect("run the emulator");
+    Outcome {
+        stdout: String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n"),
+        stderr: String::from_utf8_lossy(&output.stderr).replace("\r\n", "\n"),
+        status: output.status.code().unwrap_or(-1),
+    }
+}
+
+/// The programs the Linux ARM64 check under QEMU leaves out, and why.
+const LINUX_ARM64_EMULATED_LEFT_OUT: &[&str] = &[
+    // glibc's posix_spawn learns that a program could not be started from
+    // memory the child shares, which QEMU's user-mode emulator does not
+    // share: the start seems to succeed, and the child exits with 127.
+    "processes.sayon",
+    // The cross packages' C library has no OpenSSL to load.
+    "tls.sayon",
+];
+
 /// The Node that runs web programs in the tests, pinned like wasmtime.
 const NODE_VERSION: &str = "v24.22.1";
 

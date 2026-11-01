@@ -233,9 +233,18 @@ impl Target {
         self.state >= State::Buildable && (self.processor == "wasm32" || self.platform == "android")
     }
 
+    /// Whether the compiler builds programs for it on its own system with
+    /// another processor, given the C library of the target's processor: a
+    /// buildable Linux target, on Linux, from the system's cross packages.
+    pub fn built_across_processors(&self) -> bool {
+        self.state >= State::Buildable && self.platform == "linux"
+    }
+
     /// Whether the running compiler builds programs for it.
     pub fn builds_here(&self) -> bool {
-        self.is_host() || self.built_anywhere()
+        self.is_host()
+            || self.built_anywhere()
+            || (self.built_across_processors() && self.platform == host().platform)
     }
 }
 
@@ -405,7 +414,9 @@ pub static TARGETS: &[Target] = &[
         platform: "linux",
         processor: "arm64",
         pointer_size: 8,
-        state: State::Specified,
+        // Its programs run under QEMU in the tests, which is evidence for
+        // the build, not for ARM hardware.
+        state: State::Buildable,
         planned: "M5",
         capabilities: DESKTOP,
     },
@@ -632,6 +643,18 @@ mod tests {
         assert!(find("android-x64").unwrap().built_anywhere());
         assert!(!find("macos").unwrap().built_anywhere());
         assert!(find("native").unwrap().builds_here());
+    }
+
+    #[test]
+    fn linux_targets_build_on_linux() {
+        let arm = find("linux-arm64").unwrap();
+        assert!(arm.built_across_processors() && !arm.built_anywhere());
+        assert_eq!(arm.builds_here(), cfg!(target_os = "linux"));
+        assert_eq!(
+            find("linux").unwrap().builds_here(),
+            cfg!(target_os = "linux")
+        );
+        assert!(!find("windows-arm64").unwrap().built_across_processors());
     }
 
     #[test]
