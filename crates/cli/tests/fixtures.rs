@@ -228,6 +228,7 @@ fn run_native_programs(dir: &Path) {
     serve_http();
     let mut failures = Vec::new();
     let mut left_out = Vec::new();
+    let mut ran = 0;
     for source in sources(dir) {
         let name = source.file_name().unwrap().to_string_lossy().to_string();
         if !COMPILED_PROGRAMS_PASS_STRUCTURES && declares(&source, "foreign type") {
@@ -249,7 +250,13 @@ fn run_native_programs(dir: &Path) {
             continue;
         }
         compare_with_interpreter(&mut failures, &source, outcome, "native");
+        ran += 1;
     }
+    eprintln!(
+        "native ({}-{}): {ran} programs ran",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
     if !left_out.is_empty() {
         eprintln!(
             "left out, since programs compiled here do not pass C structures yet: {}",

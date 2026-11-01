@@ -53,6 +53,7 @@ jobs:
       - name: Doctor
         working-directory: sayon
         run: cargo run --quiet -p sayon-cli -- doctor
+      # What each check ran, left out, or skipped stays in the log.
       - name: Test
         working-directory: sayon
-        run: cargo test --workspace --no-fail-fast
+        run: cargo test --workspace --no-fail-fast -- --show-output
