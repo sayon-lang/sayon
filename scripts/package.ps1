@@ -13,6 +13,8 @@
 #   lib/wasm32-unknown-unknown/  the runtime for web pages
 #   lib/x86_64-linux-android/, lib/aarch64-linux-android/  the runtimes for
 #                            Android apps (x86-64 for emulators, ARM64 for phones)
+#   lib/aarch64-pc-windows-msvc/  on Windows x64, the runtime for Windows ARM64
+#                            (on Windows ARM64, lib/x86_64-pc-windows-msvc/)
 #   stdlib/                  the standard library
 #   licenses/                the license texts docs/licenses.md names
 #   docs/, examples/, assets/, README.md, LICENSE, INSTALL.txt
@@ -46,6 +48,15 @@ foreach ($triple in $androidTriples) {
     cargo build --release -p sayon-runtime --target $triple
     if ($LASTEXITCODE -ne 0) { throw "building the runtime for $triple failed" }
 }
+# Windows of the other processor, built for with Visual Studio's libraries
+# for that processor.
+if ($processor -eq "x64") {
+    $crossTriple = "aarch64-pc-windows-msvc"; $crossTarget = "windows-arm64"; $crossComponent = "MSVC ARM64/ARM64EC build tools"
+} else {
+    $crossTriple = "x86_64-pc-windows-msvc"; $crossTarget = "windows-x64"; $crossComponent = "MSVC x64/x86 build tools"
+}
+cargo build --release -p sayon-runtime --target $crossTriple
+if ($LASTEXITCODE -ne 0) { throw "building the runtime for $crossTriple failed" }
 # WASI's C library (wasi-libc), as the Rust toolchain ships it.
 $sysroot = (rustc --print sysroot).Trim()
 $wasiLibc = Join-Path $sysroot "lib/rustlib/wasm32-wasip1/lib/self-contained"
@@ -80,6 +91,9 @@ foreach ($triple in $androidTriples) {
     New-Item -ItemType Directory -Force $android | Out-Null
     Copy-Item "target/$triple/release/libsayon_runtime.a" $android
 }
+$cross = Join-Path $stage "lib/$crossTriple"
+New-Item -ItemType Directory -Force $cross | Out-Null
+Copy-Item "target/$crossTriple/release/sayon_runtime.lib" $cross
 Copy-Item "stdlib/*.sayon" (Join-Path $stage "stdlib")
 Copy-Item "docs/*.md" (Join-Path $stage "docs")
 Copy-Item "examples/*.sayon" (Join-Path $stage "examples")
@@ -116,6 +130,9 @@ Programs you build this way run on other Windows machines without Sayon or LLVM.
 ``sayon build --target wasi`` builds WebAssembly programs that run under a WASI
 host such as wasmtime, and ``sayon build --target web`` ones for web pages, with
 the JavaScript that runs them and a page; they use the same clang.
+``sayon build --target $crossTarget`` builds programs for $crossTarget, given Visual Studio's
+libraries for its processor: the Visual Studio Installer adds them with the component
+"$crossComponent"; ``sayon target setup $crossTarget`` says more.
 
 To start a project: sayon init hello, then cd hello and sayon run.
 The guides are at https://github.com/sayon-lang/docs.sayon-lang.org, and

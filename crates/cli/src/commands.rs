@@ -331,7 +331,14 @@ fn build_for(
     };
     if !target.builds_here() {
         let reason = if target.built_across_processors() {
-            format!("programs for {target} are built on Linux, with the C library of its processor")
+            let system = if target.platform == "windows" {
+                "Windows"
+            } else {
+                "Linux"
+            };
+            format!(
+                "programs for {target} are built on {system}, with the C library of its processor"
+            )
         } else if target.state >= sayon_target::State::Buildable {
             format!("so far, programs for {target} are built on {target} itself")
         } else {
@@ -514,6 +521,8 @@ pub fn target_setup(name: &str) -> u8 {
         );
     } else if target.platform == "android" && target.built_anywhere() {
         android_setup(target);
+    } else if target.built_across_processors() && target.platform == "windows" {
+        windows_setup(target);
     } else if target.built_across_processors() {
         linux_setup(target);
     } else if target.state >= sayon_target::State::Buildable {
@@ -553,6 +562,30 @@ fn linux_setup(target: &'static Target) {
         println!("This computer does not build for it: it is not a Linux computer.");
         return;
     }
+    show_toolchain(target);
+}
+
+/// What building for Windows of another processor needs, and whether this
+/// computer has it.
+fn windows_setup(target: &'static Target) {
+    let names = sayon_codegen::windows::libraries(target);
+    println!(
+        "Built on Windows computers with clang, Visual Studio's C runtime and the Windows SDK's \
+         libraries for {}, and the runtime for {}. The Windows SDK holds every processor's \
+         libraries; the Visual Studio Installer adds Visual Studio's for {} with the component \
+         \"{}\" ({}).",
+        names.processor, target.triple, names.processor, names.component_name, names.component,
+    );
+    println!("The programs run on {target} computers.");
+    if !target.builds_here() {
+        println!("This computer does not build for it: it is not a Windows computer.");
+        return;
+    }
+    show_toolchain(target);
+}
+
+/// Whether this computer has what building for `target` needs.
+fn show_toolchain(target: &'static Target) {
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(Path::to_path_buf));
@@ -1059,8 +1092,8 @@ pub fn doctor() -> u8 {
             line(false, "native toolchain", first);
         }
     }
-    // Building for WebAssembly, Android, and Linux of another processor is
-    // optional: without it, the rest works.
+    // Building for WebAssembly, Android, and this system with another
+    // processor is optional: without it, the rest works.
     for (name, label) in [
         ("wasi", "WASI runtime"),
         ("web", "web runtime"),
@@ -1068,6 +1101,8 @@ pub fn doctor() -> u8 {
         ("android-arm64", "Android ARM64"),
         ("linux-x64", "Linux x64"),
         ("linux-arm64", "Linux ARM64"),
+        ("windows-x64", "Windows x64"),
+        ("windows-arm64", "Windows ARM64"),
     ] {
         let Some(target) = sayon_target::find(name) else {
             continue;

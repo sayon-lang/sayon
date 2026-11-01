@@ -235,9 +235,11 @@ impl Target {
 
     /// Whether the compiler builds programs for it on its own system with
     /// another processor, given the C library of the target's processor: a
-    /// buildable Linux target, on Linux, from the system's cross packages.
+    /// buildable Linux target on Linux, from the system's cross packages,
+    /// and a buildable Windows target on Windows, with Visual Studio's
+    /// libraries for its processor.
     pub fn built_across_processors(&self) -> bool {
-        self.state >= State::Buildable && self.platform == "linux"
+        self.state >= State::Buildable && matches!(self.platform, "linux" | "windows")
     }
 
     /// Whether the running compiler builds programs for it.
@@ -404,7 +406,8 @@ pub static TARGETS: &[Target] = &[
         platform: "windows",
         processor: "arm64",
         pointer_size: 8,
-        state: State::Specified,
+        // Built on Windows x64, which cannot run its programs.
+        state: State::Buildable,
         planned: "M5",
         capabilities: DESKTOP,
     },
@@ -646,7 +649,7 @@ mod tests {
     }
 
     #[test]
-    fn linux_targets_build_on_linux() {
+    fn desktop_targets_build_on_their_system() {
         let arm = find("linux-arm64").unwrap();
         assert!(arm.built_across_processors() && !arm.built_anywhere());
         assert_eq!(arm.builds_here(), cfg!(target_os = "linux"));
@@ -654,7 +657,8 @@ mod tests {
             find("linux").unwrap().builds_here(),
             cfg!(target_os = "linux")
         );
-        assert!(!find("windows-arm64").unwrap().built_across_processors());
+        assert_eq!(find("windows-arm64").unwrap().builds_here(), cfg!(windows));
+        assert!(!find("macos-arm64").unwrap().built_across_processors());
     }
 
     #[test]

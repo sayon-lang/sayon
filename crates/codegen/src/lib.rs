@@ -13,6 +13,7 @@ mod helpers;
 mod layout;
 pub mod linux;
 pub mod web;
+pub mod windows;
 mod zip;
 
 pub use emit::Codegen;
@@ -82,9 +83,9 @@ impl Toolchain {
     /// development build in `target/<profile>`, `target/lib`.
     /// `SAYON_CLANG` and, for this computer's target, `SAYON_RUNTIME_LIB`
     /// override the search. Android's programs are compiled by the NDK's
-    /// clang, which knows Android's C library; those for Linux of another
-    /// processor need that processor's C library where clang finds it (see
-    /// `linux`).
+    /// clang, which knows Android's C library; those for Linux or Windows of
+    /// another processor need that processor's C library where clang finds
+    /// it (see `linux` and `windows`).
     pub fn locate(exe_dir: Option<&Path>, target: &'static Target) -> Result<Toolchain, String> {
         let clang = if target.platform == "android" {
             android::Sdk::locate(target)?.clang()?
@@ -141,8 +142,16 @@ impl Toolchain {
                 }
             }
         }
-        if target.platform == "linux" && !target.is_host() {
-            linux::c_library(&clang, target)?;
+        if !target.is_host() {
+            match target.platform {
+                "linux" => {
+                    linux::c_library(&clang, target)?;
+                }
+                "windows" => {
+                    windows::c_runtime(target)?;
+                }
+                _ => {}
+            }
         }
         Ok(Toolchain {
             clang,

@@ -85,6 +85,7 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | Android apps (`--target android-x64`, `android-arm64`) on any computer with the Android SDK: the program as the native library of a `NativeActivity` package, aligned for 16 KiB pages and signed with the debug key; output to Android's log; `--executable` for `adb shell`; checked on the emulator against the interpreter, ARM64 through translation | experimental | M4 |
 | Release signing of Android packages | planned | M5 |
 | Building on Linux for Linux of the other processor (`--target linux-arm64` from Linux x64), with that processor's C library from the system's cross packages; `sayon target setup` and `sayon doctor` say what is missing | experimental | M5 |
+| Building on Windows for Windows of the other processor (`--target windows-arm64` from Windows x64), with Visual Studio's libraries for that processor; `sayon target setup` and `sayon doctor` say what is missing | experimental | M5 |
 | Building on one system for another desktop system | planned | M5 to M7, with each target |
 | `standard/graphics` baseline: canvases drawn by the runtime (rectangles, circles, polygons, lines, images, text in a built-in font), the same pixels everywhere; windows with events and frames on Windows (Win32 and GDI), Linux (X11), web pages (a canvas), and Android apps (the app's surface) | experimental | M4 |
 | Smooth (anti-aliased) circles, polygons, and lines: each pixel covered as much as its area, sampled on 16 rows and exact across them | experimental | M4 |
@@ -162,7 +163,7 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | Windows x64 (`x86_64-pc-windows-msvc`) | yes | yes | yes, development machine | no |
 | Linux x64 (`x86_64-unknown-linux-gnu`) | yes | yes | yes, Ubuntu 26.04 under WSL 2 | no |
 | Linux ARM64 (`aarch64-unknown-linux-gnu`) | yes | yes, from Linux x64 with the ARM64 C library of the system's cross packages | under QEMU 10.2's user-mode emulator, not yet on ARM hardware | no |
-| Windows ARM64 | yes | no | no | no |
+| Windows ARM64 (`aarch64-pc-windows-msvc`) | yes | yes, from Windows x64 with Visual Studio's ARM64 libraries | no: Windows x64 cannot run its programs | no |
 | WASI (`wasm32-wasip1`) | yes | yes, from any computer | yes, under wasmtime 50 | no |
 | Web pages (`wasm32-unknown-unknown`) | yes | yes, from any computer | yes, in Edge 156, Chrome 156, Firefox 158, and Node 24 | no |
 | Android x64 (`x86_64-linux-android`) | yes | yes, from any computer with the Android SDK | yes, on the Android 16 emulator (API 36) | no |

@@ -315,6 +315,85 @@ fn linux_arm64_programs_match_the_interpreter_under_qemu() {
     built.finish("Linux ARM64, emulated", failures);
 }
 
+/// Builds every example for Windows ARM64 on Windows x64, which cannot run
+/// them: each must link into an executable for ARM64. This shows that the
+/// target builds, not that its programs behave. It needs Visual Studio's
+/// ARM64 libraries (the component "MSVC ARM64/ARM64EC build tools") and the
+/// Rust target `aarch64-pc-windows-msvc`; elsewhere, or without them, the
+/// check says it skipped. Set `SAYON_SKIP_ARM64=1` to skip.
+#[test]
+fn windows_arm64_programs_build() {
+    if std::env::var_os("SAYON_SKIP_ARM64").is_some() {
+        eprintln!("SKIPPED: Windows ARM64 builds (SAYON_SKIP_ARM64 is set)");
+        return;
+    }
+    if !cfg!(all(windows, target_arch = "x86_64")) {
+        eprintln!("SKIPPED: Windows ARM64 builds (they are checked on Windows x64)");
+        return;
+    }
+    if !rust_target_installed("aarch64-pc-windows-msvc") {
+        eprintln!(
+            "SKIPPED: Windows ARM64 builds (this computer lacks the Rust target aarch64-pc-windows-msvc)"
+        );
+        return;
+    }
+    prepare_runtime("aarch64-pc-windows-msvc", &[]);
+    let setup = sayon(&tests_dir(), &["target", "setup", "windows-arm64"]);
+    if let Some(lack) = setup
+        .stdout
+        .lines()
+        .find(|line| line.starts_with("This computer lacks"))
+    {
+        eprintln!("SKIPPED: Windows ARM64 builds ({lack})");
+        return;
+    }
+    let dir = tests_dir().join("programs");
+    let mut built = build_programs(&dir, "windows-arm64", "link", "exe", &[]);
+    let mut failures = std::mem::take(&mut built.failures);
+    for (source, program) in &built.programs {
+        // IMAGE_FILE_MACHINE_ARM64
+        if pe_machine(program) != Some(0xAA64) {
+            failures.push(format!(
+                "{}: the build is not an ARM64 executable (machine {:x?})",
+                source.file_name().unwrap().to_string_lossy(),
+                pe_machine(program)
+            ));
+        }
+    }
+    let _ = std::fs::remove_dir_all(&built.work);
+    eprintln!(
+        "Windows ARM64: {} programs built, which this computer cannot run; {} need what the target lacks: {}",
+        built.programs.len(),
+        built.lacking.len(),
+        built.lacking.join(", ")
+    );
+    assert!(
+        !built.programs.is_empty(),
+        "no program was built (Windows ARM64)"
+    );
+    assert!(
+        failures.is_empty(),
+        "{} build problem(s) (Windows ARM64):\n\n{}",
+        failures.len(),
+        failures.join("\n\n")
+    );
+}
+
+/// The machine a Windows executable is for: its file header's `Machine`.
+fn pe_machine(path: &Path) -> Option<u16> {
+    let bytes = std::fs::read(path).ok()?;
+    if bytes.get(..2)? != b"MZ" {
+        return None;
+    }
+    let header = u32::from_le_bytes(bytes.get(0x3c..0x40)?.try_into().ok()?) as usize;
+    if bytes.get(header..header + 4)? != b"PE\0\0" {
+        return None;
+    }
+    Some(u16::from_le_bytes(
+        bytes.get(header + 4..header + 6)?.try_into().ok()?,
+    ))
+}
+
 /// Whether the Rust toolchain the repository uses has the standard library
 /// for `triple`.
 fn rust_target_installed(triple: &str) -> bool {
@@ -1391,11 +1470,13 @@ fn prepare_runtime(triple: &str, c_library: &[&str]) {
     assert!(built.success(), "building the runtime for {triple} failed");
     let lib = target_dir.join("lib").join(triple);
     std::fs::create_dir_all(&lib).expect("create the library directory");
-    let runtime = build_dir
-        .join(triple)
-        .join("debug")
-        .join("libsayon_runtime.a");
-    std::fs::copy(&runtime, lib.join("libsayon_runtime.a"))
+    let file = if triple.contains("windows") {
+        "sayon_runtime.lib"
+    } else {
+        "libsayon_runtime.a"
+    };
+    let runtime = build_dir.join(triple).join("debug").join(file);
+    std::fs::copy(&runtime, lib.join(file))
         .unwrap_or_else(|e| panic!("copy {}: {e}", runtime.display()));
     if c_library.is_empty() {
         return;
