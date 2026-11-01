@@ -1207,9 +1207,18 @@ fn answer_http(mut stream: std::net::TcpStream) {
         }
         (_, "/bytes") => ("200 OK", Vec::new(), (0..=255).collect()),
         (_, "/large") => ("200 OK", Vec::new(), vec![b'x'; 100]),
+        // Late enough that a task's short sleep ends first, even when a
+        // busy computer is late with timers.
         (_, "/later") => {
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_secs(2));
             ("200 OK", Vec::new(), b"late".to_vec())
+        }
+        // Never answers, and waits for the client to give up, so that a
+        // request's timeout ends it however late its timer comes.
+        (_, "/stalled") => {
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(60)));
+            let _ = std::io::copy(&mut stream, &mut std::io::sink());
+            return;
         }
         _ => ("404 Not Found", Vec::new(), b"missing".to_vec()),
     };

@@ -32,7 +32,7 @@ missing = network.get(base + "/nowhere")
 print(missing.status, missing.reason, missing.text(), missing.succeeded())
 
 # A task waits for its response while the others run: the server answers
-# "/later" half a second after it was asked.
+# "/later" two seconds after it was asked.
 later = base + "/later"
 waiting = threads.spawn(function() -> string
     return network.get(later).text()
@@ -55,5 +55,6 @@ function failure(url: string, timeout: time.Duration, redirects: integer, limit:
 
 print(failure(base + "/large", time.seconds(30), 10, 10))
 print(failure(base + "/moved", time.seconds(30), 0, 1000))
-print(failure(base + "/later", time.milliseconds(100), 10, 1000))
+# The server never answers "/stalled", so the request's timeout ends it.
+print(failure(base + "/stalled", time.milliseconds(100), 10, 1000))
 print(failure(base + "/hello", time.seconds(30), 0, 11))
