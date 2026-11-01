@@ -823,6 +823,25 @@ pub fn read_bytes(id: i64, count: i64) -> Result<Vec<u8>, HostError> {
     })
 }
 
+/// `count` bytes, waiting on a connection until they have all arrived;
+/// fewer only at the end of the stream. A pipe holds a megabyte at most,
+/// so its bytes are read with `read_bytes`.
+pub fn read_exactly(id: i64, count: i64) -> Result<Vec<u8>, HostError> {
+    if count < 0 {
+        return Err(("ValueError", format!("cannot read {count} bytes")));
+    }
+    if let Some(result) = connection(id, |connection| connection.read_exactly(count as usize)) {
+        return result;
+    }
+    if pipe_in(id).is_some() {
+        return Err((
+            "IOError",
+            "a program's output is read with read_bytes, as it arrives".to_string(),
+        ));
+    }
+    read_bytes(id, count)
+}
+
 /// Up to `count` bytes of text, or a few more to end with a whole
 /// character; "" only at the end of the stream.
 pub fn read_text(id: i64, count: i64) -> Result<String, HostError> {

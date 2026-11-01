@@ -100,6 +100,11 @@ function connection_read(update connection: Connection) -> string
 function connection_read_bytes(update connection: Connection, count: integer) -> Array<byte>
     return host_stream_read_bytes(connection.stream, count)
 
+# `count` bytes, waiting until they have all arrived, however the other
+# side sent them; fewer only when it finishes sending first.
+function connection_read_exactly(update connection: Connection, count: integer) -> Array<byte>
+    return host_stream_read_exactly(connection.stream, count)
+
 # Writes text, as UTF-8.
 function connection_write(update connection: Connection, text: string)
     host_stream_write(connection.stream, text)
@@ -493,11 +498,7 @@ private function read_chunks(update connection: Connection, url: string, limit: 
         connection.read_line()
 
 private function read_exactly(update connection: Connection, size: integer, url: string) -> Array<byte>
-    bytes: Array<byte> = []
-    while length(bytes) < size
-        part = connection.read_bytes(size - length(bytes))
-        if length(part) == 0
-            host_http_fail("{url} ended its body early")
-        for byte in part
-            push(bytes, byte)
+    bytes = connection.read_exactly(size)
+    if length(bytes) < size
+        host_http_fail("{url} ended its body early")
     return bytes

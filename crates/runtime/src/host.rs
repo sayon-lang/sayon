@@ -118,6 +118,7 @@ hosts! {
     StreamReadLine = "stream_read_line"(Stream, Integer) -> OptionalString;
     StreamRead = "stream_read"(Stream) -> String;
     StreamReadBytes = "stream_read_bytes"(Stream, Integer) -> Bytes;
+    StreamReadExactly = "stream_read_exactly"(Stream, Integer) -> Bytes;
     StreamReadText = "stream_read_text"(Stream, Integer) -> String;
     StreamWrite = "stream_write"(Stream, String) -> Nothing;
     StreamWriteBytes = "stream_write_bytes"(Stream, Bytes) -> Nothing;
@@ -240,6 +241,7 @@ impl Host {
             Host::StreamReadLine
                 | Host::StreamRead
                 | Host::StreamReadBytes
+                | Host::StreamReadExactly
                 | Host::StreamReadText
                 | Host::StreamWrite
                 | Host::StreamWriteBytes
@@ -584,6 +586,9 @@ pub fn invoke(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> {
         Host::StreamRead => crate::streams::read_rest(stream(args, 0)).map(V::String),
         Host::StreamReadBytes => {
             crate::streams::read_bytes(stream(args, 0), integer(args, 1)).map(V::Bytes)
+        }
+        Host::StreamReadExactly => {
+            crate::streams::read_exactly(stream(args, 0), integer(args, 1)).map(V::Bytes)
         }
         Host::StreamReadText => {
             crate::streams::read_text(stream(args, 0), integer(args, 1)).map(V::String)

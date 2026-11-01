@@ -26,6 +26,26 @@ print(client.read_line())
 client.close()
 threads.join(echo)
 
+# Bytes sent in parts arrive whole with `read_exactly`, or fewer once the
+# other side finishes sending.
+gatherer = network.listen("127.0.0.1", 0)
+gathering = gatherer.address().port
+gathered = threads.spawn(function() -> string
+    connection = gatherer.accept()
+    whole = strings.from_bytes(connection.read_exactly(14))
+    rest = connection.read_exactly(5)
+    connection.close()
+    return "{whole} {length(rest)}"
+)
+parts = network.connect("127.0.0.1", gathering)
+for part in ["three", " parts", " ok"]
+    parts.write(part)
+    parts.flush()
+    time.sleep(time.milliseconds(20))
+parts.finish_sending()
+print(threads.join(gathered))
+parts.close()
+
 # A small HTTP server, for one request at a time.
 function respond(update connection: network.Connection, status: string, headers: Array<string>, body: string)
     connection.write("HTTP/1.1 {status}\r\n")
@@ -59,7 +79,7 @@ function serve(update listener: network.Listener, count: integer)
         elseif path == "/moved"
             respond(connection, "302 Found", ["location: /hello", "content-length: 0"], "")
         elseif path == "/echo"
-            body = strings.from_bytes(connection.read_bytes(length_header))
+            body = strings.from_bytes(connection.read_exactly(length_header))
             respond(connection, "201 Created", [], "{words[0]} {body}")
         else
             respond(connection, "404 Not Found", ["content-length: 7"], "missing")

@@ -425,6 +425,19 @@ impl Connection {
         }
     }
 
+    /// `count` bytes, waiting until they have all arrived; fewer only once
+    /// the other side has finished sending.
+    pub fn read_exactly(&mut self, count: usize) -> Result<Vec<u8>, HostError> {
+        self.send_some()?;
+        while self.input.len() < count && !self.ended {
+            if !self.receive()? {
+                return Err(self.wait_to_read());
+            }
+        }
+        let take = count.min(self.input.len());
+        Ok(self.input.drain(..take).collect())
+    }
+
     /// Everything the other side sends until it finishes, as text.
     pub fn read_rest(&mut self) -> Result<String, HostError> {
         self.send_some()?;

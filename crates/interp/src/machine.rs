@@ -1709,6 +1709,7 @@ impl<'m> Machine<'m> {
             | Host::StreamReadLine
             | Host::StreamRead
             | Host::StreamReadBytes
+            | Host::StreamReadExactly
             | Host::StreamReadText
             | Host::StreamCopy => {
                 let _ = self.output().flush();

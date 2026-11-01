@@ -1,6 +1,6 @@
 # The standard library's API
 
-Every export of the standard library, read from its declarations in `stdlib/`, with the first paragraph of the comment above each. `sayon run scripts/api_inventory.sayon` writes this page, and `cargo test` checks that it is current, so it always says what the library has. 13 modules hold 371 exports, 371 of them with a description.
+Every export of the standard library, read from its declarations in `stdlib/`, with the first paragraph of the comment above each. `sayon run scripts/api_inventory.sayon` writes this page, and `cargo test` checks that it is current, so it always says what the library has. 13 modules hold 372 exports, 372 of them with a description.
 
 A method is a function whose name starts with its type's, called on a value of the type: `set_add(set, value)` is written `set.add(value)`.
 
@@ -14,7 +14,7 @@ A method is a function whose name starts with its type's, called on a value of t
 | [`standard/json.sayon`](#standardjsonsayon) | 25 | JSON: reading text into values, and writing values as text. |
 | [`standard/math.sayon`](#standardmathsayon) | 30 | Mathematical functions and constants. |
 | [`standard/memory.sayon`](#standardmemorysayon) | 8 | Reading and writing the memory that C code shares with a program. |
-| [`standard/network.sayon`](#standardnetworksayon) | 41 | TCP connections and listeners, UDP datagrams, TLS, and an HTTP client. |
+| [`standard/network.sayon`](#standardnetworksayon) | 42 | TCP connections and listeners, UDP datagrams, TLS, and an HTTP client. |
 | [`standard/os.sayon`](#standardossayon) | 13 | The program's environment. |
 | [`standard/strings.sayon`](#standardstringssayon) | 31 | Operations on text. Positions and lengths count Unicode characters (code points); `graphemes` works with what readers see as characters, and `bytes` with the UTF-8 encoding. |
 | [`standard/threads.sayon`](#standardthreadssayon) | 16 | Tasks that run together, and channels between them. |
@@ -315,6 +315,7 @@ TCP connections and listeners, UDP datagrams, TLS, and an HTTP client.
 | `connection_lines` | `function connection_lines(update connection: Connection) -> io.Lines` | Method `lines` of `Connection`. The lines to come, for a `for` loop, until the other side finishes. |
 | `connection_read` | `function connection_read(update connection: Connection) -> string` | Method `read` of `Connection`. Everything the other side sends until it finishes, as text. |
 | `connection_read_bytes` | `function connection_read_bytes(update connection: Connection, count: integer) -> Array<byte>` | Method `read_bytes` of `Connection`. Up to `count` bytes: as many as have arrived, waiting for one when none has. None once the other side has finished sending. |
+| `connection_read_exactly` | `function connection_read_exactly(update connection: Connection, count: integer) -> Array<byte>` | Method `read_exactly` of `Connection`. `count` bytes, waiting until they have all arrived, however the other side sent them; fewer only when it finishes sending first. |
 | `connection_write` | `function connection_write(update connection: Connection, text: string)` | Method `write` of `Connection`. Writes text, as UTF-8. |
 | `connection_write_line` | `function connection_write_line(update connection: Connection, text: string)` | Method `write_line` of `Connection`. Writes text and a line ending, LF. |
 | `connection_write_bytes` | `function connection_write_bytes(update connection: Connection, bytes: Array<byte>)` | Method `write_bytes` of `Connection`. Writes bytes as they are. |
