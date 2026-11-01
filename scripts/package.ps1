@@ -30,10 +30,13 @@ Set-Location $root
 $manifest = Get-Content (Join-Path $root "Cargo.toml") -Raw
 if ($manifest -notmatch 'version = "([^"]+)"') { throw "cannot find the workspace version in Cargo.toml" }
 $version = $Matches[1]
-$processor = switch ($env:PROCESSOR_ARCHITECTURE) {
-    "AMD64" { "x64" }
-    "ARM64" { "arm64" }
-    default { throw "unsupported processor $($env:PROCESSOR_ARCHITECTURE)" }
+# The processor is rustc's, which the release is built for: on ARM64 an
+# emulated x64 shell would tell its own.
+$hostTriple = (rustc -vV | Where-Object { $_ -like "host: *" }) -replace "^host: ", ""
+$processor = switch -Wildcard ($hostTriple) {
+    "x86_64-*" { "x64" }
+    "aarch64-*" { "arm64" }
+    default { throw "unsupported processor of $hostTriple" }
 }
 $device = "windows-$processor"
 

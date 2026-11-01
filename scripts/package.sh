@@ -38,10 +38,12 @@ case "$(uname -s)" in
     Darwin) system=macos; system_name=macOS ;;
     *) echo "unsupported system $(uname -s)" >&2; exit 1 ;;
 esac
-case "$(uname -m)" in
-    x86_64 | amd64) processor=x64 ;;
-    aarch64 | arm64) processor=arm64 ;;
-    *) echo "unsupported processor $(uname -m)" >&2; exit 1 ;;
+# The processor is rustc's, which the release is built for.
+host="$(rustc -vV | sed -n 's/^host: //p')"
+case "$host" in
+    x86_64-*) processor=x64 ;;
+    aarch64-*) processor=arm64 ;;
+    *) echo "unsupported processor of $host" >&2; exit 1 ;;
 esac
 device="$system-$processor"
 command -v python3 > /dev/null || { echo "python3 is needed to write the installer's archive" >&2; exit 1; }

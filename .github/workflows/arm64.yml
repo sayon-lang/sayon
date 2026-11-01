@@ -5,6 +5,11 @@
 # cross-builds cannot stand in for. WebAssembly, the browsers, and Android
 # are the same on any processor and are checked on x64 development
 # computers, so they are skipped here.
+#
+# Once the tests pass, each runner builds the downloads for its device with
+# the packaging scripts, installs from the installer, uses the installed
+# Sayon, uninstalls it, and keeps the downloads with the run for 30 days.
+# They are no release: none is published before the first stable one.
 name: ARM64
 
 on:
@@ -57,3 +62,70 @@ jobs:
       - name: Test
         working-directory: sayon
         run: cargo test --workspace --no-fail-fast -- --show-output
+
+  installer:
+    name: installer on ${{ matrix.runner }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            device: linux-arm64
+            other: x86_64-unknown-linux-gnu
+          - runner: windows-11-arm
+            device: windows-arm64
+            other: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - name: Check out Sayon
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The downloads carry the runtime for the other processor's programs.
+      - name: Add the other processor's target
+        run: rustup target add ${{ matrix.other }}
+      - name: Package
+        if: runner.os == 'Linux'
+        run: bash scripts/package.sh
+      - name: Package
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/package.ps1
+      - name: Install, use, and uninstall
+        if: runner.os == 'Linux'
+        run: |
+          prefix="$RUNNER_TEMP/sayon"
+          ./dist/sayon-*-${{ matrix.device }}-setup install --prefix "$prefix" --yes --no-path
+          printf 'print("hello from", platform, processor)\n' > "$RUNNER_TEMP/hello.sayon"
+          "$prefix/bin/sayon" run "$RUNNER_TEMP/hello.sayon"
+          "$prefix/bin/sayon" run --native "$RUNNER_TEMP/hello.sayon"
+          "$prefix/uninstall" --yes
+          test ! -e "$prefix/bin/sayon"
+      - name: Install, use, and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP "sayon"
+          $setup = (Get-ChildItem dist -Filter "sayon-*-${{ matrix.device }}-setup.exe").FullName
+          & $setup install --prefix $prefix --yes --no-path
+          if ($LASTEXITCODE -ne 0) { throw "installing failed" }
+          $hello = Join-Path $env:RUNNER_TEMP "hello.sayon"
+          Set-Content -Path $hello -Value 'print("hello from", platform, processor)'
+          & "$prefix\bin\sayon.exe" run $hello
+          if ($LASTEXITCODE -ne 0) { throw "running in the interpreter failed" }
+          & "$prefix\bin\sayon.exe" run --native $hello
+          if ($LASTEXITCODE -ne 0) { throw "running compiled failed" }
+          & $setup uninstall --prefix $prefix --yes
+          if ($LASTEXITCODE -ne 0) { throw "uninstalling failed" }
+          if (Test-Path "$prefix\bin\sayon.exe") { throw "the uninstaller left sayon.exe" }
+      - name: Keep the downloads
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sayon-${{ matrix.device }}
+          path: |
+            dist/*-setup*
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
