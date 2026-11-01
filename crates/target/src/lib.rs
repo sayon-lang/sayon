@@ -406,8 +406,8 @@ pub static TARGETS: &[Target] = &[
         platform: "windows",
         processor: "arm64",
         pointer_size: 8,
-        // Built on Windows x64, which cannot run its programs.
-        state: State::Buildable,
+        // Its programs run on GitHub's ARM64 runners (.github/workflows).
+        state: State::Executed,
         planned: "M5",
         capabilities: DESKTOP,
     },
@@ -417,9 +417,9 @@ pub static TARGETS: &[Target] = &[
         platform: "linux",
         processor: "arm64",
         pointer_size: 8,
-        // Its programs run under QEMU in the tests, which is evidence for
-        // the build, not for ARM hardware.
-        state: State::Buildable,
+        // Its programs run on GitHub's ARM64 runners (.github/workflows),
+        // and under QEMU on Linux x64.
+        state: State::Executed,
         planned: "M5",
         capabilities: DESKTOP,
     },
