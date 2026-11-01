@@ -159,7 +159,15 @@ pub fn call(
     Ok(value)
 }
 
-/// An argument, for the platform's convention to place.
+/// An argument, for the platform's convention to place. Where the
+/// interpreter calls no C functions, nothing places them.
+#[cfg_attr(
+    not(any(
+        all(windows, target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "x86_64")
+    )),
+    allow(dead_code)
+)]
 enum Piece {
     /// In an integer register, or a word of the stack.
     Integer(u64),
@@ -176,6 +184,13 @@ enum Piece {
 ///
 /// # Safety
 /// `memory`, when there is one, holds the structure C wrote.
+#[cfg_attr(
+    not(any(
+        all(windows, target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "x86_64")
+    )),
+    allow(dead_code)
+)]
 unsafe fn given_back(
     ty: &Type,
     integers: [u64; 2],
@@ -223,7 +238,15 @@ thread_local! {
 static ENTRIES: Mutex<Vec<(u32, usize)>> = Mutex::new(Vec::new());
 
 /// The address of the entry point for parameter `position` of the C
-/// function at `index`.
+/// function at `index`. Where the interpreter calls no C functions, there
+/// are no entry points, and the count is always reached.
+#[cfg_attr(
+    not(any(
+        all(windows, target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "x86_64")
+    )),
+    allow(clippy::absurd_extreme_comparisons)
+)]
 fn callback_entry(index: u32, position: usize) -> Result<usize, ForeignError> {
     let mut entries = ENTRIES.lock().unwrap_or_else(|e| e.into_inner());
     let number = match entries.iter().position(|entry| *entry == (index, position)) {
@@ -1003,13 +1026,22 @@ mod platform {
     all(target_os = "linux", target_arch = "x86_64")
 )))]
 mod platform {
+    use super::Piece;
+    use crate::value::Value;
+    use sayon_check::types::{Type, TypeDef};
+
     pub const CALLBACK_ENTRIES: usize = 0;
 
     pub fn callback_entry(_number: usize) -> usize {
         unreachable!("no library opens on this platform")
     }
 
-    pub unsafe fn call(_function: usize, _slots: &[u64]) -> (u64, u64) {
+    pub(super) unsafe fn invoke(
+        _function: usize,
+        _pieces: &[Piece],
+        _ret: &Type,
+        _types: &[TypeDef],
+    ) -> Value {
         unreachable!("no library opens on this platform")
     }
 
@@ -1026,6 +1058,6 @@ mod platform {
     }
 
     pub fn missing_library(_name: &str) -> String {
-        "the interpreter calls C functions on Windows x64 so far; build the program with `sayon build` to call them here".to_string()
+        "the interpreter calls C functions on Windows x64 and Linux x64 so far; build the program with `sayon build` to call them here".to_string()
     }
 }
