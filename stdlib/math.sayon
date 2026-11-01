@@ -3,28 +3,40 @@
 #     math = import("standard/math.sayon")
 #     print(math.sqrt(2.0), math.max(3, 7))
 
+# π, the ratio of a circle's circumference to its diameter.
 constant PI = 3.141592653589793
+
+# e, the base of the natural logarithm.
 constant E = 2.718281828459045
+
+# τ, 2π: a whole turn in radians.
 constant TAU = 6.283185307179586
 
+# The square root; NaN for a negative number.
 function sqrt(x: float) -> float
     return host_sqrt(x)
 
+# The sine of an angle in radians.
 function sin(x: float) -> float
     return host_sin(x)
 
+# The cosine of an angle in radians.
 function cos(x: float) -> float
     return host_cos(x)
 
+# The tangent of an angle in radians.
 function tan(x: float) -> float
     return host_tan(x)
 
+# The angle, from -PI/2 to PI/2, whose sine is `x`; NaN outside -1 to 1.
 function asin(x: float) -> float
     return host_asin(x)
 
+# The angle, from 0 to PI, whose cosine is `x`; NaN outside -1 to 1.
 function acos(x: float) -> float
     return host_acos(x)
 
+# The angle, from -PI/2 to PI/2, whose tangent is `x`.
 function atan(x: float) -> float
     return host_atan(x)
 
@@ -32,6 +44,7 @@ function atan(x: float) -> float
 function atan2(y: float, x: float) -> float
     return host_atan2(y, x)
 
+# e raised to the power `x`.
 function exp(x: float) -> float
     return host_exp(x)
 
@@ -39,18 +52,23 @@ function exp(x: float) -> float
 function log(x: float) -> float
     return host_log(x)
 
+# The base-10 logarithm.
 function log10(x: float) -> float
     return host_log10(x)
 
+# The base-2 logarithm.
 function log2(x: float) -> float
     return host_log2(x)
 
+# `base` raised to the power `exponent`.
 function pow(base: float, exponent: float) -> float
     return host_pow(base, exponent)
 
+# The greatest whole number not above `x`.
 function floor(x: float) -> float
     return host_floor(x)
 
+# The least whole number not below `x`.
 function ceil(x: float) -> float
     return host_ceil(x)
 
@@ -58,6 +76,7 @@ function ceil(x: float) -> float
 function round(x: float) -> float
     return host_round(x)
 
+# `x` without its fraction: toward zero.
 function trunc(x: float) -> float
     return host_trunc(x)
 
@@ -69,11 +88,13 @@ function abs(x)
         return zero - x
     return x
 
+# The smaller of two numbers or strings; `a` when they are equal.
 function min(a, b)
     if b < a
         return b
     return a
 
+# The larger of two numbers or strings; `a` when they are equal.
 function max(a, b)
     if b > a
         return b
@@ -90,3 +111,106 @@ function clamp(value, low, high)
 # A float from 0 up to, but not including, 1. Not suitable for security.
 function random() -> float
     return host_random()
+
+# A source of pseudo-random numbers that starts from a seed: generators made
+# from the same seed give the same numbers, in the same order, on every
+# device and target, in the interpreter and compiled. It is Pierre
+# L'Ecuyer's MRG32k3a, whose numbers repeat only after about 2^191 of them.
+# Not suitable for security; `crypto.random_bytes` is.
+#
+#     dice = math.new_generator(42)
+#     print(dice.integer(1, 7), dice.float())
+type Generator = [state: Array<integer>]
+
+# MRG32k3a's two recurrences: each number is a sum of two of the three before
+# it, times these multipliers, modulo a prime just under 2^32. Every product
+# fits in an integer.
+private constant FIRST_MODULUS = 4294967087
+private constant FIRST_MULTIPLIER = 1403580
+private constant FIRST_OLDEST_MULTIPLIER = 810728
+private constant SECOND_MODULUS = 4294944443
+private constant SECOND_MULTIPLIER = 527612
+private constant SECOND_OLDEST_MULTIPLIER = 1370589
+
+# 2^53: a float holds every integer below it exactly.
+private constant FLOAT_INTEGERS = 9007199254740992
+
+# A generator whose numbers follow from `seed`, any integer. The seed's
+# SHA-256 digest gives the starting state, so nearby seeds give unrelated
+# numbers.
+function new_generator(seed: integer) -> Generator
+    digest = host_sha256(host_bytes("sayon generator 1 {seed}"))
+    state: Array<integer> = []
+    for word in range(6)
+        value = 0
+        for position in range(word * 4, word * 4 + 4)
+            value = value * 256 + integer(digest[position])
+        if word < 3
+            push(state, value % FIRST_MODULUS)
+        else
+            push(state, value % SECOND_MODULUS)
+    # A recurrence whose three numbers are all zero would stay zero.
+    if state[0] == 0 and state[1] == 0 and state[2] == 0
+        state[0] = 1
+    if state[3] == 0 and state[4] == 0 and state[5] == 0
+        state[3] = 1
+    return Generator(state = state)
+
+# A float from 0 up to, but not including, 1, with all 53 bits of a float's
+# precision.
+function generator_float(update generator: Generator) -> float
+    return float(below(generator, FLOAT_INTEGERS)) / float(FLOAT_INTEGERS)
+
+# An integer from `low` up to, but not including, `high`, each as likely as
+# the others: `integer(1, 7)` rolls a die. Fails with ValueError when `high`
+# is not above `low`, and with OverflowError when the range is wider than an
+# integer holds.
+function generator_integer(update generator: Generator, low: integer, high: integer) -> integer
+    if high <= low
+        host_value_fail("a generator's integer needs `high` above `low`, not {low} and {high}")
+    return low + below(generator, high - low)
+
+# Puts the items in a random order, every order as likely as the others.
+function generator_shuffle<T>(update generator: Generator, update items: Array<T>)
+    position = length(items) - 1
+    while position > 0
+        swap(items, position, below(generator, position + 1))
+        position -= 1
+
+# The generator's next number, from 0 up to, but not including,
+# FIRST_MODULUS: the two recurrences' newest numbers, one less the other.
+private function step(update generator: Generator) -> integer
+    first = (FIRST_MULTIPLIER * generator.state[1] - FIRST_OLDEST_MULTIPLIER * generator.state[0]) % FIRST_MODULUS
+    if first < 0
+        first += FIRST_MODULUS
+    generator.state[0] = generator.state[1]
+    generator.state[1] = generator.state[2]
+    generator.state[2] = first
+    second = (SECOND_MULTIPLIER * generator.state[5] - SECOND_OLDEST_MULTIPLIER * generator.state[3]) % SECOND_MODULUS
+    if second < 0
+        second += SECOND_MODULUS
+    generator.state[3] = generator.state[4]
+    generator.state[4] = generator.state[5]
+    generator.state[5] = second
+    combined = first - second
+    if combined < 0
+        combined += FIRST_MODULUS
+    return combined
+
+# An integer from 0 up to, but not including, `span`, each as likely as the
+# others: a number past the last whole multiple of `span` is drawn again. A
+# span wider than one number takes two, a count of FIRST_MODULUS and a rest.
+private function below(update generator: Generator, span: integer) -> integer
+    if span <= FIRST_MODULUS
+        limit = FIRST_MODULUS - FIRST_MODULUS % span
+        drawn = step(generator)
+        while drawn >= limit
+            drawn = step(generator)
+        return drawn % span
+    counts = (span - 1) / FIRST_MODULUS + 1
+    count = below(generator, counts)
+    rest = step(generator)
+    while count > (span - 1 - rest) / FIRST_MODULUS
+        count = below(generator, counts)
+        rest = step(generator)
+    return count * FIRST_MODULUS + rest

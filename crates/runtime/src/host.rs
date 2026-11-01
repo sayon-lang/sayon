@@ -216,6 +216,10 @@ hosts! {
     ZonesVersion = "zones_version"() -> String;
     Sha256 = "sha256"(Bytes) -> Bytes;
     RandomBytes = "random_bytes"(Integer) -> Bytes;
+    TrimStart = "trim_start"(String) -> String;
+    TrimEnd = "trim_end"(String) -> String;
+    DecimalText = "decimal_text"(Float, Integer) -> String;
+    Canonical = "canonical"(String) -> String;
 }
 
 impl Host {
@@ -1187,6 +1191,49 @@ pub fn invoke(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> {
             Ok(V::Bytes(hasher.finish().to_vec()))
         }
         Host::RandomBytes => crate::secure_random::bytes(integer(args, 0)).map(V::Bytes),
+        Host::TrimStart => Ok(V::String(string(args, 0).trim_start().to_string())),
+        Host::TrimEnd => Ok(V::String(string(args, 0).trim_end().to_string())),
+        Host::DecimalText => {
+            let (value, places) = (float(args, 0), integer(args, 1));
+            if !(0..=100).contains(&places) {
+                return Err((
+                    "ValueError",
+                    format!("a decimal has 0 to 100 places, not {places}"),
+                ));
+            }
+            if !value.is_finite() {
+                return Ok(V::String(crate::text::format_f64(value)));
+            }
+            Ok(V::String(format!("{value:.*}", places as usize)))
+        }
+        Host::Canonical => {
+            let path = string(args, 0);
+            let resolved =
+                std::fs::canonicalize(path).map_err(|e| io_error("resolve", path, &e))?;
+            let resolved = resolved.into_os_string().into_string().map_err(|raw| {
+                (
+                    "EncodingError",
+                    format!(
+                        "\"{path}\" resolves to \"{}\", which is not valid Unicode",
+                        raw.to_string_lossy()
+                    ),
+                )
+            })?;
+            Ok(V::String(without_verbatim_prefix(resolved)))
+        }
+    }
+}
+
+/// A path without the `\\?\` that Windows' canonical paths start with, which
+/// many programs do not accept: `\\?\C:\notes` is `C:\notes`, and
+/// `\\?\UNC\server\share` is `\\server\share`. Other paths stay as they are.
+fn without_verbatim_prefix(path: String) -> String {
+    if let Some(share) = path.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{share}");
+    }
+    match path.strip_prefix(r"\\?\") {
+        Some(drive) if drive.as_bytes().get(1) == Some(&b':') => drive.to_string(),
+        _ => path,
     }
 }
 
@@ -1262,6 +1309,49 @@ mod tests {
                 panic!()
             };
             assert!((0.0..1.0).contains(&x));
+        }
+    }
+
+    /// Decimals round the float's exact value, and a tie to the even digit.
+    #[test]
+    fn decimals_round_exactly() {
+        let decimal = |value: f64, places: i64| {
+            invoke(
+                Host::DecimalText,
+                &[HostArg::Float(value), HostArg::Integer(places)],
+            )
+        };
+        for (value, places, text) in [
+            (5.4321, 2, "5.43"),
+            (2.675, 2, "2.67"),
+            (0.125, 2, "0.12"),
+            (0.375, 2, "0.38"),
+            (2.5, 0, "2"),
+            (-1.5, 0, "-2"),
+            (1e21, 1, "1000000000000000000000.0"),
+            (-0.04, 1, "-0.0"),
+            (f64::INFINITY, 2, "inf"),
+            (f64::NAN, 2, "nan"),
+        ] {
+            assert_eq!(
+                decimal(value, places).unwrap(),
+                HostValue::String(text.into()),
+                "{value} to {places} places"
+            );
+        }
+        assert!(decimal(1.0, -1).is_err());
+        assert!(decimal(1.0, 101).is_err());
+    }
+
+    #[test]
+    fn canonical_paths_lose_the_verbatim_prefix() {
+        for (path, plain) in [
+            (r"\\?\C:\Users\ada", r"C:\Users\ada"),
+            (r"\\?\UNC\server\share\notes", r"\\server\share\notes"),
+            (r"\\?\Volume{0}\notes", r"\\?\Volume{0}\notes"),
+            ("/home/ada", "/home/ada"),
+        ] {
+            assert_eq!(without_verbatim_prefix(path.to_string()), plain);
         }
     }
 }

@@ -63,6 +63,7 @@ function rgb(red: integer, green: integer, blue: integer) -> Color
 function rgba(red: integer, green: integer, blue: integer, alpha: integer) -> Color
     return Color(red = red, green = green, blue = blue, alpha = alpha)
 
+# Colors to draw with, opaque but for `TRANSPARENT`.
 constant BLACK = Color(red = 0, green = 0, blue = 0, alpha = 255)
 constant WHITE = Color(red = 255, green = 255, blue = 255, alpha = 255)
 constant RED = Color(red = 255, green = 0, blue = 0, alpha = 255)
@@ -116,6 +117,7 @@ function load_image(path: string) -> Canvas
 function canvas_clear(update canvas: Canvas, color: Color)
     host_canvas_clear(canvas.pixels, packed(color))
 
+# Fills a rectangle with `color`, its top left corner at (x, y).
 function canvas_fill_rectangle(update canvas: Canvas, x: integer, y: integer, width: integer, height: integer, color: Color)
     host_canvas_rectangle(canvas.pixels, x, y, width, height, packed(color))
 
@@ -346,10 +348,11 @@ function window_present(update window: Window, canvas: Canvas)
         wait = 1_000_000
     time.sleep(time.nanoseconds(wait))
 
-# The window's surface, in pixels.
+# The width of the window's surface, in pixels.
 function window_width(window: Window) -> integer
     return host_window_width(window.handle)
 
+# The height of the window's surface, in pixels.
 function window_height(window: Window) -> integer
     return host_window_height(window.handle)
 

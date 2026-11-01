@@ -17,13 +17,24 @@ function lines(text: string) -> Array<string>
 function join(parts: Array<string>, separator: string) -> string
     return host_join(parts, separator)
 
-# The text without leading and trailing whitespace.
+# The text without leading and trailing whitespace: the characters Unicode
+# calls white space, such as spaces, tabs, and line breaks.
 function trim(text: string) -> string
     return host_trim(text)
 
+# The text without leading whitespace.
+function trim_start(text: string) -> string
+    return host_trim_start(text)
+
+# The text without trailing whitespace.
+function trim_end(text: string) -> string
+    return host_trim_end(text)
+
+# The text in uppercase, by Unicode's rules for any language: `ß` becomes `SS`.
 function upper(text: string) -> string
     return host_upper(text)
 
+# The text in lowercase, by Unicode's rules for any language.
 function lower(text: string) -> string
     return host_lower(text)
 
@@ -31,12 +42,15 @@ function lower(text: string) -> string
 function replace(text: string, from: string, to: string) -> string
     return host_replace(text, from, to)
 
+# Whether the text begins with `prefix`.
 function starts_with(text: string, prefix: string) -> boolean
     return host_starts_with(text, prefix)
 
+# Whether the text ends with `suffix`.
 function ends_with(text: string, suffix: string) -> boolean
     return host_ends_with(text, suffix)
 
+# Whether `part` occurs anywhere in the text.
 function contains(text: string, part: string) -> boolean
     return host_contains(text, part)
 
@@ -50,6 +64,17 @@ function find(text: string, part: string) -> integer or nothing
 # The text repeated `count` times.
 function repeat(text: string, count: integer) -> string
     return host_repeat(text, count)
+
+# The text with `fill`, one character, put before it until it is `width`
+# characters long: `pad_start("7", 3, "0")` is "007". Longer text stays as
+# it is.
+function pad_start(text: string, width: integer, fill = " ") -> string
+    return padding(text, width, fill) + text
+
+# The text with `fill`, one character, put after it until it is `width`
+# characters long: `pad_end("ab", 4)` is "ab  ". Longer text stays as it is.
+function pad_end(text: string, width: integer, fill = " ") -> string
+    return text + padding(text, width, fill)
 
 # The characters from `start` up to, but not including, `end`.
 function slice(text: string, start: integer, end: integer) -> string
@@ -113,3 +138,61 @@ function code(character: string) -> integer
 # The one-character string with a Unicode code, such as "A" for 65.
 function character(code: integer) -> string
     return host_character(code)
+
+# The integer that `text` writes in `base`, from 2 to 36: an optional `+` or
+# `-`, then digits, which from 10 on are the letters `a` to `z` in either
+# case. `parse_integer("ff", 16)` is 255, and `parse_integer("-101", 2)` is
+# -5. Fails with ParseError for other text, and for a number that does not
+# fit in an integer.
+function parse_integer(text: string, base = 10) -> integer
+    if base < 2 or base > 36
+        host_value_fail("a base is from 2 to 36, not {base}")
+    start = 0
+    if starts_with(text, "-") or starts_with(text, "+")
+        start = 1
+    negative = starts_with(text, "-")
+    if length(text) == start
+        host_parse_error("\"{text}\" is not an integer")
+    value = 0
+    for character in slice(text, start, length(text))
+        digit = digit_value(character)
+        if digit >= base
+            host_parse_error("\"{text}\" is not an integer in base {base}")
+        # A negative number is built on the negative side, which reaches one
+        # further than the positive.
+        if negative
+            if value < (-9223372036854775807 - 1 + digit) / base
+                host_parse_error("\"{text}\" does not fit in an integer")
+            value = value * base - digit
+        elseif value > (9223372036854775807 - digit) / base
+            host_parse_error("\"{text}\" does not fit in an integer")
+        else
+            value = value * base + digit
+    return value
+
+# The number written with `places` digits after the decimal point, from 0 to
+# 100, rounded to the nearest: `decimal(3.14159, 2)` is "3.14". A tie goes
+# to the even digit, and since the float nearest a decimal is a little more
+# or less than it, `decimal(2.675, 2)` is "2.67". NaN and the infinities are
+# written as `tostring` writes them.
+function decimal(value: float, places: integer) -> string
+    return host_decimal_text(value, places)
+
+# What `pad_start` and `pad_end` put beside the text.
+private function padding(text: string, width: integer, fill: string) -> string
+    if length(fill) != 1
+        host_value_fail("padding is one character, not \"{fill}\"")
+    if length(text) >= width
+        return ""
+    return repeat(fill, width - length(text))
+
+# A digit's value: 0 to 9 for `0` to `9`, and 10 to 35 for the letters `a`
+# to `z` in either case; 36, a digit of no base, for any other character.
+private function digit_value(character: string) -> integer
+    if character >= "0" and character <= "9"
+        return code(character) - code("0")
+    if character >= "a" and character <= "z"
+        return code(character) - code("a") + 10
+    if character >= "A" and character <= "Z"
+        return code(character) - code("A") + 10
+    return 36

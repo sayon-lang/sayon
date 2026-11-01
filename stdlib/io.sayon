@@ -111,6 +111,7 @@ function file_read_bytes(update file: File, count: integer) -> Array<byte>
 function file_read_text(update file: File, count: integer) -> string
     return host_stream_read_text(file.stream, count)
 
+# Writes text, through the file's buffer.
 function file_write(update file: File, text: string)
     host_stream_write(file.stream, text)
 
@@ -118,6 +119,7 @@ function file_write(update file: File, text: string)
 function file_write_line(update file: File, text: string)
     host_stream_write(file.stream, text + "\n")
 
+# Writes bytes as they are, through the file's buffer.
 function file_write_bytes(update file: File, bytes: Array<byte>)
     host_stream_write_bytes(file.stream, bytes)
 
@@ -143,6 +145,7 @@ function file_close(own file: File)
 # itself, so they end when it is closed.
 type Lines = [stream: HostStream, limit: integer]
 
+# The next line, or nothing at the end; a `for` loop calls it.
 function lines_next(lines: Lines) -> string or nothing
     return host_stream_read_line(lines.stream, lines.limit)
 

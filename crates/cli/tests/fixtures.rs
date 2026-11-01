@@ -1543,8 +1543,23 @@ fn repository_sources_are_formatted() {
             "tests/test_runner",
             "stdlib",
             "examples",
+            "scripts",
         ],
     );
+    assert_eq!(outcome.status, 0, "{}{}", outcome.stdout, outcome.stderr);
+}
+
+/// docs/api.md is what scripts/api_inventory.sayon writes from the standard
+/// library's declarations, so it says what the library has. With
+/// `SAYON_BLESS=1` the page is written again.
+#[test]
+fn the_api_inventory_is_current() {
+    let root = tests_dir().join("..");
+    let mut arguments = vec!["run", "scripts/api_inventory.sayon"];
+    if !bless() {
+        arguments.extend(["--", "--check"]);
+    }
+    let outcome = sayon(&root, &arguments);
     assert_eq!(outcome.status, 0, "{}{}", outcome.stdout, outcome.stderr);
 }
 

@@ -8,7 +8,7 @@
 
 strings = import("standard/strings.sayon")
 
-constant DIGITS = "0123456789abcdef"
+private constant DIGITS = "0123456789abcdef"
 
 # The SHA-256 digest of bytes (FIPS 180-4): 32 bytes.
 function sha256(data: Array<byte>) -> Array<byte>

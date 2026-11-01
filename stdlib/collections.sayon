@@ -73,7 +73,9 @@ private function arrange(update items, update order: Array<integer>)
 # ----- sets ---------------------------------------------------------------------
 
 # Values without duplicates, in the order they were first added. Values are
-# compared like dictionary keys, so they must be valid keys.
+# compared like dictionary keys, so they must be valid keys. Adding a value
+# and looking one up take constant time on average; removing one takes time
+# proportional to the set's size, since the values after it keep their order.
 type Set<T> = [members: Dict<T, boolean>]
 
 # A new, empty set.
@@ -88,6 +90,7 @@ function set_add<T>(update set: Set<T>, own value: T) -> boolean
     set.members[value] = true
     return true
 
+# Whether the set has the value.
 function set_contains<T>(set: Set<T>, value: T) -> boolean
     return haskey(set.members, value)
 
@@ -95,6 +98,7 @@ function set_contains<T>(set: Set<T>, value: T) -> boolean
 function set_remove<T>(update set: Set<T>, value: T) -> boolean
     return remove(set.members, value) != nothing
 
+# How many values the set has.
 function set_size<T>(set: Set<T>) -> integer
     return length(set.members)
 
@@ -108,7 +112,7 @@ function set_values<T>(set: Set<T>) -> Array<T>
 # ----- queues -------------------------------------------------------------------
 
 # Values taken out in the order they were put in. Adding and taking take
-# constant time on average.
+# constant time on average: a value is moved once, from the back to the front.
 type Queue<T> = [front: Array<T>, back: Array<T>]
 
 # A new, empty queue.
@@ -130,5 +134,6 @@ function queue_take<T>(update queue: Queue<T>) -> T or nothing
                 push(queue.front, moved)
     return pop(queue.front)
 
+# How many values wait in the queue.
 function queue_size<T>(queue: Queue<T>) -> integer
     return length(queue.front) + length(queue.back)

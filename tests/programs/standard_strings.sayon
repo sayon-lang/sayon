@@ -1,0 +1,39 @@
+strings = import("standard/strings.sayon")
+
+# Trimming one side, Unicode's white space included.
+padded = " \t one two \u{3000}\n"
+print("[{strings.trim_start(padded)}]", "[{strings.trim_end(padded)}]", "[{strings.trim(padded)}]")
+print("[{strings.trim_start("")}]", "[{strings.trim_end("   ")}]")
+
+# Padding counts characters, not bytes.
+print(strings.pad_start("7", 3, "0"), "[{strings.pad_end("ab", 4)}]", "[{strings.pad_start("ab", 4)}]")
+print(strings.pad_start("héllo", 7, "·"), strings.pad_end("toolong", 3), strings.pad_start("", 2, "x"))
+for row in [["apples", "3"], ["kiwis", "12"]]
+    print(strings.pad_end(row[0], 8, ".") + strings.pad_start(row[1], 4))
+fill = try strings.pad_start("a", 3, "ab")
+if fill is error
+    print(fill.code, fill.message)
+
+# Integers in any base from 2 to 36.
+print(strings.parse_integer("42"), strings.parse_integer("-17"), strings.parse_integer("+8"))
+print(strings.parse_integer("ff", 16), strings.parse_integer("FF", 16), strings.parse_integer("-101", 2), strings.parse_integer("zz", 36), strings.parse_integer("777", 8))
+print(strings.parse_integer("9223372036854775807"), strings.parse_integer("-9223372036854775808"))
+print(strings.parse_integer("-8000000000000000", 16), strings.parse_integer("0000012"))
+for text in ["", "-", "12a", "1.5", " 1", "9223372036854775808", "-9223372036854775809"]
+    result = try strings.parse_integer(text)
+    if result is error
+        print(result.code, result.message)
+digit = try strings.parse_integer("2", 2)
+if digit is error
+    print(digit.code, digit.message)
+base = try strings.parse_integer("1", 37)
+if base is error
+    print(base.code, base.message)
+
+# Decimals round the float's own value, and a tie to the even digit.
+print(strings.decimal(3.14159, 2), strings.decimal(2.675, 2), strings.decimal(0.125, 2), strings.decimal(2.5, 0), strings.decimal(-1.5, 0))
+print(strings.decimal(7.0, 3), strings.decimal(-0.04, 1), strings.decimal(1e21, 1), strings.decimal(1.0 / 3.0, 20))
+print(strings.decimal(1.0 / 0.0, 2), strings.decimal(-1.0 / 0.0, 2), strings.decimal(0.0 / 0.0, 2))
+places = try strings.decimal(1.0, 101)
+if places is error
+    print(places.code, places.message)

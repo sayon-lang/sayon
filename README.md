@@ -71,6 +71,7 @@ The references that change with the compiler are here, in `docs`:
 
 - [Feature ledger](docs/features.md): what exists, what is planned, and for which milestone
 - [Error codes](docs/errors.md): what each diagnostic and runtime error code means, also shown by `sayon explain CODE`
+- [Standard library API](docs/api.md): every export of the standard library, its declaration and what it does, written from `stdlib/` by `scripts/api_inventory.sayon`
 - [Implementation records](docs/implementation.md): grammar, ownership rules, cleanup order, data layouts, and the error ABI
 - [Licenses](docs/licenses.md): what is not Sayon's own in its files and in the programs it builds, and under which licenses
 

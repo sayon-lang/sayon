@@ -21,6 +21,8 @@
 io = import("standard/io.sayon")
 strings = import("standard/strings.sayon")
 
+# A JSON value: `null`, a boolean, a number kept as the exact text it was
+# written with, text, a list, or an object whose fields keep their order.
 enum Json
     null
     flag(value: boolean)
@@ -505,6 +507,7 @@ type Items = [stream: HostStream, buffer: Array<string>, position: integer, coun
 function items(update file: io.File) -> Items
     return Items(stream = host_stream_share(file.stream), buffer = [], position = 0, count = 0, started = false, finished = false)
 
+# The next item, or nothing after the last; a `for` loop calls it.
 function items_next(update items: Items) -> Json or nothing
     if items.finished
         return nothing
@@ -605,6 +608,7 @@ type Lines = [stream: HostStream, line: integer]
 function lines(update file: io.File) -> Lines
     return Lines(stream = host_stream_share(file.stream), line = 0)
 
+# The next value, or nothing at the end of the file; a `for` loop calls it.
 function lines_next(update lines: Lines) -> Json or nothing
     while true
         text = host_stream_read_line(lines.stream, io.LINE_LIMIT)
@@ -627,6 +631,7 @@ function write_items(update file: io.File) -> ItemWriter
     host_stream_write(stream, "[")
     return ItemWriter(stream = stream, count = 0)
 
+# Writes a value as the array's next item, on a line of its own.
 function item_writer_add(update writer: ItemWriter, value: Json)
     if writer.count == 0
         host_stream_write(writer.stream, "\n")

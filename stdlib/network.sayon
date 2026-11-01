@@ -100,6 +100,7 @@ function connection_read(update connection: Connection) -> string
 function connection_read_bytes(update connection: Connection, count: integer) -> Array<byte>
     return host_stream_read_bytes(connection.stream, count)
 
+# Writes text, as UTF-8.
 function connection_write(update connection: Connection, text: string)
     host_stream_write(connection.stream, text)
 
@@ -107,6 +108,7 @@ function connection_write(update connection: Connection, text: string)
 function connection_write_line(update connection: Connection, text: string)
     host_stream_write(connection.stream, text + "\n")
 
+# Writes bytes as they are.
 function connection_write_bytes(update connection: Connection, bytes: Array<byte>)
     host_stream_write_bytes(connection.stream, bytes)
 
@@ -195,6 +197,7 @@ function datagram_socket_address(socket: DatagramSocket) -> Address
 function datagram_socket_set_timeout(update socket: DatagramSocket, timeout: time.Duration)
     host_socket_timeout(socket.stream, timeout.nanoseconds)
 
+# Closes the socket; it cannot be used afterwards.
 function datagram_socket_close(own socket: DatagramSocket)
     host_stream_close(socket.stream)
 

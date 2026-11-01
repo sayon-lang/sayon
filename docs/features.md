@@ -125,6 +125,10 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | `standard/strings`: split, join, trim, case, replace, search, slicing, character codes | experimental | M1 |
 | `standard/math`: functions, constants, `random` | experimental | M1 |
 | `standard/crypto`: SHA-256, and random bytes from the system's secure source (`BCryptGenRandom`, `/dev/urandom`, WASI's `random_get`, the browser's `crypto.getRandomValues`) | experimental | M5 |
+| `math.Generator`: seeded numbers, the same on every target and in every mode (MRG32k3a), as floats of 53 bits, integers in a range without bias, and shuffles | experimental | M5 |
+| `strings.trim_start`, `trim_end`, `pad_start`, `pad_end`, `parse_integer` in bases 2 to 36, and `decimal`, rounded exactly | experimental | M5 |
+| `filesystem.normalize`, `absolute`, and `canonical`; Windows drives and network shares as roots | experimental | M5 |
+| The standard library's API (`docs/api.md`), written from its declarations by `scripts/api_inventory.sayon` and checked by `cargo test` | experimental | M5 |
 | `standard/io` files: `io.open`, buffered reading and writing, `file.lines()` with a line limit, bytes, `seek`, `position`, checked `close`, `io.copy` | experimental | M2 |
 | `os.exit` (in order: `finally` blocks and cleanup run), `filesystem.walk`, `filesystem.is_link` | experimental | M2 |
 | Standard input as a file (`io.input`), running programs and capturing their output (`os.run`) | experimental | M2 |

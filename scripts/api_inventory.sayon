@@ -1,0 +1,219 @@
+# Writes docs/api.md: every export of the standard library, from its own
+# declarations, with the comment above each. Run it from the repository's
+# top folder:
+#
+#     sayon run scripts/api_inventory.sayon
+#     sayon run scripts/api_inventory.sayon -- --check
+#
+# With `--check` it writes nothing, and fails when docs/api.md is not what it
+# would write; `cargo test` runs it so, to keep the page current.
+
+filesystem = import("standard/filesystem.sayon")
+io = import("standard/io.sayon")
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+constant LIBRARY = "stdlib"
+constant PAGE = "docs/api.md"
+
+# An export: its name, what kind of declaration it is, the declaration as
+# written, the first paragraph of the comment above it, and for a method the
+# type it is called on.
+type Export = [name: string, kind: string, declaration: string, description: string, owner: string]
+
+type Module = [path: string, summary: string, exports: Array<Export>]
+
+# A comment line's text, without the `#` and the space after it.
+function comment_text(line: string) -> string
+    text = strings.slice(line, 1, length(line))
+    if strings.starts_with(text, " ")
+        return strings.slice(text, 1, length(text))
+    return text
+
+# The first paragraph of a comment, as one line.
+function paragraph(lines: Array<string>) -> string
+    words: Array<string> = []
+    for line in lines
+        if strings.trim(line) == ""
+            if length(words) > 0
+                break
+            continue
+        push(words, strings.trim(line))
+    return strings.join(words, " ")
+
+function is_word_character(character: string) -> boolean
+    return character >= "a" and character <= "z" or character >= "A" and character <= "Z" or character >= "0" and character <= "9" or character == "_"
+
+# The name that starts at `start`.
+function identifier(text: string, start: integer) -> string
+    out: Array<string> = []
+    characters = strings.characters(text)
+    position = start
+    while position < length(characters) and is_word_character(characters[position])
+        push(out, clone(characters[position]))
+        position += 1
+    return strings.join(out, "")
+
+# A type's name as its methods' names start: `ItemWriter` is `item_writer`.
+function snake(name: string) -> string
+    out: Array<string> = []
+    first = true
+    for character in strings.characters(name)
+        lower = strings.lower(character)
+        if lower != character and not first
+            push(out, "_")
+        push(out, lower)
+        first = false
+    return strings.join(out, "")
+
+# The names of the types a module declares, its own private ones too, for
+# telling methods.
+function type_names(lines: Array<string>) -> Array<string>
+    out: Array<string> = []
+    for line in lines
+        for prefix in ["type ", "private type ", "foreign type ", "enum ", "private enum "]
+            if strings.starts_with(line, prefix)
+                push(out, identifier(line, length(prefix)))
+    return out
+
+# The comment just above line `position`. Constants written one under
+# another share the comment above the first of them.
+function comment_above(lines: Array<string>, position: integer) -> string
+    found: Array<string> = []
+    top = position
+    while top > 0 and strings.starts_with(lines[position], "constant ") and strings.starts_with(lines[top - 1], "constant ")
+        top -= 1
+    above = top - 1
+    while above >= 0 and strings.starts_with(lines[above], "#")
+        above -= 1
+    for line_number in range(above + 1, top)
+        push(found, comment_text(lines[line_number]))
+    return paragraph(found)
+
+# A declaration as one line: a structure's fields after its name, and an
+# enum's variants.
+function declaration(lines: Array<string>, position: integer, kind: string) -> string
+    header = strings.trim(lines[position])
+    if kind == "type" and strings.ends_with(header, "[")
+        fields: Array<string> = []
+        after = position + 1
+        while after < length(lines) and strings.trim(lines[after]) != "]"
+            entry = strings.trim(lines[after])
+            if strings.ends_with(entry, ",")
+                entry = strings.slice(entry, 0, length(entry) - 1)
+            push(fields, entry)
+            after += 1
+        return header + strings.join(fields, ", ") + "]"
+    if kind == "enum"
+        variants: Array<string> = []
+        after = position + 1
+        while after < length(lines) and strings.starts_with(lines[after], "    ")
+            push(variants, strings.trim(lines[after]))
+            after += 1
+        return header + ": " + strings.join(variants, ", ")
+    return header
+
+function read_module(file: string) -> Module
+    lines = strings.lines(io.read_file(filesystem.join(LIBRARY, file)))
+    heading: Array<string> = []
+    position = 0
+    while position < length(lines) and strings.starts_with(lines[position], "#")
+        push(heading, comment_text(lines[position]))
+        position += 1
+    types = type_names(lines)
+    exports: Array<Export> = []
+    for line_number in range(length(lines))
+        rest = clone(lines[line_number])
+        for prefix in ["unsafe ", "foreign "]
+            if strings.starts_with(rest, prefix)
+                rest = strings.slice(rest, length(prefix), length(rest))
+        kind = ""
+        for keyword in ["function", "type", "enum", "constant"]
+            if strings.starts_with(rest, keyword + " ")
+                kind = clone(keyword)
+        if kind == ""
+            continue
+        name = identifier(rest, length(kind) + 1)
+        # A method's type is the one its name starts with, the longest such:
+        # `datagram_socket_close` is DatagramSocket's, not Datagram's.
+        owner = ""
+        if kind == "function"
+            for type_name in types
+                prefix = snake(type_name) + "_"
+                if strings.starts_with(name, prefix) and strings.contains(rest, type_name) and length(prefix) > length(snake(owner)) + 1
+                    owner = clone(type_name)
+        push(exports, Export(name = name, kind = clone(kind), declaration = declaration(lines, line_number, kind), description = comment_above(lines, line_number), owner = owner))
+    path = "standard/" + file
+    return Module(path = path, summary = paragraph(heading), exports = exports)
+
+# A heading's anchor, as GitHub makes it.
+function anchor(text: string) -> string
+    out: Array<string> = []
+    for character in strings.characters(strings.lower(text))
+        if character == " "
+            push(out, "-")
+        elseif is_word_character(character) or character == "-"
+            push(out, clone(character))
+    return strings.join(out, "")
+
+# Text for a table's cell.
+function table_cell(text: string) -> string
+    return strings.replace(text, "|", "\\|")
+
+function render(modules: Array<Module>) -> string
+    total = 0
+    documented = 0
+    for module in modules
+        for export in module.exports
+            total += 1
+            if export.description != ""
+                documented += 1
+    out: Array<string> = []
+    push(out, "# The standard library's API")
+    push(out, "")
+    push(out, "Every export of the standard library, read from its declarations in `stdlib/`, with the first paragraph of the comment above each. `sayon run scripts/api_inventory.sayon` writes this page, and `cargo test` checks that it is current, so it always says what the library has. {length(modules)} modules hold {total} exports, {documented} of them with a description.")
+    push(out, "")
+    push(out, "A method is a function whose name starts with its type's, called on a value of the type: `set_add(set, value)` is written `set.add(value)`.")
+    push(out, "")
+    push(out, "| Module | Exports | For |")
+    push(out, "|---|---|---|")
+    for module in modules
+        push(out, "| [`{module.path}`](#{anchor(module.path)}) | {length(module.exports)} | {table_cell(module.summary)} |")
+    for module in modules
+        push(out, "")
+        push(out, "## {module.path}")
+        push(out, "")
+        if module.summary != ""
+            push(out, clone(module.summary))
+            push(out, "")
+        push(out, "| Export | Declaration | Description |")
+        push(out, "|---|---|---|")
+        for export in module.exports
+            description = clone(export.description)
+            if export.owner != ""
+                method = strings.slice(export.name, length(snake(export.owner)) + 1, length(export.name))
+                description = "Method `{method}` of `{export.owner}`. " + description
+            if strings.trim(description) == ""
+                description = "—"
+            push(out, "| `{export.name}` | `{table_cell(export.declaration)}` | {table_cell(strings.trim(description))} |")
+    push(out, "")
+    return strings.join(out, "\n")
+
+function main()
+    modules: Array<Module> = []
+    for file in filesystem.list(LIBRARY)
+        if filesystem.extension(file) == "sayon"
+            push(modules, read_module(file))
+    page = render(modules)
+    arguments = os.arguments()
+    if length(arguments) > 0 and arguments[0] == "--check"
+        written = ""
+        if filesystem.is_file(PAGE)
+            written = io.read_file(PAGE)
+        if written != page
+            io.write_error("{PAGE} is not current; run `sayon run scripts/api_inventory.sayon` and commit it\n")
+            os.exit(1)
+        print("{PAGE} is current")
+        return
+    io.write_file(PAGE, page)
+    print("wrote {PAGE}")

@@ -1,0 +1,42 @@
+filesystem = import("standard/filesystem.sayon")
+io = import("standard/io.sayon")
+
+# Paths written plainly, as every system gives them.
+for path in ["docs/./drafts/../notes.txt", "a//b/", "./a", "a/..", "", ".", "..", "../../a/./b/..", "a/../../b", "/..", "/a/../..", "/a/./b//c/", "/"]
+    print("[{path}]", filesystem.normalize(path))
+
+# On Windows `\` separates components too, and a drive's root and a network
+# share are roots, which `..` cannot leave.
+if platform == "windows"
+    cases = [
+        ["C:/", filesystem.parent("C:\\Users")],
+        ["C:/", filesystem.parent("C:\\")],
+        ["", filesystem.name("C:\\")],
+        ["C:/", filesystem.normalize("C:\\Users\\..\\..")],
+        ["C:/Users/notes.txt", filesystem.normalize("C:\\Users\\ada\\..\\notes.txt")],
+        ["//server/share/", filesystem.parent("\\\\server\\share\\docs")],
+        ["//server/share/x", filesystem.normalize("\\\\server\\share\\..\\x")],
+        ["C:notes.txt", filesystem.normalize("C:notes.txt")],
+        ["x", filesystem.normalize("C:notes\\..\\x")]
+    ]
+    for pair in cases
+        if pair[0] != pair[1]
+            print("on Windows, expected {pair[0]}, found {pair[1]}")
+print("Windows paths checked")
+
+# The system's own name for a path, links followed. What it is depends on
+# where the program runs, and under WASI on the directories it was given,
+# so the checks are of what holds everywhere.
+root = "paths_check.tmp"
+filesystem.create_directory(filesystem.join(root, "inner"))
+io.write_file(filesystem.join(root, "first.txt"), "first")
+resolved = filesystem.canonical(root)
+file = filesystem.canonical(filesystem.join(root, "inner/../first.txt"))
+print(filesystem.canonical(resolved) == resolved, filesystem.is_directory(resolved), filesystem.name(resolved))
+print(file == filesystem.canonical(filesystem.join(root, "first.txt")), filesystem.name(file), filesystem.parent(file) == filesystem.normalize(resolved))
+missing = try filesystem.canonical(filesystem.join(root, "missing.txt"))
+if missing is error
+    print(missing.code, missing.message)
+filesystem.remove(filesystem.join(root, "first.txt"))
+filesystem.remove(filesystem.join(root, "inner"))
+filesystem.remove(root)

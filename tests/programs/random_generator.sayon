@@ -1,0 +1,83 @@
+math = import("standard/math.sayon")
+
+# MRG32k3a's numbers as Rosetta Code's task gives them: each recurrence
+# starts with 1234567 as its newest number, and its integers are the
+# generator's numbers plus 1.
+reference = math.Generator(state = [0, 0, 1234567, 0, 0, 1234567])
+numbers: Array<integer> = []
+for _count in range(5)
+    push(numbers, reference.integer(0, 4294967087) + 1)
+print(numbers)
+
+# A seed's numbers are the same everywhere, and from one version to the next.
+seeded = math.new_generator(42)
+print(seeded.integer(0, 100), seeded.integer(0, 100), seeded.integer(-5, 5))
+print(seeded.float(), seeded.float())
+print(seeded.integer(0, 9223372036854775807), seeded.integer(-9223372036854775807, 0))
+deck = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+seeded.shuffle(deck)
+print(deck)
+
+# The same seed gives the same numbers; another seed, others.
+first = math.new_generator(7)
+second = math.new_generator(7)
+third = math.new_generator(8)
+same = true
+different = false
+for _count in range(100)
+    value = first.float()
+    if second.float() != value
+        same = false
+    if third.float() != value
+        different = true
+print(same, different)
+
+# Numbers stay in their ranges, and each face of a die comes up about as
+# often as the others.
+dice = math.new_generator(2026)
+faces = [0, 0, 0, 0, 0, 0]
+within = true
+for _roll in range(3000)
+    rolled = dice.integer(1, 7)
+    faces[rolled - 1] += 1
+    fraction = dice.float()
+    if fraction < 0.0 or fraction >= 1.0
+        within = false
+    small = dice.integer(-3, -1)
+    if small < -3 or small >= -1
+        within = false
+even = true
+for count in faces
+    if count < 400 or count > 600
+        even = false
+print(within, even)
+
+# Shuffling keeps every item, and an empty or one-item array as it is.
+cards: Array<integer> = []
+for card in range(52)
+    push(cards, card)
+dice.shuffle(cards)
+kept = clone(cards)
+moved = false
+for position in range(52)
+    if cards[position] != position
+        moved = true
+found = 0
+for card in range(52)
+    for held in kept
+        if held == card
+            found += 1
+print(found, moved)
+nothing_to_shuffle: Array<string> = []
+dice.shuffle(nothing_to_shuffle)
+alone = ["ace"]
+dice.shuffle(alone)
+print(length(nothing_to_shuffle), alone)
+
+# An empty range, and one wider than an integer holds, fail.
+empty = try dice.integer(3, 3)
+if empty is error
+    print(empty.code, empty.message)
+wide = try dice.integer(-10, 9223372036854775807)
+if wide is error
+    print(wide.code)

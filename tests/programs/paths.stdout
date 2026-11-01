@@ -1,0 +1,17 @@
+[docs/./drafts/../notes.txt] docs/notes.txt
+[a//b/] a/b
+[./a] a
+[a/..] .
+[] .
+[.] .
+[..] ..
+[../../a/./b/..] ../../a
+[a/../../b] ../b
+[/..] /
+[/a/../..] /
+[/a/./b//c/] /a/b/c
+[/] /
+Windows paths checked
+true true paths_check.tmp
+true first.txt true
+IOError could not resolve "paths_check.tmp/missing.txt": it does not exist

@@ -35,30 +35,39 @@ private constant SECONDS_PER_DAY = 86_400
 
 # ----- durations --------------------------------------------------------------
 
+# A duration of `count` nanoseconds.
 function nanoseconds(count: integer) -> Duration
     return Duration(nanoseconds = count)
 
+# A duration of `count` microseconds.
 function microseconds(count: integer) -> Duration
     return Duration(nanoseconds = count * 1_000)
 
+# A duration of `count` milliseconds.
 function milliseconds(count: integer) -> Duration
     return Duration(nanoseconds = count * 1_000_000)
 
+# A duration of `count` seconds.
 function seconds(count: integer) -> Duration
     return Duration(nanoseconds = count * NANOSECONDS_PER_SECOND)
 
+# A duration of `count` minutes.
 function minutes(count: integer) -> Duration
     return seconds(count * 60)
 
+# A duration of `count` hours.
 function hours(count: integer) -> Duration
     return seconds(count * 3_600)
 
+# The two durations together.
 function add(a: Duration, b: Duration) -> Duration
     return Duration(nanoseconds = a.nanoseconds + b.nanoseconds)
 
+# The first duration less the second.
 function subtract(a: Duration, b: Duration) -> Duration
     return Duration(nanoseconds = a.nanoseconds - b.nanoseconds)
 
+# The duration `factor` times over.
 function scale(duration: Duration, factor: integer) -> Duration
     return Duration(nanoseconds = duration.nanoseconds * factor)
 
@@ -211,9 +220,11 @@ function weekday(moment: DateTime) -> integer
     # 1970-01-01 was a Thursday.
     return floor_modulo(days + 3, 7) + 1
 
+# Whether a year of the Gregorian calendar, extended backwards, has 366 days.
 function is_leap_year(year: integer) -> boolean
     return year % 4 == 0 and year % 100 != 0 or year % 400 == 0
 
+# How many days a month, 1 to 12, of a year has.
 function days_in_month(year: integer, month: integer) -> integer
     if month == 2
         if is_leap_year(year)

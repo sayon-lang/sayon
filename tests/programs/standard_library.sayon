@@ -32,6 +32,8 @@ print(chance >= 0.0 and chance < 1.0)
 print(filesystem.join("docs", "notes.txt"), filesystem.name("docs/notes.txt"), filesystem.parent("a/b/c.txt"))
 print(filesystem.parent("/tmp/a/b"), filesystem.parent("/tmp"), filesystem.parent("/"), "[" + filesystem.parent("notes.txt") + "]")
 print(filesystem.extension("archive.tar.gz"), "[" + filesystem.extension(".profile") + "]")
+here = filesystem.absolute(".")
+print(filesystem.absolute("notes/../todo.txt") == filesystem.join(here, "todo.txt"), filesystem.absolute(here) == here, filesystem.normalize(here) == here)
 
 # files and directories
 root = "library_check.tmp"

@@ -39,7 +39,8 @@ pub fn host_capability(host: Host) -> Option<Capability> {
         | Host::ReadFileBytes
         | Host::WriteFileBytes
         | Host::Walk
-        | Host::IsLink => Files,
+        | Host::IsLink
+        | Host::Canonical => Files,
         Host::Arguments | Host::Environment | Host::CurrentDirectory => Environment,
         Host::Monotonic | Host::UnixTime => Clock,
         Host::Random | Host::RandomBytes => Random,

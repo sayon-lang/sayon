@@ -1,0 +1,25 @@
+[one two 　
+] [ 	 one two] [one two]
+[] []
+007 [ab  ] [  ab]
+··héllo toolong xx
+apples..   3
+kiwis...  12
+ValueError padding is one character, not "ab"
+42 -17 8
+255 255 -5 1295 511
+9223372036854775807 -9223372036854775808
+-9223372036854775808 12
+ParseError "" is not an integer
+ParseError "-" is not an integer
+ParseError "12a" is not an integer in base 10
+ParseError "1.5" is not an integer in base 10
+ParseError " 1" is not an integer in base 10
+ParseError "9223372036854775808" does not fit in an integer
+ParseError "-9223372036854775809" does not fit in an integer
+ParseError "2" is not an integer in base 2
+ValueError a base is from 2 to 36, not 37
+3.14 2.67 0.12 2 -2
+7.000 -0.0 1000000000000000000000.0 0.33333333333333331483
+inf -inf nan
+ValueError a decimal has 0 to 100 places, not 101

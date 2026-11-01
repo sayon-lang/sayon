@@ -1,0 +1,11 @@
+[1459213977, 2827710106, 4245671317, 3877608661, 2595287583]
+31 41 2
+0.8835132307166812 0.3163367718572445
+5542481729160538858 -3116719003750632538
+[10, 3, 5, 8, 7, 1, 4, 9, 2, 6]
+true true
+true true
+52 true
+0 ["ace"]
+ValueError a generator's integer needs `high` above `low`, not 3 and 3
+OverflowError

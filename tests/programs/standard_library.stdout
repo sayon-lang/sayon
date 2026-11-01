@@ -14,6 +14,7 @@ true
 docs/notes.txt notes.txt a/b
 /tmp/a / / []
 gz []
+true true true
 ["first.txt", "second.txt"] 14 ["one", "two", "three"]
 true true false
 ["first.txt", "inner", "inner/nested", "inner/nested/deep.txt", "second.txt"] false

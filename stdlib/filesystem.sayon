@@ -6,12 +6,16 @@
 #
 # Paths are text. Both `/` and, on Windows, `\` separate path components.
 
+# Whether something is at `path`, following symbolic links. A path that
+# cannot be looked at, as for lack of permission, counts as there.
 function exists(path: string) -> boolean
     return host_path_kind(path) != "missing"
 
+# Whether `path` is a file, following symbolic links.
 function is_file(path: string) -> boolean
     return host_path_kind(path) == "file"
 
+# Whether `path` is a directory, following symbolic links.
 function is_directory(path: string) -> boolean
     return host_path_kind(path) == "directory"
 
@@ -42,9 +46,11 @@ function create_directory(path: string)
 function remove(path: string)
     host_remove(path)
 
+# Moves a file or directory to `to`, replacing a file already there.
 function rename(from: string, to: string)
     host_rename(from, to)
 
+# Copies a file's contents to `to`, replacing a file already there.
 function copy(from: string, to: string)
     host_copy_file(from, to)
 
@@ -58,19 +64,65 @@ function join(base: string, name: string) -> string
 
 # The last component of a path: `name("docs/notes.txt")` is "notes.txt".
 function name(path: string) -> string
-    parts = components(path)
-    last = pop(parts)
+    parts = split_path(path)
+    last = pop(parts.components)
     if last == nothing
         return ""
     return last
 
 # The path without its last component: `parent("docs/notes.txt")` is "docs".
-# A path from the root keeps it: `parent("/home/ada")` is "/home", and
-# `parent("/home")` is "/".
+# A path from a root keeps it: `parent("/home/ada")` is "/home", and
+# `parent("/home")` is "/"; on Windows `parent("C:\Users")` is "C:/".
 function parent(path: string) -> string
-    parts = components(path)
-    pop(parts)
-    return root(path) + host_join(parts, "/")
+    parts = split_path(path)
+    pop(parts.components)
+    return parts.root + host_join(parts.components, "/")
+
+# The path written plainly, without looking at the filesystem: one `/`
+# between components, no `.` components, and each `..` taking away the
+# component before it. `normalize("docs/./drafts/../notes.txt")` is
+# "docs/notes.txt". A `..` at the start of a relative path stays, and one at
+# a root goes: `normalize("../notes")` is "../notes", and `normalize("/..")`
+# is "/". A relative path that comes to nothing is ".". When the component
+# before a `..` is a symbolic link, the path can lead elsewhere than the
+# normalized one does; `canonical` follows links.
+function normalize(path: string) -> string
+    parts = split_path(path)
+    kept: Array<string> = []
+    for part in parts.components
+        if part == "."
+            continue
+        if part == ".."
+            if length(kept) > 0 and kept[length(kept) - 1] != ".."
+                pop(kept)
+            elseif parts.root == ""
+                push(kept, "..")
+            continue
+        push(kept, clone(part))
+    written = parts.root + host_join(kept, "/")
+    if written == ""
+        return "."
+    return written
+
+# The path from a root, without looking at the filesystem: a relative path
+# joined to the current directory, then normalized as `normalize` does.
+function absolute(path: string) -> string
+    parts = split_path(path)
+    if parts.root == ""
+        return normalize(join(host_current_directory(), path))
+    # On Windows, `\notes` is on the current directory's drive.
+    if parts.root == "/" and host_platform() == "windows"
+        here = split_path(host_current_directory())
+        return normalize(here.root + path)
+    return normalize(path)
+
+# The name the system knows a file or directory by, as it writes it: the
+# path from the root with every symbolic link followed, and on Windows with
+# `\` and each name's letter case as it is on disk. Under WASI it is the path
+# the program sees, from the root of the directories it was given. Fails
+# with IOError when nothing is at `path`.
+function canonical(path: string) -> string
+    return host_canonical(path)
 
 # The extension of the last component, without the dot, or "" when there is
 # none: `extension("notes.txt")` is "txt", and `extension(".profile")` is "".
@@ -90,26 +142,44 @@ private function ends_with_separator(path: string) -> boolean
         return true
     return host_platform() == "windows" and host_ends_with(path, "\\")
 
-# What a path starts from when it starts at a root: "/", or "//" for a
-# Windows network share's `\\server\share`; "" for a relative path. A drive,
-# as in `C:\`, is a component of its own.
-private function root(path: string) -> string
-    normalized = clone(path)
-    if host_platform() == "windows"
-        normalized = host_replace(path, "\\", "/")
-    if host_starts_with(normalized, "//")
-        return "//"
-    if host_starts_with(normalized, "/")
-        return "/"
-    return ""
+# A path taken apart: what it starts from when it starts at a root, which
+# `..` cannot leave, and its other non-empty components.
+private type PathParts = [root: string, components: Array<string>]
 
-# The non-empty components of a path.
-private function components(path: string) -> Array<string>
+# Takes a path apart. Its root is "/" for a path from the root, and "" for a
+# relative path; on Windows it is also a drive's root, as "C:/" for `C:\`,
+# or a network share, as "//server/share/" for `\\server\share`. A drive
+# without a separator after it, as in `C:notes.txt`, is a component.
+private function split_path(path: string) -> PathParts
+    windows = host_platform() == "windows"
     normalized = clone(path)
-    if host_platform() == "windows"
+    if windows
         normalized = host_replace(path, "\\", "/")
-    parts: Array<string> = []
+    names: Array<string> = []
     for part in host_split(normalized, "/")
         if part != ""
-            push(parts, clone(part))
-    return parts
+            push(names, clone(part))
+    root = ""
+    taken = 0
+    if windows and host_starts_with(normalized, "//")
+        # The share's server and name.
+        root = "//"
+        while taken < 2 and taken < length(names)
+            root = root + names[taken] + "/"
+            taken += 1
+    elseif host_starts_with(normalized, "/")
+        root = "/"
+    elseif windows and length(names) > 0 and is_drive(names[0]) and host_starts_with(normalized, names[0] + "/")
+        root = names[0] + "/"
+        taken = 1
+    components: Array<string> = []
+    for position in range(taken, length(names))
+        push(components, clone(names[position]))
+    return PathParts(root = root, components = components)
+
+# Whether a component names a Windows drive, as "C:" does.
+private function is_drive(component: string) -> boolean
+    if length(component) != 2 or component[1] != ":"
+        return false
+    letter = component[0]
+    return letter >= "A" and letter <= "Z" or letter >= "a" and letter <= "z"
