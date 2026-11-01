@@ -329,18 +329,25 @@ fn system_v(target: &Target) -> bool {
 }
 
 /// Whether the target passes C structures by the procedure call standard
-/// for ARM64 (AAPCS64), as Linux and Android do. Apple's and Windows' ARM64
-/// conventions differ in what they do with the stack and with variadic
-/// functions.
+/// for ARM64 (AAPCS64), as Linux and Android do, and as Windows does for
+/// functions that are not variadic, but for the stack's alignment of
+/// floats. Apple's ARM64 convention differs in what it does with the
+/// stack, and Windows' for variadic functions passes floats, and structures
+/// of them, as integers, for every parameter.
 fn aapcs64(target: &Target) -> bool {
-    target.processor == "arm64" && matches!(target.platform, "linux" | "android")
+    target.processor == "arm64" && matches!(target.platform, "linux" | "android" | "windows")
 }
 
-/// Whether compiled programs know how the target passes C structures: the
-/// Windows x64, System V x86-64, AAPCS64, and basic WebAssembly conventions
-/// so far.
-pub fn structures_supported(target: &Target) -> bool {
-    target.processor == "x64" || target.processor == "wasm32" || aapcs64(target)
+/// Whether compiled programs know how the target passes C structures to and
+/// from `function`: by the Windows x64, System V x86-64, AAPCS64, and basic
+/// WebAssembly conventions so far, but not to and from Windows ARM64's
+/// variadic functions.
+pub fn structures_supported(target: &Target, function: &ForeignFunction) -> bool {
+    match target.processor {
+        "x64" | "wasm32" => true,
+        "arm64" if target.platform == "windows" => !function.variadic,
+        _ => aapcs64(target),
+    }
 }
 
 /// The largest value a structure is coerced to: four doubles.
@@ -377,13 +384,19 @@ fn homogeneous_floats(types: &[TypeDef], ty: &Type, target: &Target) -> Option<S
 }
 
 /// AAPCS64, as clang lowers it: a homogeneous floating-point aggregate as
-/// its floats, aligned to 8 bytes should it go on the stack; another
-/// structure of up to 16 bytes as one word, or two, as a parameter, and as a
-/// result an integer of its size, or two words; any larger one by the
-/// address of a copy, or for a result through the address C writes it to.
+/// its floats, aligned to 8 bytes should it go on the stack (on Windows, to
+/// its floats' own alignment); another structure of up to 16 bytes as one
+/// word, or two, as a parameter, and as a result an integer of its size, or
+/// two words; any larger one by the address of a copy, or for a result
+/// through the address C writes it to.
 fn aapcs64_pass(types: &[TypeDef], ty: &Type, target: &Target, result: bool) -> CPass {
     if let Some(floats) = homogeneous_floats(types, ty, target) {
-        return CPass::Coerced(floats, if result { "" } else { "alignstack(8)" });
+        let attributes = if result || target.platform == "windows" {
+            ""
+        } else {
+            "alignstack(8)"
+        };
+        return CPass::Coerced(floats, attributes);
     }
     let (size, _) = c_size_align(types, ty, target);
     match size {
@@ -809,7 +822,9 @@ mod tests {
     }
 
     /// How AAPCS64 passes and gives each structure: the declared parameter
-    /// and the result's type, as clang declares them.
+    /// and the result's type, as clang declares them for Android, and for
+    /// Windows, where a structure of floats on the stack has no alignment of
+    /// 8 forced on it.
     #[test]
     fn arm64_passes_structures_as_clang_does() {
         let float = Type::Float(FloatType::F32);
@@ -825,7 +840,6 @@ mod tests {
             foreign(vec![float.clone(); 5]),
             foreign(vec![Type::Int(IntType::U8); 3]),
         ];
-        let target = sayon_target::find("android-arm64").unwrap();
         let expected = [
             ("i64", "i64"),
             ("[2 x float]", "[2 x float]"),
@@ -836,35 +850,53 @@ mod tests {
             ("ptr", "void"),
             ("i64", "i24"),
         ];
-        for (index, (param, result)) in expected.iter().enumerate() {
-            let ty = named(index as u32, true);
-            let function = ForeignFunction {
-                name: "f".into(),
-                library: "c".into(),
-                params: vec![ty.clone()],
-                variadic: false,
-                ret: ty,
-                span: sayon_syntax::Span {
-                    file: sayon_syntax::FileId(0),
-                    start: 0,
-                    end: 0,
-                },
-            };
-            let plan = c_plan(&types, &function, target);
-            assert_eq!(plan.ret_llvm, *result, "the result of structure {index}");
-            // A result through an address comes first, as `sret`.
-            let declared = plan.declared.last().unwrap();
-            assert_eq!(declared.0, *param, "the parameter of structure {index}");
-            let floats = param.contains("float") || param.contains("double");
-            let attributes = if floats { "alignstack(8)" } else { "" };
-            assert_eq!(
-                declared.1, attributes,
-                "a copy's address has no `byval` there"
-            );
+        let function = |index: usize, variadic: bool| ForeignFunction {
+            name: "f".into(),
+            library: "c".into(),
+            params: vec![named(index as u32, true)],
+            variadic,
+            ret: named(index as u32, true),
+            span: sayon_syntax::Span {
+                file: sayon_syntax::FileId(0),
+                start: 0,
+                end: 0,
+            },
+        };
+        for (name, float_attributes) in [("android-arm64", "alignstack(8)"), ("windows-arm64", "")]
+        {
+            let target = sayon_target::find(name).unwrap();
+            for (index, (param, result)) in expected.iter().enumerate() {
+                let plan = c_plan(&types, &function(index, false), target);
+                assert_eq!(
+                    plan.ret_llvm, *result,
+                    "the result of structure {index} ({name})"
+                );
+                // A result through an address comes first, as `sret`.
+                let declared = plan.declared.last().unwrap();
+                assert_eq!(
+                    declared.0, *param,
+                    "the parameter of structure {index} ({name})"
+                );
+                let floats = param.contains("float") || param.contains("double");
+                let attributes = if floats { float_attributes } else { "" };
+                assert_eq!(
+                    declared.1, attributes,
+                    "a copy's address has no `byval` there ({name})"
+                );
+            }
+            assert!(structures_supported(target, &function(0, false)));
         }
-        assert!(structures_supported(target));
+        // Windows ARM64 passes a variadic function's every parameter as it
+        // does the variadic ones, which compiled programs do not do yet.
+        let windows = sayon_target::find("windows-arm64").unwrap();
+        assert!(!structures_supported(windows, &function(0, true)));
+        assert!(structures_supported(
+            sayon_target::find("android-arm64").unwrap(),
+            &function(0, true)
+        ));
         assert!(!structures_supported(
-            sayon_target::find("macos-arm64").unwrap()
+            sayon_target::find("macos-arm64").unwrap(),
+            &function(0, false)
         ));
     }
 

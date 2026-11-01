@@ -57,7 +57,8 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | C structures (`foreign type`): C layout, by value in C calls, in C memory with `memory.read`, `write`, and `size`; Windows x64 and System V x86-64 (Linux) | experimental | M3 |
 | C structures by value in WebAssembly programs (WASI), by its basic C convention | experimental | M4 |
 | C structures by value on ARM64, by AAPCS64 as Linux and Android use it (Android ARM64 programs) | experimental | M4 |
-| C structures by value on Apple's and Windows' ARM64 | planned | with each platform's validation |
+| C structures by value on Windows ARM64, by AAPCS64 as Windows keeps it for functions that are not variadic | experimental | M5 |
+| C structures by value to and from Windows ARM64's variadic functions, and on Apple's ARM64 | planned | with each platform's validation |
 | C callbacks: Sayon function values, with what they captured, as parameters of C functions that call them during the call; failures raised once C returns; compiled programs on every target, the interpreter on Windows x64 and Linux x86-64 | experimental | M3 |
 | C callbacks that C keeps and calls after the call, or on other threads | planned | M4 |
 | Finally functions: a structure's own destruction, wherever its values are destroyed; never copied, cannot wait, failures fatal | experimental | M3 |
@@ -164,7 +165,7 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | Windows x64 (`x86_64-pc-windows-msvc`) | yes | yes | yes, development machine | no |
 | Linux x64 (`x86_64-unknown-linux-gnu`) | yes | yes | yes, Ubuntu 26.04 under WSL 2 | no |
 | Linux ARM64 (`aarch64-unknown-linux-gnu`) | yes | yes, on ARM64 Linux, and from Linux x64 with the ARM64 C library of the system's cross packages | yes, on GitHub's ARM64 runners (Ubuntu 24.04) for each change, and under QEMU 10.2's user-mode emulator | no |
-| Windows ARM64 (`aarch64-pc-windows-msvc`) | yes | yes, on Windows ARM64, and from Windows x64 with Visual Studio's ARM64 libraries | yes, on GitHub's ARM64 runners (Windows 11) for each change, but for C structures by value | no |
+| Windows ARM64 (`aarch64-pc-windows-msvc`) | yes | yes, on Windows ARM64, and from Windows x64 with Visual Studio's ARM64 libraries | yes, on GitHub's ARM64 runners (Windows 11) for each change | no |
 | WASI (`wasm32-wasip1`) | yes | yes, from any computer | yes, under wasmtime 50 | no |
 | Web pages (`wasm32-unknown-unknown`) | yes | yes, from any computer | yes, in Edge 156, Chrome 156, Firefox 158, and Node 24 | no |
 | Android x64 (`x86_64-linux-android`) | yes | yes, from any computer with the Android SDK | yes, on the Android 16 emulator (API 36) | no |

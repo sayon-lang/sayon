@@ -130,12 +130,13 @@ const INTERPRETER_CALLS_C: bool = cfg!(any(
 ));
 
 /// Whether programs compiled for this computer pass C structures by value,
-/// as `structures_supported` in crates/codegen/src/layout.rs says.
+/// as `structures_supported` in crates/codegen/src/layout.rs says for the
+/// C functions the tests declare, none of them variadic.
 const COMPILED_PROGRAMS_PASS_STRUCTURES: bool = cfg!(any(
     target_arch = "x86_64",
     all(
         target_arch = "aarch64",
-        any(target_os = "linux", target_os = "android")
+        any(target_os = "linux", target_os = "android", windows)
     )
 ));
 

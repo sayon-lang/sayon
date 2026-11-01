@@ -2633,11 +2633,13 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     declaration.ret.clone(),
                 );
                 let target = self.cg.module.target;
-                if passes_structures(declaration) && !structures_supported(target) {
+                if passes_structures(declaration) && !structures_supported(target, declaration) {
                     let code = self.cg.c_string("ForeignError");
-                    let message = self.cg.c_string(
-                        "compiled programs pass C structures only on x86-64, WebAssembly, and ARM64 with Linux or Android so far",
-                    );
+                    let message = self.cg.c_string(if target.platform == "windows" {
+                        "on Windows ARM64, compiled programs do not pass C structures to and from variadic C functions yet"
+                    } else {
+                        "compiled programs pass C structures only on x86-64, WebAssembly, and ARM64 with Linux, Android, or Windows so far"
+                    });
                     let location = self.cg.location(span);
                     let status = self.body.tmp();
                     self.body.line(format!(
