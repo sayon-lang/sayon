@@ -33,8 +33,8 @@
 //! receives a pointer to the environment structure before its arguments.
 
 use sayon_check::types::{
-    Eightbyte, FloatType, IntType, NamedType, Type, TypeDef, Wrapper, c_layout, c_size_align,
-    structure_fields, sysv_eightbytes, variant_fields, win64_in_register,
+    Eightbyte, FloatType, IntType, NamedType, Type, TypeDef, Wrapper, aapcs64_floats, c_layout,
+    c_size_align, structure_fields, sysv_eightbytes, variant_fields, win64_in_register,
 };
 
 /// The bytes before the value in a shared value's block.
@@ -353,34 +353,17 @@ pub fn structures_supported(target: &Target, function: &ForeignFunction) -> bool
 /// The largest value a structure is coerced to: four doubles.
 pub const COERCED_BYTES: u64 = 32;
 
-/// The numbers a structure holds, in any nesting, with their offsets.
-fn leaves(types: &[TypeDef], ty: &Type, offset: u64, out: &mut Vec<(u64, Type)>, target: &Target) {
-    match ty {
-        Type::Named(named) => {
-            for (field_offset, field) in c_layout(types, named, target).fields {
-                leaves(types, &field, offset + field_offset, out, target);
-            }
-        }
-        other => out.push((offset, other.clone())),
-    }
-}
-
 /// AAPCS64: the LLVM type of a homogeneous floating-point aggregate, a
 /// structure of one to four floats, or one to four doubles, with nothing
 /// else, which goes in that many vector registers.
 fn homogeneous_floats(types: &[TypeDef], ty: &Type, target: &Target) -> Option<String> {
-    let mut found = Vec::new();
-    leaves(types, ty, 0, &mut found, target);
-    let (size, _) = c_size_align(types, ty, target);
-    let element = match found.first()?.1 {
-        Type::Float(FloatType::F32) => "float",
-        Type::Float(FloatType::F64) => "double",
-        _ => return None,
+    let (count, kind) = aapcs64_floats(types, ty, target)?;
+    let element = if kind == FloatType::F32 {
+        "float"
+    } else {
+        "double"
     };
-    let each = if element == "float" { 4 } else { 8 };
-    let same = found.iter().all(|(_, leaf)| *leaf == found[0].1);
-    (same && found.len() <= 4 && size == each * found.len() as u64)
-        .then(|| format!("[{} x {element}]", found.len()))
+    Some(format!("[{count} x {element}]"))
 }
 
 /// AAPCS64, as clang lowers it: a homogeneous floating-point aggregate as

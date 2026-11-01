@@ -123,10 +123,10 @@ fn online_programs_produce_their_recorded_output() {
 }
 
 /// Whether the interpreter calls C functions on this computer: on Windows
-/// x64 and Linux x64 so far (see crates/interp/src/foreign.rs).
-const INTERPRETER_CALLS_C: bool = cfg!(any(
-    all(windows, target_arch = "x86_64"),
-    all(target_os = "linux", target_arch = "x86_64")
+/// and Linux, x64 and ARM64, so far (see crates/interp/src/foreign.rs).
+const INTERPRETER_CALLS_C: bool = cfg!(all(
+    any(windows, target_os = "linux"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
 ));
 
 /// Whether programs compiled for this computer pass C structures by value,

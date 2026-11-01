@@ -624,6 +624,37 @@ pub fn sysv_eightbytes(types: &[TypeDef], ty: &Type, target: &Target) -> Option<
     )
 }
 
+/// How many floats, and of what type, a homogeneous floating-point
+/// aggregate of the procedure call standard for ARM64 (AAPCS64) holds: a
+/// structure of one to four floats, or one to four doubles, with nothing
+/// else however nested, which goes in that many vector registers. `None`
+/// for any other type.
+pub fn aapcs64_floats(types: &[TypeDef], ty: &Type, target: &Target) -> Option<(usize, FloatType)> {
+    fn leaves(types: &[TypeDef], ty: &Type, out: &mut Vec<Type>, target: &Target) {
+        match ty {
+            Type::Named(named) => {
+                for (_, field) in c_layout(types, named, target).fields {
+                    leaves(types, &field, out, target);
+                }
+            }
+            other => out.push(other.clone()),
+        }
+    }
+    let Type::Named(_) = ty else {
+        return None;
+    };
+    let mut found = Vec::new();
+    leaves(types, ty, &mut found, target);
+    let Some(Type::Float(kind)) = found.first() else {
+        return None;
+    };
+    let kind = *kind;
+    let each = if kind == FloatType::F32 { 4 } else { 8 };
+    let (size, _) = c_size_align(types, ty, target);
+    let same = found.iter().all(|leaf| *leaf == Type::Float(kind));
+    (same && found.len() <= 4 && size == each * found.len() as u64).then_some((found.len(), kind))
+}
+
 /// The size and alignment C gives on `target` a value of a type C functions
 /// take: a number, a pointer, or a `foreign type` structure.
 pub fn c_size_align(types: &[TypeDef], ty: &Type, target: &Target) -> (u64, u64) {
