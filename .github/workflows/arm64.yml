@@ -1,0 +1,58 @@
+# Runs Sayon's tests on ARM64 computers: GitHub's ARM64 runners for Linux
+# (Ubuntu 24.04) and Windows 11. There the native checks compile every
+# program under tests/programs for the computer's own target, linux-arm64 or
+# windows-arm64, and run it on ARM64 hardware, which emulation and
+# cross-builds cannot stand in for. WebAssembly, the browsers, and Android
+# are the same on any processor and are checked on x64 development
+# computers, so they are skipped here.
+name: ARM64
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  SAYON_SKIP_WASI: "1"
+  SAYON_SKIP_WEB: "1"
+  SAYON_SKIP_BROWSERS: "1"
+  SAYON_SKIP_ANDROID: "1"
+
+jobs:
+  test:
+    name: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04-arm, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - name: Check out Sayon
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: sayon
+      # The registry tests run the registry, which lives beside Sayon.
+      - name: Check out the registry
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: sayon-lang/packages.sayon-lang.org
+          path: packages.sayon-lang.org
+      - name: Build
+        working-directory: sayon
+        run: cargo build --workspace
+      - name: Doctor
+        working-directory: sayon
+        run: cargo run --quiet -p sayon-cli -- doctor
+      - name: Test
+        working-directory: sayon
+        run: cargo test --workspace --no-fail-fast

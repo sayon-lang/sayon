@@ -122,13 +122,43 @@ fn online_programs_produce_their_recorded_output() {
     }
 }
 
+/// Whether the interpreter calls C functions on this computer: on Windows
+/// x64 and Linux x64 so far (see crates/interp/src/foreign.rs).
+const INTERPRETER_CALLS_C: bool = cfg!(any(
+    all(windows, target_arch = "x86_64"),
+    all(target_os = "linux", target_arch = "x86_64")
+));
+
+/// Whether programs compiled for this computer pass C structures by value,
+/// as `structures_supported` in crates/codegen/src/layout.rs says.
+const COMPILED_PROGRAMS_PASS_STRUCTURES: bool = cfg!(any(
+    target_arch = "x86_64",
+    all(
+        target_arch = "aarch64",
+        any(target_os = "linux", target_os = "android")
+    )
+));
+
+/// Whether a program has a line that starts with `what`, such as a block of
+/// C functions (`foreign "c"`) or a C structure (`foreign type`).
+fn declares(source: &Path, what: &str) -> bool {
+    std::fs::read_to_string(source)
+        .is_ok_and(|text| text.lines().any(|line| line.starts_with(what)))
+}
+
 /// Runs each program under `dir` and compares its output, errors, and status
-/// with the recorded ones.
+/// with the recorded ones. On a computer where the interpreter does not call
+/// C functions yet, the programs that do are left out, and listed.
 fn run_programs(dir: &Path) {
     serve_http();
     let mut failures = Vec::new();
+    let mut left_out = Vec::new();
     for source in sources(dir) {
         let name = source.file_name().unwrap().to_string_lossy().to_string();
+        if !INTERPRETER_CALLS_C && declares(&source, "foreign \"") {
+            left_out.push(name);
+            continue;
+        }
         // A program's `.stdin` file, when it has one, is its input.
         let input = read_expectation(&source.with_extension("stdin"));
         let outcome = sayon_with_env(
@@ -164,6 +194,12 @@ fn run_programs(dir: &Path) {
             false,
         );
     }
+    if !left_out.is_empty() {
+        eprintln!(
+            "left out, since the interpreter calls C functions only on x64 so far: {}",
+            left_out.join(", ")
+        );
+    }
     assert!(
         failures.is_empty(),
         "{} fixture problem(s):\n\n{}",
@@ -186,12 +222,18 @@ fn native_programs_match_the_interpreter() {
 }
 
 /// Builds each program under `dir` natively and compares its behavior with
-/// the interpreter's recorded one.
+/// the interpreter's recorded one. Where compiled programs do not pass C
+/// structures yet, the programs that declare them are left out, and listed.
 fn run_native_programs(dir: &Path) {
     serve_http();
     let mut failures = Vec::new();
+    let mut left_out = Vec::new();
     for source in sources(dir) {
         let name = source.file_name().unwrap().to_string_lossy().to_string();
+        if !COMPILED_PROGRAMS_PASS_STRUCTURES && declares(&source, "foreign type") {
+            left_out.push(name);
+            continue;
+        }
         let outcome = sayon_with_env(
             dir,
             &["run", "--native", "--color", "never", &name],
@@ -207,6 +249,12 @@ fn run_native_programs(dir: &Path) {
             continue;
         }
         compare_with_interpreter(&mut failures, &source, outcome, "native");
+    }
+    if !left_out.is_empty() {
+        eprintln!(
+            "left out, since programs compiled here do not pass C structures yet: {}",
+            left_out.join(", ")
+        );
     }
     assert!(
         failures.is_empty(),
