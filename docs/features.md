@@ -53,13 +53,14 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | `Mutex<T>`: `mutex`, `.get()`, `.set()`, `.replace()`, `.change()`; sendable values checked where a task crosses threads; `LockError` for waiting under a lock | experimental | M3 |
 | C functions: `foreign` blocks, variadic calls, the target's C types, `pointer` and `null_pointer`, `c_string`; `unsafe` blocks, expressions, and functions; `standard/memory` | experimental | M3 |
 | C functions in the interpreter on Linux x86-64 (System V), with C structures and callbacks | experimental | M3 |
-| C functions in the interpreter on macOS and on ARM64 | planned | with each platform's validation |
+| C functions in the interpreter on ARM64, Linux's and Windows' (AAPCS64), with C structures and callbacks | experimental | M5 |
+| C functions in the interpreter on macOS | planned | with its validation |
 | C structures (`foreign type`): C layout, by value in C calls, in C memory with `memory.read`, `write`, and `size`; Windows x64 and System V x86-64 (Linux) | experimental | M3 |
 | C structures by value in WebAssembly programs (WASI), by its basic C convention | experimental | M4 |
 | C structures by value on ARM64, by AAPCS64 as Linux and Android use it (Android ARM64 programs) | experimental | M4 |
 | C structures by value on Windows ARM64, by AAPCS64 as Windows keeps it for functions that are not variadic | experimental | M5 |
 | C structures by value to and from Windows ARM64's variadic functions, and on Apple's ARM64 | planned | with each platform's validation |
-| C callbacks: Sayon function values, with what they captured, as parameters of C functions that call them during the call; failures raised once C returns; compiled programs on every target, the interpreter on Windows x64 and Linux x86-64 | experimental | M3 |
+| C callbacks: Sayon function values, with what they captured, as parameters of C functions that call them during the call; failures raised once C returns; compiled programs on every target, the interpreter on Windows and Linux, x64 and ARM64 | experimental | M3 |
 | C callbacks that C keeps and calls after the call, or on other threads | planned | M4 |
 | Finally functions: a structure's own destruction, wherever its values are destroyed; never copied, cannot wait, failures fatal | experimental | M3 |
 | Tasks (fibers) and channels: `standard/threads` `spawn`, `join`, `detach`, `pause`, bounded, unbounded, and rendezvous channels, `receive_result`, `recoverable_send`, `select`; cancellation with cleanup, shutdown of tasks at the end of `main`, deadlock detection; native on Windows and Linux x86-64, and on Android (x86-64 and ARM64) | experimental | M3 |
