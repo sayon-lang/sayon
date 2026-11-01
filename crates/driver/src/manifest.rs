@@ -116,7 +116,9 @@ const PACKAGE_KEYS: [&str; 6] = [
 const COMPILER_KEYS: [&str; 3] = ["targets", "required_capabilities", "capability_manifest"];
 const DEPENDENCY_TABLES: [&str; 2] = ["dependencies", "dev_dependencies"];
 
-fn valid_name(text: &str) -> bool {
+/// Whether text is a name packages, dependencies, and registry accounts
+/// can have: lowercase letters, digits, and `_`, starting with a letter.
+pub fn valid_name(text: &str) -> bool {
     text.chars().next().is_some_and(|c| c.is_ascii_lowercase())
         && text
             .chars()

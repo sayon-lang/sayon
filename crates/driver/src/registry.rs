@@ -9,7 +9,7 @@
 use crate::json::Json;
 use crate::manifest::{Dependency, Source};
 use crate::packages::PackageError;
-use crate::semver::Version;
+use crate::semver::{Requirement, Version};
 use sayon_syntax::{FileId, Span};
 
 /// The protocol's version, which every address of it starts with:
@@ -96,6 +96,23 @@ fn text(value: &Json, key: &str) -> Result<String, String> {
         .ok_or_else(|| format!("the registry's answer has no `{key}`"))
 }
 
+/// Text a registry gave, as it is shown: without control characters, so
+/// that it cannot move the cursor, recolor the terminal, or add lines.
+pub fn printable(text: &str) -> String {
+    text.chars().filter(|c| !c.is_control()).collect()
+}
+
+/// Whether text is a digest as the index writes them: `sha256:` and 64
+/// lowercase hexadecimal digits.
+fn valid_digest(text: &str) -> bool {
+    text.strip_prefix("sha256:").is_some_and(|hex| {
+        hex.len() == 64
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
+}
+
 /// Where a package's file is in an index, as crates.io-index places them:
 /// `1/a`, `2/ab`, `3/a/abc`, and `ab/cd/abcdef` for longer names.
 pub fn index_path(name: &str) -> String {
@@ -126,7 +143,12 @@ pub fn config(answer: &Json) -> Result<Config, String> {
 }
 
 /// Reads a package's file of the index: a line of JSON for each version.
-/// The versions come in order, oldest first.
+/// The versions come in order, oldest first. Every line is checked as a
+/// manifest is, since a registry could lie: its dependencies' names, which
+/// become folders of the cache and lines of `sayon.lock`, are names, their
+/// ranges are ranges, and a dependency from another registry names it by
+/// an address Sayon reaches registries at, so that an index cannot send
+/// installing to a registry over plain HTTP.
 pub fn entries(file: &str) -> Result<Vec<Published>, String> {
     let mut versions = Vec::new();
     for (number, line) in file.lines().enumerate() {
@@ -137,25 +159,52 @@ pub fn entries(file: &str) -> Result<Vec<Published>, String> {
             Json::parse(line).map_err(|e| format!("line {} is not JSON: {e}", number + 1))?;
         let shown = text(&item, "version")?;
         let version = Version::parse(&shown)
-            .ok_or_else(|| format!("the index lists \"{shown}\", which is not a version"))?;
+            .ok_or_else(|| format!("the index lists {shown:?}, which is not a version"))?;
+        let digest = text(&item, "digest")?;
+        if !valid_digest(&digest) {
+            return Err(format!(
+                "the index lists {shown} with the digest {digest:?}, which is not a SHA-256 digest"
+            ));
+        }
         let mut dependencies = Vec::new();
         for dependency in item.get("dependencies").as_array() {
+            let alias = text(dependency, "alias")?;
+            let package = text(dependency, "package")?;
+            let requirement = text(dependency, "requirement")?;
+            let registry = dependency.get("registry").as_str().map(normalize);
+            for name in [&alias, &package] {
+                if !crate::manifest::valid_name(name) {
+                    return Err(format!(
+                        "the index lists {shown} with a dependency named {name:?}, which is not a package name"
+                    ));
+                }
+            }
+            if Requirement::parse(&requirement).is_err() {
+                return Err(format!(
+                    "the index lists {shown} with a dependency on {package} {requirement:?}, which is not a range of versions"
+                ));
+            }
+            if let Some(address) = registry.as_deref().filter(|a| !valid_address(a)) {
+                return Err(format!(
+                    "the index lists {shown} with a dependency from {address:?}, which is not a registry's address: Sayon reaches registries over HTTPS, or over HTTP on this computer"
+                ));
+            }
             dependencies.push(Dependency {
-                alias: text(dependency, "alias")?,
+                alias,
                 source: Source::Registry {
-                    registry: dependency.get("registry").as_str().map(normalize),
-                    package: text(dependency, "package")?,
-                    requirement: text(dependency, "requirement")?,
+                    registry,
+                    package,
+                    requirement,
                 },
                 span: Span::new(FileId(0), 0, 0),
             });
         }
         versions.push(Published {
             version,
-            digest: text(&item, "digest")?,
-            description: text(&item, "description").unwrap_or_default(),
+            digest,
+            description: printable(&text(&item, "description").unwrap_or_default()),
             dependencies,
-            published: text(&item, "published").unwrap_or_default(),
+            published: printable(&text(&item, "published").unwrap_or_default()),
         });
     }
     versions.sort_by(|a, b| a.version.cmp(&b.version));
@@ -180,9 +229,9 @@ pub fn search(answer: &Json) -> Result<Vec<Found>, String> {
         .iter()
         .map(|item| {
             Ok(Found {
-                name: text(item, "name")?,
-                description: text(item, "description").unwrap_or_default(),
-                latest: text(item, "latest")?,
+                name: printable(&text(item, "name")?),
+                description: printable(&text(item, "description").unwrap_or_default()),
+                latest: printable(&text(item, "latest")?),
             })
         })
         .collect()
@@ -231,8 +280,10 @@ mod tests {
             "\n",
             r#"{"name":"json","version":"1.0.0","digest":"sha256:aa","description":"JSON","dependencies":[{"alias":"text","package":"strings","requirement":"^0.2","registry":null}],"published":"2026-10-26"}"#,
             "\n",
-        );
-        let versions = entries(file).unwrap();
+        )
+        .replace("sha256:cc", &format!("sha256:{}", "c".repeat(64)))
+        .replace("sha256:aa", &format!("sha256:{}", "a".repeat(64)));
+        let versions = entries(&file).unwrap();
         assert_eq!(versions[0].version.to_string(), "1.0.0");
         assert_eq!(
             versions[0].dependencies[0].source,
@@ -244,6 +295,30 @@ mod tests {
         );
         assert_eq!(latest(&versions).unwrap().version.to_string(), "1.0.0");
         assert!(entries("not json").is_err());
+        // What a registry that lies could put in a line is refused, or shown
+        // without control characters.
+        let line = file.lines().nth(1).unwrap();
+        let refused = |from: &str, to: &str| entries(&line.replace(from, to)).unwrap_err();
+        assert!(refused("sha256:aaaa", "sha256:AAAA").contains("which is not a SHA-256 digest"));
+        assert!(refused("\"text\"", "\"../text\"").contains("named \"../text\", which is not"));
+        assert!(
+            refused("\"strings\"", "\"../../evil\"").contains("named \"../../evil\", which is not")
+        );
+        assert!(refused("^0.2", "most recent").contains("which is not a range of versions"));
+        // An index cannot send installing to a registry over plain HTTP.
+        let elsewhere = r#""registry":"http://registry.example.com/index""#;
+        assert!(
+            refused("\"registry\":null", elsewhere).contains(
+                "\"http://registry.example.com/index\", which is not a registry's address"
+            )
+        );
+        let secure = line.replace(
+            "\"registry\":null",
+            &elsewhere.replace("http://", "https://"),
+        );
+        assert!(entries(&secure).is_ok());
+        let loud = entries(&line.replace("\"JSON\"", r#""JSON\u001b[2J\r\nnot a line""#)).unwrap();
+        assert_eq!(loud[0].description, "JSON[2Jnot a line");
         let config = config(
             &Json::parse(r#"{"protocol":1,"api":"http://127.0.0.1:4100/","download":"http://127.0.0.1:4100/a/{name}/{version}"}"#).unwrap(),
         )

@@ -58,8 +58,21 @@ fn refusal(response: &Response) -> String {
     std::str::from_utf8(&response.body)
         .ok()
         .and_then(|text| Json::parse(text).ok())
-        .and_then(|answer| answer.get("error").as_str().map(str::to_string))
+        .and_then(|answer| answer.get("error").as_str().map(registry::printable))
         .unwrap_or_else(|| format!("the registry answered with status {}", response.status))
+}
+
+/// Refuses an address that is no registry's, wherever it came from,
+/// `SAYON_REGISTRY` as well as a manifest or an index: Sayon reaches
+/// registries over HTTPS, or over HTTP on this computer.
+fn reachable(registry: &str) -> Result<(), String> {
+    if registry::valid_address(registry) {
+        Ok(())
+    } else {
+        Err(format!(
+            "\"{registry}\" is not a registry's address: Sayon reaches registries over HTTPS, or over HTTP on this computer"
+        ))
+    }
 }
 
 fn reach(registry: &str, error: String) -> String {
@@ -73,6 +86,7 @@ fn reach(registry: &str, error: String) -> String {
 
 /// Reads a registry's `config.json`, from the top of its index.
 fn fetch_config(registry: &str) -> Result<Config, String> {
+    reachable(registry)?;
     let url = format!("{registry}/config.json");
     let response = http::request("GET", &url, &[("Accept", "application/json")], &[])
         .map_err(|e| reach(registry, e))?;
@@ -92,6 +106,7 @@ fn fetch_config(registry: &str) -> Result<Config, String> {
 /// A package's file of a registry's index, or nothing when it has no such
 /// package.
 fn fetch_entries(registry: &str, package: &str) -> Result<Option<Vec<Published>>, String> {
+    reachable(registry)?;
     let url = format!("{registry}/{}", registry::index_path(package));
     let response = http::request("GET", &url, &[], &[]).map_err(|e| reach(registry, e))?;
     if response.status == 404 {
@@ -185,6 +200,15 @@ pub fn login(registry: &str, options: &Options) -> u8 {
             return status::PROGRAM_FAILED;
         }
     };
+    // The name is kept beside the token and shown, so it is a name.
+    if !sayon_driver::manifest::valid_name(&account) {
+        error(
+            &format!("{registry} did not say which account the token belongs to"),
+            None,
+            options,
+        );
+        return status::PROGRAM_FAILED;
+    }
     if let Err(message) = credentials::save(
         registry,
         &Saved {
