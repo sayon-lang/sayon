@@ -366,7 +366,13 @@ impl Unifier {
         let ok = match one {
             Traits::ADD => ty.is_numeric() || ty == Type::String,
             Traits::ARITHMETIC | Traits::NUMERIC => ty.is_numeric(),
-            Traits::ORDER => ty.is_numeric() || ty == Type::String,
+            Traits::ORDER => match &ty {
+                Type::Param(index) => {
+                    self.record_param_trait(*index, one);
+                    true
+                }
+                _ => ty.is_numeric() || ty == Type::String,
+            },
             Traits::NEGATE => {
                 matches!(ty, Type::Float(_)) || matches!(ty, Type::Int(i) if i.signed())
             }
@@ -386,9 +392,12 @@ impl Unifier {
                     return Ok(());
                 }
                 Type::Named(named) => return self.fields_support(named, &ty, one),
+                Type::Param(index) => {
+                    self.record_param_trait(*index, one);
+                    true
+                }
                 // Function values have no meaningful equality.
                 Type::Range
-                | Type::Param(_)
                 | Type::Function(_)
                 | Type::View(..)
                 | Type::Wrapper(..)

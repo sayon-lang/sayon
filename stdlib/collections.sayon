@@ -1,11 +1,19 @@
-# Sorting arrays, and the Set and Queue collections.
+# Sorting arrays, and the Set, Queue, Stack, List, and Map collections.
 #
 #     collections = import("standard/collections.sayon")
 #     names = ["Grace", "Ada", "Linus"]
 #     collections.sort(names)
 #
-# An array is also a stack: `push` adds to its end and `pop` takes from it.
-# A dictionary is the map.
+# Beside arrays and dictionaries, which are built in: a Set holds each value
+# once; a Queue gives values back in the order they came, and a Stack in the
+# opposite order; a List keeps values in a sequence that can change anywhere
+# at once; and a Map keeps its keys in order.
+#
+# A collection owns its values: adding one moves it in, and taking one out
+# gives it back. Methods that return values, such as `values` and `get`,
+# give copies.
+
+private constant NONE = -1
 
 # ----- sorting ------------------------------------------------------------------
 
@@ -76,6 +84,7 @@ private function arrange(update items, update order: Array<integer>)
 # compared like dictionary keys, so they must be valid keys. Adding a value
 # and looking one up take constant time on average; removing one takes time
 # proportional to the set's size, since the values after it keep their order.
+# Sets are equal (`==`) when they have the same values, in any order.
 type Set<T> = [members: Dict<T, boolean>]
 
 # A new, empty set.
@@ -113,6 +122,8 @@ function set_values<T>(set: Set<T>) -> Array<T>
 
 # Values taken out in the order they were put in. Adding and taking take
 # constant time on average: a value is moved once, from the back to the front.
+# How a queue is kept depends on the order of its changes, so `==` can find
+# two queues of the same values different: compare their `values()`.
 type Queue<T> = [front: Array<T>, back: Array<T>]
 
 # A new, empty queue.
@@ -134,6 +145,605 @@ function queue_take<T>(update queue: Queue<T>) -> T or nothing
                 push(queue.front, moved)
     return pop(queue.front)
 
+# A copy of the value at the front of the queue, the one `take` would take
+# next, or nothing when the queue is empty.
+function queue_peek<T>(queue: Queue<T>) -> T or nothing
+    count = length(queue.front)
+    if count > 0
+        return clone(queue.front[count - 1])
+    if length(queue.back) > 0
+        return clone(queue.back[0])
+    return nothing
+
 # How many values wait in the queue.
 function queue_size<T>(queue: Queue<T>) -> integer
     return length(queue.front) + length(queue.back)
+
+# Copies of the values, from the front: the order `take` would take them.
+function queue_values<T>(queue: Queue<T>) -> Array<T>
+    values: Array<T> = []
+    variable position = length(queue.front) - 1
+    while position >= 0
+        push(values, clone(queue.front[position]))
+        position -= 1
+    for value in queue.back
+        push(values, clone(value))
+    return values
+
+# ----- stacks -------------------------------------------------------------------
+
+# Values taken out in the opposite order they were put in: `pop` takes the
+# value pushed last. Pushing and popping take constant time on average.
+# Stacks are equal (`==`) when they have the same values in the same order.
+type Stack<T> = [items: Array<T>]
+
+# A new, empty stack.
+function new_stack<T>() -> Stack<T>
+    items: Array<T> = []
+    return Stack(items = items)
+
+# Puts a value on top of the stack.
+function stack_push<T>(update stack: Stack<T>, own value: T)
+    push(stack.items, value)
+
+# Takes the value on top of the stack, or nothing when it is empty.
+function stack_pop<T>(update stack: Stack<T>) -> T or nothing
+    return pop(stack.items)
+
+# A copy of the value on top of the stack, the one `pop` would take next, or
+# nothing when the stack is empty.
+function stack_peek<T>(stack: Stack<T>) -> T or nothing
+    count = length(stack.items)
+    if count == 0
+        return nothing
+    return clone(stack.items[count - 1])
+
+# How many values the stack holds.
+function stack_size<T>(stack: Stack<T>) -> integer
+    return length(stack.items)
+
+# Copies of the values, from the top down: the order `pop` would take them.
+function stack_values<T>(stack: Stack<T>) -> Array<T>
+    values: Array<T> = []
+    variable position = length(stack.items) - 1
+    while position >= 0
+        push(values, clone(stack.items[position]))
+        position -= 1
+    return values
+
+# ----- lists --------------------------------------------------------------------
+
+# Values in a sequence, like an array, where adding a value or taking one out
+# anywhere takes constant time, as do reaching a value through its position
+# and moving to its neighbors. Each value added gets a `Position`, which
+# names it until it is taken out, however the list changes around it. How a
+# list is kept depends on the order of its changes, so `==` can find two
+# lists of the same values different: compare their `values()`.
+#
+# The values lie together in `items`, by slot; `successors` and
+# `predecessors` link the slots in order, and `head` and `tail` are the
+# first and last (`NONE` when empty). A position's handle finds its slot in
+# `slots`; taking a value out frees the handle for reuse, counting up its
+# generation, so the positions given out before name nothing.
+type List<T> = [items: Array<T>, successors: Array<integer>, predecessors: Array<integer>, handles: Array<integer>, slots: Array<integer>, generations: Array<integer>, spare: Array<integer>, head: integer, tail: integer]
+
+# Where a value is in a list. A position names its value until the value is
+# taken out; after that, using it is a `ValueError`. A position belongs to
+# the list that gave it out: with another list it names another value, or
+# none.
+type Position = [handle: integer, generation: integer]
+
+# A new, empty list.
+function new_list<T>() -> List<T>
+    items: Array<T> = []
+    successors: Array<integer> = []
+    predecessors: Array<integer> = []
+    handles: Array<integer> = []
+    slots: Array<integer> = []
+    generations: Array<integer> = []
+    spare: Array<integer> = []
+    return List(items = items, successors = successors, predecessors = predecessors, handles = handles, slots = slots, generations = generations, spare = spare, head = NONE, tail = NONE)
+
+# Adds a value before the first one, returning its position.
+function list_add_first<T>(update list: List<T>, own value: T) -> Position
+    first = list.head
+    return link(list, value, NONE, first)
+
+# Adds a value after the last one, returning its position.
+function list_add_last<T>(update list: List<T>, own value: T) -> Position
+    last = list.tail
+    return link(list, value, last, NONE)
+
+# Adds a value just before the one at a position, returning its position.
+function list_add_before<T>(update list: List<T>, position: Position, own value: T) -> Position
+    slot = slot_of(list, position)
+    previous = list.predecessors[slot]
+    return link(list, value, previous, slot)
+
+# Adds a value just after the one at a position, returning its position.
+function list_add_after<T>(update list: List<T>, position: Position, own value: T) -> Position
+    slot = slot_of(list, position)
+    following = list.successors[slot]
+    return link(list, value, slot, following)
+
+# Takes out the value at a position.
+function list_take<T>(update list: List<T>, position: Position) -> T
+    slot = slot_of(list, position)
+    return unlink(list, slot)
+
+# Takes out the first value, or gives nothing when the list is empty.
+function list_take_first<T>(update list: List<T>) -> T or nothing
+    first = list.head
+    if first == NONE
+        return nothing
+    return unlink(list, first)
+
+# Takes out the last value, or gives nothing when the list is empty.
+function list_take_last<T>(update list: List<T>) -> T or nothing
+    last = list.tail
+    if last == NONE
+        return nothing
+    return unlink(list, last)
+
+# A copy of the value at a position.
+function list_get<T>(list: List<T>, position: Position) -> T
+    slot = slot_of(list, position)
+    return clone(list.items[slot])
+
+# Puts a value in place of the one at a position, which then names the new
+# value.
+function list_set<T>(update list: List<T>, position: Position, own value: T)
+    slot = slot_of(list, position)
+    list.items[slot] = value
+
+# The position of the first value, or nothing when the list is empty.
+function list_first<T>(list: List<T>) -> Position or nothing
+    return position_at(list, list.head)
+
+# The position of the last value, or nothing when the list is empty.
+function list_last<T>(list: List<T>) -> Position or nothing
+    return position_at(list, list.tail)
+
+# The position of the value after the one at a position, or nothing after
+# the last.
+function list_after<T>(list: List<T>, position: Position) -> Position or nothing
+    slot = slot_of(list, position)
+    return position_at(list, list.successors[slot])
+
+# The position of the value before the one at a position, or nothing before
+# the first.
+function list_before<T>(list: List<T>, position: Position) -> Position or nothing
+    slot = slot_of(list, position)
+    return position_at(list, list.predecessors[slot])
+
+# The position of the first value equal to `value`, or nothing when no value
+# is. It takes time proportional to the list's size.
+function list_find<T>(list: List<T>, value: T) -> Position or nothing
+    variable slot = list.head
+    while slot != NONE
+        if list.items[slot] == value
+            return position_at(list, slot)
+        slot = list.successors[slot]
+    return nothing
+
+# How many values the list holds.
+function list_size<T>(list: List<T>) -> integer
+    return length(list.items)
+
+# Copies of the values, from the first to the last.
+function list_values<T>(list: List<T>) -> Array<T>
+    values: Array<T> = []
+    variable slot = list.head
+    while slot != NONE
+        push(values, clone(list.items[slot]))
+        slot = list.successors[slot]
+    return values
+
+# The slot of the value a position names.
+private function slot_of<T>(list: List<T>, position: Position) -> integer
+    handle = position.handle
+    if handle < 0 or handle >= length(list.slots) or list.generations[handle] != position.generation or list.slots[handle] == NONE
+        host_value_fail("the position names no value of this list; its value may have been taken out")
+    return list.slots[handle]
+
+# The position of the value in a slot, or nothing for `NONE`.
+private function position_at<T>(list: List<T>, slot: integer) -> Position or nothing
+    if slot == NONE
+        return nothing
+    handle = list.handles[slot]
+    return Position(handle = handle, generation = list.generations[handle])
+
+# Puts a value in a new slot between two others (`NONE` at an end), and
+# gives it a handle.
+private function link<T>(update list: List<T>, own value: T, previous: integer, following: integer) -> Position
+    slot = length(list.items)
+    push(list.items, value)
+    push(list.predecessors, previous)
+    push(list.successors, following)
+    variable handle = length(list.slots)
+    reused = pop(list.spare)
+    if reused != nothing
+        handle = reused
+        list.slots[handle] = slot
+    else
+        push(list.slots, slot)
+        push(list.generations, 0)
+    push(list.handles, handle)
+    if previous == NONE
+        list.head = slot
+    else
+        list.successors[previous] = slot
+    if following == NONE
+        list.tail = slot
+    else
+        list.predecessors[following] = slot
+    return Position(handle = handle, generation = list.generations[handle])
+
+# Takes the value in a slot out of the list. The value in the last slot
+# moves into the freed one, so the values stay together.
+private function unlink<T>(update list: List<T>, slot: integer) -> T
+    previous = list.predecessors[slot]
+    following = list.successors[slot]
+    if previous == NONE
+        list.head = following
+    else
+        list.successors[previous] = following
+    if following == NONE
+        list.tail = previous
+    else
+        list.predecessors[following] = previous
+    handle = list.handles[slot]
+    list.slots[handle] = NONE
+    list.generations[handle] += 1
+    push(list.spare, handle)
+    last = length(list.items) - 1
+    if slot != last
+        moved_previous = list.predecessors[last]
+        moved_following = list.successors[last]
+        if moved_previous == NONE
+            list.head = slot
+        else
+            list.successors[moved_previous] = slot
+        if moved_following == NONE
+            list.tail = slot
+        else
+            list.predecessors[moved_following] = slot
+        moved_handle = list.handles[last]
+        list.slots[moved_handle] = slot
+        swap(list.items, slot, last)
+        swap(list.predecessors, slot, last)
+        swap(list.successors, slot, last)
+        swap(list.handles, slot, last)
+    remove(list.predecessors, last)
+    remove(list.successors, last)
+    remove(list.handles, last)
+    return remove(list.items, last)
+
+# ----- maps ---------------------------------------------------------------------
+
+# Keys with values, kept in the order of their keys, smallest first, where a
+# dictionary keeps the order they were added in. Keys are numbers or strings,
+# and cannot be NaN. Looking a key up, adding one, and removing one take time
+# proportional to log n for n keys, as do finding the first and last keys
+# and the keys around a key; listing them takes time proportional to n. How a
+# map is kept depends on the order of its changes, so `==` can find two maps
+# of the same keys and values different: compare their `keys()` and
+# `values()`.
+#
+# The map is an AVL tree whose nodes lie together in arrays, by slot: a
+# node's key, value, `lower` and `higher` children and parent (`NONE` for
+# none), and height. Every node's children differ in height by one at most,
+# so the tree is at most about 1.44 log2 n high. A change compares keys only
+# on its way down, before it changes anything.
+type Map<K, V> = [node_keys: Array<K>, node_values: Array<V>, lower: Array<integer>, higher: Array<integer>, parents: Array<integer>, heights: Array<integer>, root: integer]
+
+# A new, empty map.
+function new_map<K, V>() -> Map<K, V>
+    keys: Array<K> = []
+    values: Array<V> = []
+    lower: Array<integer> = []
+    higher: Array<integer> = []
+    parents: Array<integer> = []
+    heights: Array<integer> = []
+    return Map(node_keys = keys, node_values = values, lower = lower, higher = higher, parents = parents, heights = heights, root = NONE)
+
+# Sets the value of a key, adding the key when the map lacks it.
+function map_set<K, V>(update map: Map<K, V>, own key: K, own value: V)
+    if key != key
+        host_value_fail("a map's key cannot be NaN")
+    variable parent = NONE
+    variable node = map.root
+    variable lower_side = false
+    while node != NONE
+        if key < map.node_keys[node]
+            parent = node
+            lower_side = true
+            node = map.lower[node]
+        elseif map.node_keys[node] < key
+            parent = node
+            lower_side = false
+            node = map.higher[node]
+        else
+            break
+    if node != NONE
+        map.node_values[node] = value
+        return
+    added = length(map.node_keys)
+    push(map.node_keys, key)
+    push(map.node_values, value)
+    push(map.lower, NONE)
+    push(map.higher, NONE)
+    push(map.parents, parent)
+    push(map.heights, 1)
+    if parent == NONE
+        map.root = added
+    elseif lower_side
+        map.lower[parent] = added
+    else
+        map.higher[parent] = added
+    rebalance_up(map, parent)
+
+# A copy of a key's value, or nothing when the map lacks the key.
+function map_get<K, V>(map: Map<K, V>, key: K) -> V or nothing
+    node = find(map, key)
+    if node == NONE
+        return nothing
+    return clone(map.node_values[node])
+
+# Whether the map has a key.
+function map_contains<K, V>(map: Map<K, V>, key: K) -> boolean
+    return find(map, key) != NONE
+
+# Removes a key, returning its value, or nothing when the map lacked it.
+function map_remove<K, V>(update map: Map<K, V>, key: K) -> V or nothing
+    node = find(map, key)
+    if node == NONE
+        return nothing
+    variable gone = node
+    if map.lower[node] != NONE and map.higher[node] != NONE
+        # The node with the next key, which has no lower child, takes over
+        # the key and value, and is taken out instead.
+        variable next_node = map.higher[node]
+        while map.lower[next_node] != NONE
+            next_node = map.lower[next_node]
+        swap(map.node_keys, node, next_node)
+        swap(map.node_values, node, next_node)
+        gone = next_node
+    variable child = map.lower[gone]
+    if child == NONE
+        child = map.higher[gone]
+    parent = map.parents[gone]
+    if child != NONE
+        map.parents[child] = parent
+    replace_child(map, parent, gone, child)
+    rebalance_up(map, parent)
+    # The last node moves into the freed slot, so the nodes stay together.
+    last = length(map.node_keys) - 1
+    if gone != last
+        move_node(map, last, gone)
+    remove(map.node_keys, last)
+    remove(map.lower, last)
+    remove(map.higher, last)
+    remove(map.parents, last)
+    remove(map.heights, last)
+    return remove(map.node_values, last)
+
+# How many keys the map has.
+function map_size<K, V>(map: Map<K, V>) -> integer
+    return length(map.node_keys)
+
+# Copies of the keys, smallest first.
+function map_keys<K, V>(map: Map<K, V>) -> Array<K>
+    keys: Array<K> = []
+    variable node = smallest_below(map, map.root)
+    while node != NONE
+        push(keys, clone(map.node_keys[node]))
+        node = next_in_order(map, node)
+    return keys
+
+# Copies of the values, in the order of their keys.
+function map_values<K, V>(map: Map<K, V>) -> Array<V>
+    values: Array<V> = []
+    variable node = smallest_below(map, map.root)
+    while node != NONE
+        push(values, clone(map.node_values[node]))
+        node = next_in_order(map, node)
+    return values
+
+# The smallest key, or nothing when the map is empty.
+function map_first<K, V>(map: Map<K, V>) -> K or nothing
+    node = smallest_below(map, map.root)
+    if node == NONE
+        return nothing
+    return clone(map.node_keys[node])
+
+# The largest key, or nothing when the map is empty.
+function map_last<K, V>(map: Map<K, V>) -> K or nothing
+    variable node = map.root
+    if node == NONE
+        return nothing
+    while map.higher[node] != NONE
+        node = map.higher[node]
+    return clone(map.node_keys[node])
+
+# The largest key smaller than `key`, or nothing when no key is.
+function map_before<K, V>(map: Map<K, V>, key: K) -> K or nothing
+    variable best = NONE
+    variable node = map.root
+    while node != NONE
+        if map.node_keys[node] < key
+            best = node
+            node = map.higher[node]
+        else
+            node = map.lower[node]
+    if best == NONE
+        return nothing
+    return clone(map.node_keys[best])
+
+# The smallest key larger than `key`, or nothing when no key is.
+function map_after<K, V>(map: Map<K, V>, key: K) -> K or nothing
+    variable best = NONE
+    variable node = map.root
+    while node != NONE
+        if key < map.node_keys[node]
+            best = node
+            node = map.lower[node]
+        else
+            node = map.higher[node]
+    if best == NONE
+        return nothing
+    return clone(map.node_keys[best])
+
+# Copies of the keys from `low` up to, but not including, `high`, smallest
+# first.
+function map_between<K, V>(map: Map<K, V>, low: K, high: K) -> Array<K>
+    keys: Array<K> = []
+    if low != low or high != high
+        return keys
+    # The node of the smallest key not below `low`.
+    variable node = NONE
+    variable at = map.root
+    while at != NONE
+        if map.node_keys[at] < low
+            at = map.higher[at]
+        else
+            node = at
+            at = map.lower[at]
+    while node != NONE and map.node_keys[node] < high
+        push(keys, clone(map.node_keys[node]))
+        node = next_in_order(map, node)
+    return keys
+
+# The node of a key, or `NONE`.
+private function find<K, V>(map: Map<K, V>, key: K) -> integer
+    if key != key
+        return NONE
+    variable node = map.root
+    while node != NONE
+        if key < map.node_keys[node]
+            node = map.lower[node]
+        elseif map.node_keys[node] < key
+            node = map.higher[node]
+        else
+            return node
+    return NONE
+
+# The node of the smallest key in the tree below `tree`, or `NONE`.
+private function smallest_below<K, V>(map: Map<K, V>, tree: integer) -> integer
+    if tree == NONE
+        return NONE
+    variable node = tree
+    while map.lower[node] != NONE
+        node = map.lower[node]
+    return node
+
+# The node of the next key after a node's, or `NONE` after the last.
+private function next_in_order<K, V>(map: Map<K, V>, node: integer) -> integer
+    if map.higher[node] != NONE
+        return smallest_below(map, map.higher[node])
+    variable child = node
+    variable parent = map.parents[node]
+    while parent != NONE and map.higher[parent] == child
+        child = parent
+        parent = map.parents[parent]
+    return parent
+
+# Restores the balance from a node up, after one of its subtrees changed in
+# height by one. Once a subtree keeps its height, the nodes above keep
+# theirs, and nothing above changes.
+private function rebalance_up<K, V>(update map: Map<K, V>, start: integer)
+    variable node = start
+    while node != NONE
+        before = map.heights[node]
+        top = balance(map, node)
+        if map.heights[top] == before
+            return
+        node = map.parents[top]
+
+# Rotates a node whose children differ in height by two, and fixes the
+# height of one that is balanced; returns the subtree's top.
+private function balance<K, V>(update map: Map<K, V>, node: integer) -> integer
+    lean = height(map, map.lower[node]) - height(map, map.higher[node])
+    if lean > 1
+        below = map.lower[node]
+        if height(map, map.lower[below]) < height(map, map.higher[below])
+            rotate_left(map, below)
+        return rotate_right(map, node)
+    if lean < -1
+        above = map.higher[node]
+        if height(map, map.higher[above]) < height(map, map.lower[above])
+            rotate_right(map, above)
+        return rotate_left(map, node)
+    fix_height(map, node)
+    return node
+
+# The higher child takes the node's place, with the node as its lower child.
+private function rotate_left<K, V>(update map: Map<K, V>, node: integer) -> integer
+    top = map.higher[node]
+    middle = map.lower[top]
+    parent = map.parents[node]
+    map.higher[node] = middle
+    if middle != NONE
+        map.parents[middle] = node
+    map.lower[top] = node
+    map.parents[node] = top
+    map.parents[top] = parent
+    replace_child(map, parent, node, top)
+    fix_height(map, node)
+    fix_height(map, top)
+    return top
+
+# The lower child takes the node's place, with the node as its higher child.
+private function rotate_right<K, V>(update map: Map<K, V>, node: integer) -> integer
+    top = map.lower[node]
+    middle = map.higher[top]
+    parent = map.parents[node]
+    map.lower[node] = middle
+    if middle != NONE
+        map.parents[middle] = node
+    map.higher[top] = node
+    map.parents[node] = top
+    map.parents[top] = parent
+    replace_child(map, parent, node, top)
+    fix_height(map, node)
+    fix_height(map, top)
+    return top
+
+# Makes the link to a parent's child `old`, or the root, lead to `child`.
+private function replace_child<K, V>(update map: Map<K, V>, parent: integer, old: integer, child: integer)
+    if parent == NONE
+        map.root = child
+    elseif map.lower[parent] == old
+        map.lower[parent] = child
+    else
+        map.higher[parent] = child
+
+# Moves a node to a free slot, and makes its parent and children follow.
+private function move_node<K, V>(update map: Map<K, V>, from: integer, to: integer)
+    parent = map.parents[from]
+    replace_child(map, parent, from, to)
+    lower = map.lower[from]
+    if lower != NONE
+        map.parents[lower] = to
+    higher = map.higher[from]
+    if higher != NONE
+        map.parents[higher] = to
+    swap(map.node_keys, from, to)
+    swap(map.node_values, from, to)
+    swap(map.lower, from, to)
+    swap(map.higher, from, to)
+    swap(map.parents, from, to)
+    swap(map.heights, from, to)
+
+private function height<K, V>(map: Map<K, V>, tree: integer) -> integer
+    if tree == NONE
+        return 0
+    return map.heights[tree]
+
+private function fix_height<K, V>(update map: Map<K, V>, node: integer)
+    lower = height(map, map.lower[node])
+    higher = height(map, map.higher[node])
+    if lower > higher
+        map.heights[node] = lower + 1
+    else
+        map.heights[node] = higher + 1

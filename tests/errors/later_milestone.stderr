@@ -12,7 +12,7 @@ error[E_UNKNOWN_TYPE]: unknown type `List`
  4 | items: List<integer> = []
    |        ^^^^
    |
-   = help: use Array<T>, which serves as a list
+   = help: `List` belongs to standard/collections.sayon: write `collections.List` after `collections = import("standard/collections.sayon")`, or use the built-in Array<T>
 
 error[E_UNKNOWN_TYPE]: unknown type `File`
   --> later_milestone.sayon:5:6

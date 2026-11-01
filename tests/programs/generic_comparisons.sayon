@@ -1,0 +1,40 @@
+# Values of an explicit type parameter compared with `<` and `==`: each call
+# is checked against the type it gives, and the function is made for it.
+
+function smallest<T>(items: Array<T>) -> T or nothing
+    if length(items) == 0
+        return nothing
+    variable best = 0
+    for position in range(1, length(items))
+        if items[position] < items[best]
+            best = position
+    return clone(items[best])
+
+function count_of<T>(items: Array<T>, wanted: T) -> integer
+    variable count = 0
+    for item in items
+        if item == wanted
+            count += 1
+    return count
+
+# A function that passes its own parameter on needs the same of its callers.
+function within<T>(low: T, value: T, high: T) -> boolean
+    return not (value < low) and value < high
+
+# Methods of a generic structure can compare its values.
+type Interval<T> = [low: T, high: T]
+
+function interval_holds<T>(interval: Interval<T>, value: T) -> boolean
+    return within(interval.low, value, interval.high)
+
+type Point = [x: integer, y: integer]
+
+none: Array<integer> = []
+print(smallest([5, 3, 9]), smallest([2.5, -1.5]), smallest(["pear", "apple"]), smallest(none))
+print(count_of(["a", "b", "a"], "a"), count_of([Point(x = 1, y = 2), Point(x = 1, y = 2)], Point(x = 1, y = 2)))
+maybe: Array<integer or nothing> = [1, nothing, 1]
+print(count_of([[1], [2], [1]], [1]), count_of(maybe, nothing))
+hours = Interval(low = 9, high = 17)
+print(hours.holds(9), hours.holds(17), hours.holds(12))
+letters = Interval(low = "b", high = "d")
+print(letters.holds("a"), letters.holds("c"))

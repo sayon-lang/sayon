@@ -1,4 +1,5 @@
 collections = import("standard/collections.sayon")
+math = import("standard/math.sayon")
 
 numbers = [5, 3, 9, 1, 5, 7, 2]
 collections.sort(numbers)
@@ -33,3 +34,181 @@ print(collections.queue_take(queue), collections.queue_take(queue), collections.
 empty: Array<integer> = []
 collections.sort(empty)
 print(empty)
+
+# A queue shows what waits in it, from the front.
+waiting = collections.new_queue()
+waiting.add(1)
+waiting.add(2)
+waiting.take()
+waiting.add(3)
+nobody: collections.Queue<integer> = collections.new_queue()
+print(waiting.peek(), waiting.values(), waiting.size(), nobody.peek(), nobody.values())
+
+# A stack gives values back from the top.
+stack = collections.new_stack()
+for word in ["one", "two", "three"]
+    stack.push(clone(word))
+print(stack.size(), stack.peek(), stack.values())
+print(stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.peek(), stack.size())
+other = collections.new_stack()
+other.push("one")
+again = collections.new_stack()
+again.push("one")
+print(other == again)
+
+# A list's positions keep naming their values as the list changes.
+tasks = collections.new_list()
+write = tasks.add_last("write")
+tasks.add_first("plan")
+ship = tasks.add_last("ship")
+check = tasks.add_after(write, "check")
+tasks.add_before(write, "draft")
+print(tasks.values(), tasks.size())
+print(tasks.take(write), tasks.values(), tasks.get(check))
+tasks.set(ship, "release")
+walked: Array<string> = []
+variable here = tasks.first()
+while here != nothing
+    push(walked, tasks.get(here))
+    here = tasks.after(here)
+backward: Array<string> = []
+here = tasks.last()
+while here != nothing
+    push(backward, tasks.get(here))
+    here = tasks.before(here)
+print(walked, backward)
+found = tasks.find("check")
+print(found != nothing and tasks.get(found) == "check", tasks.find("write"))
+gone = try tasks.get(write)
+if gone is error
+    print(gone.code, gone.message)
+print(tasks.take_first(), tasks.take_last(), tasks.values())
+while tasks.size() > 0
+    tasks.take_last()
+print(tasks.take_first(), tasks.take_last(), tasks.first(), tasks.values())
+
+# The names used last, most recent first, three at most: a dictionary finds
+# a name's position, and the list keeps the order.
+recent: collections.List<string> = collections.new_list()
+where: Dict<string, collections.Position> = []
+for name in ["ada", "bo", "ada", "cy", "di", "bo"]
+    if haskey(where, name)
+        recent.take(where[name])
+    where[clone(name)] = recent.add_first(clone(name))
+    if recent.size() > 3
+        dropped = recent.take_last()
+        if dropped != nothing
+            remove(where, dropped)
+print(recent.values(), length(where))
+
+# A map keeps its keys in order.
+scores = collections.new_map()
+scores.set("lin", 7)
+scores.set("ada", 36)
+scores.set("cy", 12)
+scores.set("ada", 37)
+print(scores.keys(), scores.values(), scores.size(), scores.get("ada"), scores.get("bo"), scores.contains("cy"))
+print(scores.first(), scores.last(), scores.before("cy"), scores.after("cy"), scores.before("ada"), scores.after("lin"))
+print(scores.between("b", "m"), scores.between("a", "ada"), scores.between("m", "a"))
+print(scores.remove("cy"), scores.remove("cy"), scores.keys(), scores.values())
+
+# Numbers in order, negative and fractional ones too; NaN is no key.
+readings = collections.new_map()
+for value in [2.5, -1.0, 0.0, 10.25, -0.0]
+    readings.set(value, tostring(value))
+print(readings.keys(), readings.values())
+zero = 0.0
+nan = zero / zero
+refused = try readings.set(nan, "nan")
+if refused is error
+    print(refused.code, refused.message)
+print(readings.get(nan), readings.contains(nan), readings.remove(nan), readings.before(nan), readings.after(nan), readings.between(nan, 1.0), readings.size())
+nothing_yet: collections.Map<integer, string> = collections.new_map()
+print(nothing_yet.first(), nothing_yet.last(), nothing_yet.keys(), nothing_yet.before(1), nothing_yet.remove(1))
+
+# Many keys added and removed in a scrambled order keep the tree in order
+# and balanced, with its links right. Gives the tree's height.
+function check_tree(map: collections.Map<integer, integer>, tree: integer, parent: integer, low: integer, high: integer) -> integer
+    if tree == -1
+        return 0
+    assert(map.parents[tree] == parent)
+    key = map.node_keys[tree]
+    assert(low < key and key < high)
+    lower = check_tree(map, map.lower[tree], tree, low, key)
+    higher = check_tree(map, map.higher[tree], tree, key, high)
+    assert(math.abs(lower - higher) <= 1)
+    assert(map.heights[tree] == math.max(lower, higher) + 1)
+    return map.heights[tree]
+
+big: collections.Map<integer, integer> = collections.new_map()
+reference: Dict<integer, integer> = []
+for step in range(1009)
+    key = step * 7919 % 1009
+    big.set(key, step)
+    reference[key] = step
+for step in range(0, 1009, 3)
+    key = step * 7919 % 1009
+    assert(big.remove(key) == remove(reference, key))
+for step in range(0, 1009, 5)
+    key = step * 7919 % 1009
+    big.set(key, -step)
+    reference[key] = -step
+expected: Array<integer> = []
+for key in reference
+    push(expected, key)
+collections.sort(expected)
+values: Array<integer> = []
+for key in expected
+    push(values, reference[key])
+height = check_tree(big, big.root, -1, -1, 1009)
+print(big.size(), big.keys() == expected, big.values() == values, height <= 14, big.first(), big.last())
+in_order = collections.new_map()
+for key in range(1000)
+    in_order.set(key, key)
+print(in_order.size(), check_tree(in_order, in_order.root, -1, -1, 1000))
+
+# Many changes to a list, against arrays of its values and positions.
+dice = math.new_generator(5)
+list: collections.List<integer> = collections.new_list()
+list_values: Array<integer> = []
+positions: Array<collections.Position> = []
+stale: Array<collections.Position> = []
+for round in range(400)
+    choice = dice.integer(0, 10)
+    count = length(list_values)
+    if count == 0 or choice < 3
+        push(positions, list.add_last(round))
+        push(list_values, round)
+    elseif choice < 5
+        at = dice.integer(0, count)
+        push(positions, list.add_after(positions[at], round))
+        push(list_values, round)
+        variable slot = count
+        while slot > at + 1
+            swap(positions, slot, slot - 1)
+            swap(list_values, slot, slot - 1)
+            slot -= 1
+    elseif choice < 6
+        at = dice.integer(0, count)
+        push(positions, list.add_before(positions[at], round))
+        push(list_values, round)
+        variable slot = count
+        while slot > at
+            swap(positions, slot, slot - 1)
+            swap(list_values, slot, slot - 1)
+            slot -= 1
+    elseif choice < 9
+        at = dice.integer(0, count)
+        assert(list.take(positions[at]) == list_values[at])
+        push(stale, remove(positions, at))
+        remove(list_values, at)
+    else
+        at = dice.integer(0, count)
+        list.set(positions[at], -round)
+        list_values[at] = -round
+variable refused_positions = 0
+for position in stale
+    outcome = try list.get(position)
+    if outcome is error
+        refused_positions += 1
+print(list.size(), list.values() == list_values, length(stale) == refused_positions)

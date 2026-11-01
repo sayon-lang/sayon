@@ -28,6 +28,7 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | `if`/`elseif`/`else`, `while`, `for` over ranges, arrays, dictionaries | experimental | M1 |
 | Functions, recursion, defaults, parameter modes | experimental | M1 |
 | Inferred and explicit generic functions | experimental | M2 |
+| Values of explicit type parameters compared with `<` and `==`, each call checked against the type it gives | experimental | M5 |
 | Unions with `nothing`/`typeof` narrowing | experimental | M2 |
 | `error`/`raise`, `try`/`catch`/`finally` | experimental | M1 |
 | Ownership: moves, clones, borrows, loop borrows, mode inference | experimental | M1 |
@@ -129,6 +130,7 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | `strings.trim_start`, `trim_end`, `pad_start`, `pad_end`, `parse_integer` in bases 2 to 36, and `decimal`, rounded exactly | experimental | M5 |
 | `filesystem.normalize`, `absolute`, and `canonical`; Windows drives and network shares as roots | experimental | M5 |
 | The standard library's API (`docs/api.md`), written from its declarations by `scripts/api_inventory.sayon` and checked by `cargo test` | experimental | M5 |
+| `standard/collections`: `Stack`; `List`, which adds and takes out values anywhere in constant time, with positions that keep naming their values; `Map`, whose keys are in order (an AVL tree), with the first and last keys, the keys around a key, and ranges of keys; a queue's `peek` and `values` | experimental | M5 |
 | `standard/io` files: `io.open`, buffered reading and writing, `file.lines()` with a line limit, bytes, `seek`, `position`, checked `close`, `io.copy` | experimental | M2 |
 | `os.exit` (in order: `finally` blocks and cleanup run), `filesystem.walk`, `filesystem.is_link` | experimental | M2 |
 | Standard input as a file (`io.input`), running programs and capturing their output (`os.run`) | experimental | M2 |

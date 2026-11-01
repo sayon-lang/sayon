@@ -10,3 +10,26 @@ Bo 36
 first
 second third nothing 0
 []
+2 [2, 3] 2 nothing []
+3 three ["three", "two", "one"]
+three two one nothing nothing 0
+true
+["plan", "draft", "write", "check", "ship"] 5
+write ["plan", "draft", "check", "ship"] check
+["plan", "draft", "check", "release"] ["release", "check", "draft", "plan"]
+true nothing
+ValueError the position names no value of this list; its value may have been taken out
+plan release ["draft", "check"]
+nothing nothing nothing []
+["bo", "di", "cy"] 3
+["ada", "cy", "lin"] [37, 12, 7] 3 37 nothing true
+ada lin ada lin nothing nothing
+["cy", "lin"] [] []
+12 nothing ["ada", "lin"] [37, 7]
+[-1.0, 0.0, 2.5, 10.25] ["-1.0", "-0.0", "2.5", "10.25"]
+ValueError a map's key cannot be NaN
+nothing false nothing nothing nothing [] 4
+nothing nothing [] nothing nothing
+740 true true true 0 1008
+1000 10
+105 true true

@@ -1,0 +1,18 @@
+# A type parameter compared with `<` must be given numbers or strings, and
+# one compared with `==` a type whose values can be compared.
+function less<T>(a: T, b: T) -> boolean
+    return a < b
+
+function same<T>(a: T, b: T) -> boolean
+    return a == b
+
+# The requirement passes on to a function that gives its own parameter.
+function within<T>(low: T, value: T, high: T) -> boolean
+    return not less(value, low) and less(value, high)
+
+type Point = [x: integer, y: integer]
+
+print(less(Point(x = 1, y = 2), Point(x = 3, y = 4)))
+print(within([1], [2], [3]))
+print(same(function(x) return x, function(x) return x))
+print(less(1, 2), same(Point(x = 1, y = 2), Point(x = 1, y = 2)))

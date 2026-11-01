@@ -1250,7 +1250,9 @@ impl<'a> Checker<'a> {
                         // Library types are named through their module.
                         let library = match other {
                             "File" | "Lines" => Some(("io", "standard/io.sayon")),
-                            "Set" | "Queue" => Some(("collections", "standard/collections.sayon")),
+                            "Set" | "Queue" | "Stack" | "List" | "Map" => {
+                                Some(("collections", "standard/collections.sayon"))
+                            }
                             "Json" => Some(("json", "standard/json.sayon")),
                             "Duration" | "DateTime" | "Instant" => {
                                 Some(("time", "standard/time.sayon"))
@@ -1258,30 +1260,26 @@ impl<'a> Checker<'a> {
                             "Completed" => Some(("os", "standard/os.sayon")),
                             _ => None,
                         };
-                        let instead = match other {
+                        // A built-in type that may be what was meant.
+                        let built_in = match other {
                             "List" | "Stack" => Some("Array<T>"),
                             "Map" => Some("Dict<K, V>"),
                             _ => None,
                         };
                         if let Some((alias, path)) = library {
-                            self.error(
-                                Diagnostic::error("E_UNKNOWN_TYPE", format!("unknown type `{other}`"))
-                                    .primary(name.span, "")
-                                    .help(format!(
-                                        "`{other}` belongs to {path}: write `{alias}.{other}` after `{alias} = import(\"{path}\")`"
-                                    )),
+                            let mut help = format!(
+                                "`{other}` belongs to {path}: write `{alias}.{other}` after `{alias} = import(\"{path}\")`"
                             );
-                        } else if let Some(instead) = instead {
+                            if let Some(built_in) = built_in {
+                                help.push_str(&format!(", or use the built-in {built_in}"));
+                            }
                             self.error(
                                 Diagnostic::error(
                                     "E_UNKNOWN_TYPE",
                                     format!("unknown type `{other}`"),
                                 )
                                 .primary(name.span, "")
-                                .help(format!(
-                                    "use {instead}, which serves as a {}",
-                                    other.to_lowercase()
-                                )),
+                                .help(help),
                             );
                         } else if matches!(other, "Path") {
                             self.unavailable(ty.span, &format!("the `{other}` type"), "M3");

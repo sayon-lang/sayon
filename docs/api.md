@@ -1,12 +1,12 @@
 # The standard library's API
 
-Every export of the standard library, read from its declarations in `stdlib/`, with the first paragraph of the comment above each. `sayon run scripts/api_inventory.sayon` writes this page, and `cargo test` checks that it is current, so it always says what the library has. 13 modules hold 329 exports, 329 of them with a description.
+Every export of the standard library, read from its declarations in `stdlib/`, with the first paragraph of the comment above each. `sayon run scripts/api_inventory.sayon` writes this page, and `cargo test` checks that it is current, so it always says what the library has. 13 modules hold 371 exports, 371 of them with a description.
 
 A method is a function whose name starts with its type's, called on a value of the type: `set_add(set, value)` is written `set.add(value)`.
 
 | Module | Exports | For |
 |---|---|---|
-| [`standard/collections.sayon`](#standardcollectionssayon) | 15 | Sorting arrays, and the Set and Queue collections. |
+| [`standard/collections.sayon`](#standardcollectionssayon) | 57 | Sorting arrays, and the Set, Queue, Stack, List, and Map collections. |
 | [`standard/crypto.sayon`](#standardcryptosayon) | 4 | Hashing and secure random bytes: SHA-256 digests, and bytes from the system's secure source, fit for keys and tokens, unlike `math.random`. |
 | [`standard/filesystem.sayon`](#standardfilesystemsayon) | 18 | Files, directories, and paths. |
 | [`standard/graphics.sayon`](#standardgraphicssayon) | 50 | Drawing, and windows to show it in. |
@@ -22,25 +22,67 @@ A method is a function whose name starts with its type's, called on a value of t
 
 ## standard/collections.sayon
 
-Sorting arrays, and the Set and Queue collections.
+Sorting arrays, and the Set, Queue, Stack, List, and Map collections.
 
 | Export | Declaration | Description |
 |---|---|---|
 | `sort` | `function sort(update items)` | Sorts an array in place, smallest first. Elements are numbers or strings. Sorting is stable: equal elements keep their order. It takes time proportional to n log n for n elements. |
 | `sort_by` | `function sort_by(update items, update before)` | Sorts an array in place by a comparison: `before(a, b)` is true when `a` must come before `b`. Sorting is stable, so elements for which neither comes before the other keep their order. An error in `before` stops the sort; the elements are then all still in the array, in some order. |
 | `reverse` | `function reverse(update items)` | Reverses an array in place. |
-| `Set` | `type Set<T> = [members: Dict<T, boolean>]` | Values without duplicates, in the order they were first added. Values are compared like dictionary keys, so they must be valid keys. Adding a value and looking one up take constant time on average; removing one takes time proportional to the set's size, since the values after it keep their order. |
+| `Set` | `type Set<T> = [members: Dict<T, boolean>]` | Values without duplicates, in the order they were first added. Values are compared like dictionary keys, so they must be valid keys. Adding a value and looking one up take constant time on average; removing one takes time proportional to the set's size, since the values after it keep their order. Sets are equal (`==`) when they have the same values, in any order. |
 | `new_set` | `function new_set<T>() -> Set<T>` | A new, empty set. |
 | `set_add` | `function set_add<T>(update set: Set<T>, own value: T) -> boolean` | Method `add` of `Set`. Adds a value, returning false when the set already had it. |
 | `set_contains` | `function set_contains<T>(set: Set<T>, value: T) -> boolean` | Method `contains` of `Set`. Whether the set has the value. |
 | `set_remove` | `function set_remove<T>(update set: Set<T>, value: T) -> boolean` | Method `remove` of `Set`. Removes a value, returning whether the set had it. |
 | `set_size` | `function set_size<T>(set: Set<T>) -> integer` | Method `size` of `Set`. How many values the set has. |
 | `set_values` | `function set_values<T>(set: Set<T>) -> Array<T>` | Method `values` of `Set`. The values, in the order they were first added. |
-| `Queue` | `type Queue<T> = [front: Array<T>, back: Array<T>]` | Values taken out in the order they were put in. Adding and taking take constant time on average: a value is moved once, from the back to the front. |
+| `Queue` | `type Queue<T> = [front: Array<T>, back: Array<T>]` | Values taken out in the order they were put in. Adding and taking take constant time on average: a value is moved once, from the back to the front. How a queue is kept depends on the order of its changes, so `==` can find two queues of the same values different: compare their `values()`. |
 | `new_queue` | `function new_queue<T>() -> Queue<T>` | A new, empty queue. |
 | `queue_add` | `function queue_add<T>(update queue: Queue<T>, own value: T)` | Method `add` of `Queue`. Puts a value at the end of the queue. |
 | `queue_take` | `function queue_take<T>(update queue: Queue<T>) -> T or nothing` | Method `take` of `Queue`. Takes the value at the front of the queue, or nothing when it is empty. |
+| `queue_peek` | `function queue_peek<T>(queue: Queue<T>) -> T or nothing` | Method `peek` of `Queue`. A copy of the value at the front of the queue, the one `take` would take next, or nothing when the queue is empty. |
 | `queue_size` | `function queue_size<T>(queue: Queue<T>) -> integer` | Method `size` of `Queue`. How many values wait in the queue. |
+| `queue_values` | `function queue_values<T>(queue: Queue<T>) -> Array<T>` | Method `values` of `Queue`. Copies of the values, from the front: the order `take` would take them. |
+| `Stack` | `type Stack<T> = [items: Array<T>]` | Values taken out in the opposite order they were put in: `pop` takes the value pushed last. Pushing and popping take constant time on average. Stacks are equal (`==`) when they have the same values in the same order. |
+| `new_stack` | `function new_stack<T>() -> Stack<T>` | A new, empty stack. |
+| `stack_push` | `function stack_push<T>(update stack: Stack<T>, own value: T)` | Method `push` of `Stack`. Puts a value on top of the stack. |
+| `stack_pop` | `function stack_pop<T>(update stack: Stack<T>) -> T or nothing` | Method `pop` of `Stack`. Takes the value on top of the stack, or nothing when it is empty. |
+| `stack_peek` | `function stack_peek<T>(stack: Stack<T>) -> T or nothing` | Method `peek` of `Stack`. A copy of the value on top of the stack, the one `pop` would take next, or nothing when the stack is empty. |
+| `stack_size` | `function stack_size<T>(stack: Stack<T>) -> integer` | Method `size` of `Stack`. How many values the stack holds. |
+| `stack_values` | `function stack_values<T>(stack: Stack<T>) -> Array<T>` | Method `values` of `Stack`. Copies of the values, from the top down: the order `pop` would take them. |
+| `List` | `type List<T> = [items: Array<T>, successors: Array<integer>, predecessors: Array<integer>, handles: Array<integer>, slots: Array<integer>, generations: Array<integer>, spare: Array<integer>, head: integer, tail: integer]` | Values in a sequence, like an array, where adding a value or taking one out anywhere takes constant time, as do reaching a value through its position and moving to its neighbors. Each value added gets a `Position`, which names it until it is taken out, however the list changes around it. How a list is kept depends on the order of its changes, so `==` can find two lists of the same values different: compare their `values()`. |
+| `Position` | `type Position = [handle: integer, generation: integer]` | Where a value is in a list. A position names its value until the value is taken out; after that, using it is a `ValueError`. A position belongs to the list that gave it out: with another list it names another value, or none. |
+| `new_list` | `function new_list<T>() -> List<T>` | A new, empty list. |
+| `list_add_first` | `function list_add_first<T>(update list: List<T>, own value: T) -> Position` | Method `add_first` of `List`. Adds a value before the first one, returning its position. |
+| `list_add_last` | `function list_add_last<T>(update list: List<T>, own value: T) -> Position` | Method `add_last` of `List`. Adds a value after the last one, returning its position. |
+| `list_add_before` | `function list_add_before<T>(update list: List<T>, position: Position, own value: T) -> Position` | Method `add_before` of `List`. Adds a value just before the one at a position, returning its position. |
+| `list_add_after` | `function list_add_after<T>(update list: List<T>, position: Position, own value: T) -> Position` | Method `add_after` of `List`. Adds a value just after the one at a position, returning its position. |
+| `list_take` | `function list_take<T>(update list: List<T>, position: Position) -> T` | Method `take` of `List`. Takes out the value at a position. |
+| `list_take_first` | `function list_take_first<T>(update list: List<T>) -> T or nothing` | Method `take_first` of `List`. Takes out the first value, or gives nothing when the list is empty. |
+| `list_take_last` | `function list_take_last<T>(update list: List<T>) -> T or nothing` | Method `take_last` of `List`. Takes out the last value, or gives nothing when the list is empty. |
+| `list_get` | `function list_get<T>(list: List<T>, position: Position) -> T` | Method `get` of `List`. A copy of the value at a position. |
+| `list_set` | `function list_set<T>(update list: List<T>, position: Position, own value: T)` | Method `set` of `List`. Puts a value in place of the one at a position, which then names the new value. |
+| `list_first` | `function list_first<T>(list: List<T>) -> Position or nothing` | Method `first` of `List`. The position of the first value, or nothing when the list is empty. |
+| `list_last` | `function list_last<T>(list: List<T>) -> Position or nothing` | Method `last` of `List`. The position of the last value, or nothing when the list is empty. |
+| `list_after` | `function list_after<T>(list: List<T>, position: Position) -> Position or nothing` | Method `after` of `List`. The position of the value after the one at a position, or nothing after the last. |
+| `list_before` | `function list_before<T>(list: List<T>, position: Position) -> Position or nothing` | Method `before` of `List`. The position of the value before the one at a position, or nothing before the first. |
+| `list_find` | `function list_find<T>(list: List<T>, value: T) -> Position or nothing` | Method `find` of `List`. The position of the first value equal to `value`, or nothing when no value is. It takes time proportional to the list's size. |
+| `list_size` | `function list_size<T>(list: List<T>) -> integer` | Method `size` of `List`. How many values the list holds. |
+| `list_values` | `function list_values<T>(list: List<T>) -> Array<T>` | Method `values` of `List`. Copies of the values, from the first to the last. |
+| `Map` | `type Map<K, V> = [node_keys: Array<K>, node_values: Array<V>, lower: Array<integer>, higher: Array<integer>, parents: Array<integer>, heights: Array<integer>, root: integer]` | Keys with values, kept in the order of their keys, smallest first, where a dictionary keeps the order they were added in. Keys are numbers or strings, and cannot be NaN. Looking a key up, adding one, and removing one take time proportional to log n for n keys, as do finding the first and last keys and the keys around a key; listing them takes time proportional to n. How a map is kept depends on the order of its changes, so `==` can find two maps of the same keys and values different: compare their `keys()` and `values()`. |
+| `new_map` | `function new_map<K, V>() -> Map<K, V>` | A new, empty map. |
+| `map_set` | `function map_set<K, V>(update map: Map<K, V>, own key: K, own value: V)` | Method `set` of `Map`. Sets the value of a key, adding the key when the map lacks it. |
+| `map_get` | `function map_get<K, V>(map: Map<K, V>, key: K) -> V or nothing` | Method `get` of `Map`. A copy of a key's value, or nothing when the map lacks the key. |
+| `map_contains` | `function map_contains<K, V>(map: Map<K, V>, key: K) -> boolean` | Method `contains` of `Map`. Whether the map has a key. |
+| `map_remove` | `function map_remove<K, V>(update map: Map<K, V>, key: K) -> V or nothing` | Method `remove` of `Map`. Removes a key, returning its value, or nothing when the map lacked it. |
+| `map_size` | `function map_size<K, V>(map: Map<K, V>) -> integer` | Method `size` of `Map`. How many keys the map has. |
+| `map_keys` | `function map_keys<K, V>(map: Map<K, V>) -> Array<K>` | Method `keys` of `Map`. Copies of the keys, smallest first. |
+| `map_values` | `function map_values<K, V>(map: Map<K, V>) -> Array<V>` | Method `values` of `Map`. Copies of the values, in the order of their keys. |
+| `map_first` | `function map_first<K, V>(map: Map<K, V>) -> K or nothing` | Method `first` of `Map`. The smallest key, or nothing when the map is empty. |
+| `map_last` | `function map_last<K, V>(map: Map<K, V>) -> K or nothing` | Method `last` of `Map`. The largest key, or nothing when the map is empty. |
+| `map_before` | `function map_before<K, V>(map: Map<K, V>, key: K) -> K or nothing` | Method `before` of `Map`. The largest key smaller than `key`, or nothing when no key is. |
+| `map_after` | `function map_after<K, V>(map: Map<K, V>, key: K) -> K or nothing` | Method `after` of `Map`. The smallest key larger than `key`, or nothing when no key is. |
+| `map_between` | `function map_between<K, V>(map: Map<K, V>, low: K, high: K) -> Array<K>` | Method `between` of `Map`. Copies of the keys from `low` up to, but not including, `high`, smallest first. |
 
 ## standard/crypto.sayon
 
