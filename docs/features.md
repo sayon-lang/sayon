@@ -109,7 +109,8 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | Release archive for Windows x64 (`scripts/package.ps1`) | experimental | M1 |
 | Installer for Windows x64 (`sayon-setup`): per-user, `PATH`, Settings > Apps uninstall | experimental | M1 |
 | Installer for Linux x64: per user, into `~/.local/share/sayon` with a link in `~/.local/bin`; `scripts/package.sh` | experimental | M3 |
-| Installers for Windows and Linux ARM64, and macOS | planned | with each platform's validation (M5, M7) |
+| Installers for Windows ARM64 and Linux ARM64, built by the packaging scripts on ARM64 computers, and built, installed, used, and uninstalled on GitHub's ARM64 runners for each change | experimental | M5 |
+| Installers for macOS | planned | M7 |
 | `sayon explain` for every diagnostic and runtime error code | experimental | M2 |
 | `sayon lint`: unused names, naming conventions, shadowing, likely typos; `# allow(...)` suppressions; `--deny warnings` | experimental | M2 |
 | Dependencies from local folders and pinned Git commits, `sayon install` (`--locked`, `--offline`), `sayon.lock` with source digests | experimental | M2 |
