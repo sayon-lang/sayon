@@ -1,6 +1,6 @@
 # Error codes
 
-Every diagnostic has a stable code. `sayon explain CODE` prints the entry for a code; this file is the same text. Codes starting with `E_` are errors, which stop a program from running; codes starting with `W_` are warnings. Errors raised while a program runs have codes such as `KeyError`, listed at the end.
+Every diagnostic has a stable code. `sayon explain CODE` prints the entry for a code, which is the same text as here. Codes starting with `E_` are errors, which stop a program from running; codes starting with `W_` are warnings. Errors raised while a program runs have codes such as `KeyError`, listed at the end.
 
 ## Source text and layout
 
