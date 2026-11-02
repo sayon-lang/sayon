@@ -1,0 +1,67 @@
+# JPEG images decoded into canvases, turned as their EXIF orientation says,
+# measured from their header, and drawn scaled.
+graphics = import("standard/graphics.sayon")
+strings = import("standard/strings.sayon")
+
+# A JPEG image of 16 by 16 pixels, of red, green, blue, and white quarters,
+# as libjpeg's cjpeg made it (-quality 95 -optimize -sample 2x2).
+function photo() -> Array<byte>
+    bytes: Array<byte> = [
+        255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 255, 219, 0, 67,
+        0, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 2, 2, 2, 2, 2, 4, 3, 2, 2, 2, 2, 5, 4,
+        4, 3, 4, 6, 5, 6, 6, 6, 5, 6, 6, 6, 7, 9, 8, 6, 7, 9, 7, 6, 6, 8, 11, 8,
+        9, 10, 10, 10, 10, 10, 6, 8, 11, 12, 11, 10, 12, 9, 10, 10, 10, 255, 219, 0, 67, 1, 2, 2,
+        2, 2, 2, 2, 5, 3, 3, 5, 10, 7, 6, 7, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+        10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+        10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 255, 192, 0, 17, 8, 0, 16, 0, 16, 3,
+        1, 34, 0, 2, 17, 1, 3, 17, 1, 255, 196, 0, 22, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 8, 7, 10, 255, 196, 0, 20, 16, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 255, 196, 0, 20, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 3, 255, 196, 0, 41, 17, 0, 1, 2, 2, 6, 11, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 18, 17, 19, 7, 20, 0, 2, 3, 6, 65, 98, 8, 21, 22, 24, 33, 35, 37, 66, 67, 97, 99,
+        255, 218, 0, 12, 3, 1, 0, 2, 17, 3, 17, 0, 63, 0, 57, 175, 128, 219, 91, 132, 136, 186, 61, 236,
+        20, 175, 83, 121, 227, 240, 128, 128, 125, 107, 42, 151, 164, 76, 86, 139, 28, 111, 166, 242, 58, 191, 145, 33,
+        32, 239, 115, 238, 62, 214, 91, 17, 22, 115, 17, 96, 156, 127, 255, 217
+    ]
+    return bytes
+
+# The image with an EXIF segment after its start that gives an orientation,
+# as a camera writes it.
+function oriented(jpeg: Array<byte>, orientation: integer) -> Array<byte>
+    out: Array<byte> = [255, 216, 255, 225, 0, 34]
+    exif: Array<byte> = [69, 120, 105, 102, 0, 0, 77, 77, 0, 42, 0, 0, 0, 8, 0, 1, 1, 18, 0, 3, 0, 0, 0, 1, 0, byte(orientation), 0, 0, 0, 0, 0, 0]
+    for value in exif
+        push(out, value)
+    for index in range(2, length(jpeg))
+        push(out, jpeg[index])
+    return out
+
+function show(color: graphics.Color) -> string
+    return "{color.red} {color.green} {color.blue} {color.alpha}"
+
+image = graphics.decode_image(photo())
+print(image.width, image.height)
+print(show(image.pixel(3, 3)), "/", show(image.pixel(12, 3)), "/", show(image.pixel(3, 12)), "/", show(image.pixel(12, 12)))
+size = graphics.image_size(photo())
+print(size.width, size.height)
+
+# Turned a quarter clockwise, red moves to the top right, and blue to the
+# top left.
+turned = graphics.decode_image(oriented(photo(), 6))
+print(turned.pixel(12, 3) == image.pixel(3, 3), turned.pixel(3, 3) == image.pixel(3, 12))
+
+# Made four by four, and a quarter alone made two by two.
+small = graphics.canvas(4, 4)
+small.draw_scaled(image, 0, 0, 4, 4)
+print(show(small.pixel(0, 0)), "/", show(small.pixel(3, 3)))
+quarter = graphics.canvas(2, 2)
+quarter.draw_part(image, 8, 8, 8, 8, 0, 0, 2, 2)
+print(show(quarter.pixel(1, 1)))
+
+# What is neither a PNG nor a JPEG image, or has no frame, fails.
+outcome = try graphics.decode_image(strings.bytes("GIF89a, not a PNG or JPEG image"))
+if outcome is error
+    print(outcome.code, outcome.message)
+measured = try graphics.image_size([255, 216, 255])
+if measured is error
+    print(measured.code, measured.message)

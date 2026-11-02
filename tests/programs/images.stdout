@@ -16,7 +16,7 @@ color and alpha 8-bit, interlaced, in pieces 33 17 as made
 color and alpha 16-bit 3 2 as made
 color and alpha 8-bit, 1 by 1, interlaced 1 1 as made
 color and alpha 8-bit, repeating 40 30 as made
-not an image ImageError the data is not a PNG image
+not an image ImageError the data is not a PNG or JPEG image
 cut short ImageError the PNG image ends early
 damaged ImageError a chunk of the PNG image is damaged (its checksum is wrong)
 a color its palette lacks ImageError a pixel of the PNG image has a color its palette lacks

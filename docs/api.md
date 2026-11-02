@@ -1,6 +1,6 @@
 # The standard library's API
 
-Every export of the standard library, read from its declarations in `stdlib/`, with the first paragraph of the comment above each. `sayon run scripts/api_inventory.sayon` writes this page, and `cargo test` checks that it is current, so it always says what the library has. 13 modules hold 376 exports, 376 of them with a description.
+Every export of the standard library, read from its declarations in `stdlib/`, with the first paragraph of the comment above each. `sayon run scripts/api_inventory.sayon` writes this page, and `cargo test` checks that it is current, so it always says what the library has. 13 modules hold 380 exports, 380 of them with a description.
 
 A method is a function whose name starts with its type's, called on a value of the type: `set_add(set, value)` is written `set.add(value)`.
 
@@ -9,7 +9,7 @@ A method is a function whose name starts with its type's, called on a value of t
 | [`standard/collections.sayon`](#standardcollectionssayon) | 57 | Sorting arrays, and the Set, Queue, Stack, List, and Map collections. |
 | [`standard/crypto.sayon`](#standardcryptosayon) | 8 | Hashing, signing, passwords, and secure random bytes: SHA-256 digests, HMAC-SHA256 codes, passwords kept as PBKDF2 hashes, and bytes from the system's secure source, fit for keys and tokens, unlike `math.random`. |
 | [`standard/filesystem.sayon`](#standardfilesystemsayon) | 18 | Files, directories, and paths. |
-| [`standard/graphics.sayon`](#standardgraphicssayon) | 50 | Drawing, and windows to show it in. |
+| [`standard/graphics.sayon`](#standardgraphicssayon) | 54 | Drawing, and windows to show it in. |
 | [`standard/io.sayon`](#standardiosayon) | 30 | Console and file input and output. |
 | [`standard/json.sayon`](#standardjsonsayon) | 25 | JSON: reading text into values, and writing values as text. |
 | [`standard/math.sayon`](#standardmathsayon) | 30 | Mathematical functions and constants. |
@@ -143,8 +143,10 @@ Drawing, and windows to show it in.
 | `Point` | `type Point = [x: integer, y: integer]` | A point, in pixels from the top left corner. |
 | `canvas` | `function canvas(width: integer, height: integer) -> Canvas` | A canvas of transparent pixels. Each side is 1 to 16384 pixels, and 67108864 pixels at most in all; other sizes fail with ValueError. |
 | `image` | `function image(width: integer, height: integer, bytes: Array<byte>) -> Canvas` | A canvas of given pixels: red, green, blue, and alpha bytes for each, row by row from the top, as from `canvas.bytes()`. |
-| `decode_image` | `function decode_image(bytes: Array<byte>) -> Canvas` | A canvas of the pixels of a PNG image, of any of PNG's kinds of color, interlaced or not; colors of 16 bits are cut to 8. What is not a PNG image, or is damaged, fails with ImageError. |
-| `load_image` | `function load_image(path: string) -> Canvas` | A canvas of the pixels of a PNG image in a file. |
+| `decode_image` | `function decode_image(bytes: Array<byte>) -> Canvas` | A canvas of the pixels of an image: a PNG image, of any of PNG's kinds of color, interlaced or not, its colors of 16 bits cut to 8; or a JPEG image, baseline or progressive, turned as a photo's EXIF orientation says. What is neither, or is damaged, fails with ImageError. |
+| `load_image` | `function load_image(path: string) -> Canvas` | A canvas of the pixels of a PNG or JPEG image in a file. |
+| `ImageSize` | `type ImageSize = [width: integer, height: integer]` | How wide and high an image is, in pixels. |
+| `image_size` | `function image_size(bytes: Array<byte>) -> ImageSize` | The size of a PNG or JPEG image as `decode_image` gives it, turned as a photo's orientation says, read from the image's header alone, so that a program can refuse an image too large before decoding it. What is neither fails with ImageError. |
 | `canvas_clear` | `function canvas_clear(update canvas: Canvas, color: Color)` | Method `clear` of `Canvas`. Makes every pixel `color`, replacing what was there. |
 | `canvas_fill_rectangle` | `function canvas_fill_rectangle(update canvas: Canvas, x: integer, y: integer, width: integer, height: integer, color: Color)` | Method `fill_rectangle` of `Canvas`. Fills a rectangle with `color`, its top left corner at (x, y). |
 | `canvas_stroke_rectangle` | `function canvas_stroke_rectangle(update canvas: Canvas, x: integer, y: integer, width: integer, height: integer, color: Color, thickness = 1)` | Method `stroke_rectangle` of `Canvas`. A rectangle's outline, `thickness` pixels wide, inside the rectangle. |
@@ -152,6 +154,8 @@ Drawing, and windows to show it in.
 | `canvas_fill_polygon` | `function canvas_fill_polygon(update canvas: Canvas, points: Array<Point>, color: Color)` | Method `fill_polygon` of `Canvas`. The inside of a polygon, by the even-odd rule. |
 | `canvas_line` | `function canvas_line(update canvas: Canvas, x1: integer, y1: integer, x2: integer, y2: integer, color: Color, thickness = 1)` | Method `line` of `Canvas`. A line from the center of one pixel to the center of another, `thickness` pixels wide, its ends cut square at the centers when smooth. |
 | `canvas_draw` | `function canvas_draw(update canvas: Canvas, image: Canvas, x: integer, y: integer)` | Method `draw` of `Canvas`. Draws another canvas, such as an image, with its top left corner at `x`, `y`, over what is there. |
+| `canvas_draw_scaled` | `function canvas_draw_scaled(update canvas: Canvas, image: Canvas, x: integer, y: integer, width: integer, height: integer)` | Method `draw_scaled` of `Canvas`. Draws another canvas scaled to fill the rectangle `width` by `height` pixels with its top left corner at `x`, `y`, over what is there. Made smaller, each pixel is the average of the pixels it covers, by how much of each; made larger, a blend of the nearest ones, by distance. Colors count as much as they are opaque. |
+| `canvas_draw_part` | `function canvas_draw_part(update canvas: Canvas, image: Canvas, part_x: integer, part_y: integer, part_width: integer, part_height: integer, x: integer, y: integer, width: integer, height: integer)` | Method `draw_part` of `Canvas`. Draws a part of another canvas, `part_width` by `part_height` pixels from `part_x`, `part_y`, scaled to fill a rectangle as `draw_scaled` does, such as the middle square of a photo made small. A part reaching outside the image is cut to it. |
 | `canvas_text` | `function canvas_text(update canvas: Canvas, text: string, x: integer, y: integer, size: integer, color: Color)` | Method `text` of `Canvas`. Draws text in the built-in font, its top left corner at `x`, `y`, each character in a cell of `size` pixels; a line break starts a line below. |
 | `text_width` | `function text_width(text: string, size: integer) -> integer` | How wide text is in the built-in font: its longest line's characters times `size`. |
 | `text_height` | `function text_height(text: string, size: integer) -> integer` | How high text is: its lines times `size`. |

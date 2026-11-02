@@ -95,6 +95,7 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | TrueType fonts read by the runtime (`glyf` outlines, simple and composite; `cmap` formats 4 and 12; the first font of a collection), drawn smooth by the nonzero rule, the same everywhere | experimental | M4 |
 | The system's fonts, found by their names in its font directories (Windows, Linux, Android, macOS), with the usual sans-serif, serif, and monospace ones; in web pages the browser's, drawn by its canvas | experimental | M4 |
 | PNG images: every kind of color and depth, palettes, transparency, interlacing, read into canvases; canvases written as PNG; inflate and deflate of the runtime's own | experimental | M4 |
+| JPEG images read into canvases by the runtime's own decoder: baseline and progressive, any sampling, gray, YCbCr, RGB, and Adobe CMYK, restart markers, turned as EXIF's orientation says, the same pixels as libjpeg's `djpeg -nosmooth -dct int`; `image_size` from an image's header alone; canvases drawn scaled, or a part of one, averaged when made smaller and blended when made larger | experimental | M5 |
 | Fonts of PostScript outlines (CFF), kerning, hinting, fallback fonts for missing characters, other image formats | planned | M6 |
 | Graphics after these: text input, a GPU backend; 2D and 3D rendering | planned | M6, M8 |
 | Diagnostics with stable codes and source excerpts | experimental | M1 |

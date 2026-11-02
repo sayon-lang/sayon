@@ -460,6 +460,25 @@ fn unfilter(kind: u8, row: &mut [u8], above: &[u8], step: usize) -> Result<(), H
     Ok(())
 }
 
+/// Whether bytes start as a PNG image does.
+pub fn is_png(bytes: &[u8]) -> bool {
+    bytes.get(..8) == Some(&SIGNATURE)
+}
+
+/// The width and height of a PNG image, read from its header alone.
+pub fn size(bytes: &[u8]) -> Result<(usize, usize), HostError> {
+    if !is_png(bytes) {
+        return Err(fail("the data is not a PNG image"));
+    }
+    match bytes.get(12..24) {
+        Some(header) if &header[0..4] == b"IHDR" => Ok((
+            u32::from_be_bytes(header[4..8].try_into().expect("four bytes")) as usize,
+            u32::from_be_bytes(header[8..12].try_into().expect("four bytes")) as usize,
+        )),
+        _ => Err(fail("the PNG image has no header")),
+    }
+}
+
 /// Decodes a PNG image of at most `most` pixels.
 pub fn decode(bytes: &[u8], most: usize) -> Result<Image, HostError> {
     if bytes.get(..8) != Some(&SIGNATURE) {

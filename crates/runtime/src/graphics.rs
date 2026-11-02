@@ -136,6 +136,42 @@ fn unpack(color: i64) -> [u8; 4] {
     ]
 }
 
+/// The pixels of a run of `from` that pixel `index` of a run of `to` is
+/// made of: the first of them, and each one's share, out of 2^16. Made
+/// smaller, the shares are how much of each pixel it covers; made larger,
+/// it takes the nearest two by distance.
+fn weights(from: u64, to: u64, index: u64) -> (usize, Vec<u64>) {
+    if from >= to {
+        // Pixel `index` covers from index * from / to to (index + 1) * from / to.
+        let (from, to, index) = (from as u128, to as u128, index as u128);
+        let (start, end) = (index * from, (index + 1) * from);
+        let (first, last) = (start / to, (end - 1) / to);
+        let mut shares: Vec<u64> = (first..=last)
+            .map(|pixel| {
+                let covered = end.min((pixel + 1) * to) - start.max(pixel * to);
+                (covered * 65536 / from) as u64
+            })
+            .collect();
+        // What rounding lost goes to the largest share, so that they add to 1.
+        let total: u64 = shares.iter().sum();
+        if let Some(largest) = shares.iter_mut().max() {
+            *largest += 65536 - total;
+        }
+        return (first as usize, shares);
+    }
+    // The center of pixel `index`, in pixels of `from`, times 2 * to.
+    let (from, to) = (from as i128, to as i128);
+    let center = (2 * index as i128 + 1) * from - to;
+    let first = center.div_euclid(2 * to);
+    let fraction = (center.rem_euclid(2 * to) * 65536 / (2 * to)) as u64;
+    let (near, far) = (first.clamp(0, from - 1), (first + 1).clamp(0, from - 1));
+    if near == far {
+        (near as usize, vec![65536])
+    } else {
+        (near as usize, vec![65536 - fraction, fraction])
+    }
+}
+
 /// A range of whole pixels, `start..end`, clipped to `0..limit`.
 fn clip(start: i64, end: i64, limit: usize) -> std::ops::Range<usize> {
     let limit = limit as i64;
@@ -500,6 +536,77 @@ impl Canvas {
         }
     }
 
+    /// Draws a part of `source`, given as its left, top, width, and height,
+    /// scaled to fill the rectangle `to`, blending it over what is there.
+    /// Made smaller, each pixel takes the average of the pixels it covers,
+    /// by how much of each; made larger, a blend of the nearest two each
+    /// way, by distance. Colors count as much as they are opaque. A part
+    /// reaching outside the source is cut to it.
+    pub fn draw_scaled(&mut self, source: &Canvas, part: [i64; 4], to: [i64; 4]) {
+        let [left, top, wide, high] = part;
+        let left_end = left.saturating_add(wide).min(source.width as i64);
+        let top_end = top.saturating_add(high).min(source.height as i64);
+        let (left, top) = (left.max(0), top.max(0));
+        let [x, y, width, height] = to;
+        if left >= left_end || top >= top_end || width <= 0 || height <= 0 {
+            return;
+        }
+        let (from_wide, from_high) = ((left_end - left) as u64, (top_end - top) as u64);
+        let (left, top) = (left as usize, top as usize);
+        let columns = clip(x, x.saturating_add(width), self.width);
+        let rows = clip(y, y.saturating_add(height), self.height);
+        if columns.is_empty() || rows.is_empty() {
+            return;
+        }
+        // Across first: each row of the part to the columns drawn, its
+        // colors times their opacity, out of 255 * 255.
+        let shown = columns.len();
+        let column_weights: Vec<(usize, Vec<u64>)> = columns
+            .clone()
+            .map(|column| weights(from_wide, width as u64, (column as i64 - x) as u64))
+            .collect();
+        let mut across = vec![0u32; from_high as usize * shown * 4];
+        for row in 0..from_high as usize {
+            let line = (top + row) * source.width + left;
+            for (index, (first, shares)) in column_weights.iter().enumerate() {
+                let mut sum = [0u64; 4];
+                for (offset, &share) in shares.iter().enumerate() {
+                    let at = (line + first + offset) * 4;
+                    let alpha = source.pixels[at + 3] as u64;
+                    for (total, &value) in sum.iter_mut().zip(&source.pixels[at..at + 3]) {
+                        *total += share * value as u64 * alpha;
+                    }
+                    sum[3] += share * alpha * 255;
+                }
+                let at = (row * shown + index) * 4;
+                for channel in 0..4 {
+                    across[at + channel] = ((sum[channel] + (1 << 15)) >> 16) as u32;
+                }
+            }
+        }
+        // Then down, for each row drawn, and blended in.
+        for row in rows {
+            let (first, shares) = weights(from_high, height as u64, (row as i64 - y) as u64);
+            for (index, column) in columns.clone().enumerate() {
+                let mut sum = [0u64; 4];
+                for (offset, &share) in shares.iter().enumerate() {
+                    let at = ((first + offset) * shown + index) * 4;
+                    for channel in 0..4 {
+                        sum[channel] += share * across[at + channel] as u64;
+                    }
+                }
+                let [red, green, blue, opacity] = sum.map(|value| (value + (1 << 15)) >> 16);
+                if opacity == 0 {
+                    continue;
+                }
+                let [red, green, blue] = [red, green, blue]
+                    .map(|value| ((value * 255 + opacity / 2) / opacity).min(255) as u8);
+                let alpha = ((opacity + 127) / 255).min(255) as u8;
+                self.blend(column, row, [red, green, blue, alpha]);
+            }
+        }
+    }
+
     /// Draws text in the built-in font, each character in a square cell of
     /// `size` pixels, its top left corner at `x`, `y`; a line break starts
     /// a line below.
@@ -702,5 +809,60 @@ mod tests {
         assert!(Canvas::new(0, 10).is_err());
         assert!(Canvas::new(16385, 1).is_err());
         assert!(Canvas::from_bytes(2, 2, &[0; 15]).is_err());
+    }
+
+    /// A canvas of one row of opaque grays.
+    fn grays(values: &[u8]) -> Canvas {
+        let pixels: Vec<u8> = values.iter().flat_map(|&v| [v, v, v, 255]).collect();
+        Canvas::from_bytes(values.len() as i64, 1, &pixels).unwrap()
+    }
+
+    fn row(canvas: &Canvas) -> Vec<u8> {
+        canvas.pixels.chunks(4).map(|p| p[0]).collect()
+    }
+
+    #[test]
+    fn made_smaller_each_pixel_averages_what_it_covers() {
+        let source = grays(&[0, 90, 180]);
+        let mut two = Canvas::new(2, 1).unwrap();
+        two.draw_scaled(&source, [0, 0, 3, 1], [0, 0, 2, 1]);
+        // Each covers one pixel whole and half of the middle one.
+        assert_eq!(row(&two), [30, 150]);
+        let mut one = Canvas::new(1, 1).unwrap();
+        one.draw_scaled(&source, [1, 0, 2, 1], [0, 0, 1, 1]);
+        assert_eq!(row(&one), [135]);
+        assert!(two.pixels.chunks(4).all(|p| p[3] == 255));
+    }
+
+    #[test]
+    fn made_larger_each_pixel_blends_the_nearest() {
+        let mut four = Canvas::new(4, 1).unwrap();
+        four.draw_scaled(&grays(&[0, 200]), [0, 0, 2, 1], [0, 0, 4, 1]);
+        assert_eq!(row(&four), [0, 50, 150, 200]);
+    }
+
+    #[test]
+    fn scaling_counts_colors_as_much_as_they_are_opaque() {
+        let source = Canvas::from_bytes(2, 1, &[255, 0, 0, 255, 0, 0, 0, 0]).unwrap();
+        let mut one = Canvas::new(1, 1).unwrap();
+        one.draw_scaled(&source, [0, 0, 2, 1], [0, 0, 1, 1]);
+        // Half red, half nothing: red, half transparent, not darker.
+        assert_eq!(&one.pixels[..3], &[255, 0, 0]);
+        assert!((127..=128).contains(&one.pixels[3]));
+    }
+
+    #[test]
+    fn a_part_is_cut_to_its_image_and_drawn_where_the_canvas_is() {
+        let source = grays(&[10, 20, 30]);
+        let mut same = Canvas::new(3, 1).unwrap();
+        same.draw_scaled(&source, [-5, 0, 20, 1], [0, 0, 3, 1]);
+        assert_eq!(row(&same), [10, 20, 30]);
+        let mut shifted = Canvas::new(3, 1).unwrap();
+        shifted.draw_scaled(&source, [0, 0, 3, 1], [-1, 0, 3, 1]);
+        assert_eq!(row(&shifted), [20, 30, 0]);
+        let mut nothing = Canvas::new(3, 1).unwrap();
+        nothing.draw_scaled(&source, [0, 0, 3, 1], [0, 0, 0, 1]);
+        nothing.draw_scaled(&source, [9, 0, 3, 1], [0, 0, 3, 1]);
+        assert!(nothing.pixels.iter().all(|&b| b == 0));
     }
 }

@@ -223,6 +223,8 @@ hosts! {
     Canonical = "canonical"(String) -> String;
     HmacSha256 = "hmac_sha256"(Bytes, Bytes) -> Bytes;
     Pbkdf2Sha256 = "pbkdf2_sha256"(Bytes, Bytes, Integer, Integer) -> Bytes;
+    ImageSize = "image_size"(Bytes, Integer) -> Integer;
+    CanvasDrawScaled = "canvas_draw_scaled"(Stream, Stream, Integers) -> Nothing;
 }
 
 impl Host {
@@ -749,7 +751,19 @@ pub fn invoke(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> {
             ))
         }),
         Host::ImageDecode => {
-            crate::png::decode(bytes(args, 0), crate::graphics::MOST_PIXELS as usize)
+            let data = bytes(args, 0);
+            let most = crate::graphics::MOST_PIXELS as usize;
+            let image = if crate::jpeg::is_jpeg(data) {
+                crate::jpeg::decode(data, most)
+            } else if crate::png::is_png(data) {
+                crate::png::decode(data, most)
+            } else {
+                Err((
+                    "ImageError",
+                    "the data is not a PNG or JPEG image".to_string(),
+                ))
+            };
+            image
                 .and_then(|image| {
                     crate::graphics::Canvas::from_bytes(
                         image.width as i64,
@@ -1223,6 +1237,36 @@ pub fn invoke(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> {
                 iterations as u32,
                 length as usize,
             )))
+        }
+        Host::ImageSize => {
+            let data = bytes(args, 0);
+            let size = if crate::jpeg::is_jpeg(data) {
+                crate::jpeg::size(data)
+            } else if crate::png::is_png(data) {
+                crate::png::size(data)
+            } else {
+                Err((
+                    "ImageError",
+                    "the data is not a PNG or JPEG image".to_string(),
+                ))
+            };
+            size.map(|(width, height)| {
+                V::Integer(if integer(args, 1) == 0 { width } else { height } as i64)
+            })
+        }
+        Host::CanvasDrawScaled => {
+            let Some(HostArg::Integers(numbers)) = args.get(2) else {
+                panic!("host argument 2 should be integers");
+            };
+            let Ok([left, top, wide, high, x, y, width, height]) =
+                <[i64; 8]>::try_from(numbers.as_slice())
+            else {
+                panic!("host argument 2 should be eight integers");
+            };
+            crate::streams::with_canvases(stream(args, 0), stream(args, 1), |target, source| {
+                target.draw_scaled(source, [left, top, wide, high], [x, y, width, height]);
+                V::Nothing
+            })
         }
         Host::TrimStart => Ok(V::String(string(args, 0).trim_start().to_string())),
         Host::TrimEnd => Ok(V::String(string(args, 0).trim_end().to_string())),

@@ -45,8 +45,9 @@
 #     font = graphics.system_font()
 #     canvas.write(font, "Hello", 20, 20, 24, graphics.WHITE)
 #
-# PNG images load into canvases, and canvases save as PNG images. Opening
-# a window where there is no screen fails with GraphicsError.
+# PNG and JPEG images load into canvases, a canvas draws another scaled to
+# any size, and canvases save as PNG images. Opening a window where there
+# is no screen fails with GraphicsError.
 
 time = import("standard/time.sayon")
 
@@ -100,18 +101,29 @@ function canvas(width: integer, height: integer) -> Canvas
 function image(width: integer, height: integer, bytes: Array<byte>) -> Canvas
     return Canvas(pixels = host_canvas_from_bytes(width, height, bytes), width = width, height = height, smooth = false)
 
-# A canvas of the pixels of a PNG image, of any of PNG's kinds of color,
-# interlaced or not; colors of 16 bits are cut to 8. What is not a PNG
-# image, or is damaged, fails with ImageError.
+# A canvas of the pixels of an image: a PNG image, of any of PNG's kinds of
+# color, interlaced or not, its colors of 16 bits cut to 8; or a JPEG
+# image, baseline or progressive, turned as a photo's EXIF orientation
+# says. What is neither, or is damaged, fails with ImageError.
 function decode_image(bytes: Array<byte>) -> Canvas
     pixels = host_image_decode(bytes)
     width = host_canvas_size(pixels, 0)
     height = host_canvas_size(pixels, 1)
     return Canvas(pixels = pixels, width = width, height = height, smooth = false)
 
-# A canvas of the pixels of a PNG image in a file.
+# A canvas of the pixels of a PNG or JPEG image in a file.
 function load_image(path: string) -> Canvas
     return decode_image(host_read_file_bytes(path))
+
+# How wide and high an image is, in pixels.
+type ImageSize = [width: integer, height: integer]
+
+# The size of a PNG or JPEG image as `decode_image` gives it, turned as a
+# photo's orientation says, read from the image's header alone, so that a
+# program can refuse an image too large before decoding it. What is
+# neither fails with ImageError.
+function image_size(bytes: Array<byte>) -> ImageSize
+    return ImageSize(width = host_image_size(bytes, 0), height = host_image_size(bytes, 1))
 
 # Makes every pixel `color`, replacing what was there.
 function canvas_clear(update canvas: Canvas, color: Color)
@@ -154,6 +166,21 @@ function canvas_line(update canvas: Canvas, x1: integer, y1: integer, x2: intege
 # `y`, over what is there.
 function canvas_draw(update canvas: Canvas, image: Canvas, x: integer, y: integer)
     host_canvas_draw(canvas.pixels, image.pixels, x, y)
+
+# Draws another canvas scaled to fill the rectangle `width` by `height`
+# pixels with its top left corner at `x`, `y`, over what is there. Made
+# smaller, each pixel is the average of the pixels it covers, by how much
+# of each; made larger, a blend of the nearest ones, by distance. Colors
+# count as much as they are opaque.
+function canvas_draw_scaled(update canvas: Canvas, image: Canvas, x: integer, y: integer, width: integer, height: integer)
+    host_canvas_draw_scaled(canvas.pixels, image.pixels, [0, 0, image.width, image.height, x, y, width, height])
+
+# Draws a part of another canvas, `part_width` by `part_height` pixels from
+# `part_x`, `part_y`, scaled to fill a rectangle as `draw_scaled` does, such
+# as the middle square of a photo made small. A part reaching outside the
+# image is cut to it.
+function canvas_draw_part(update canvas: Canvas, image: Canvas, part_x: integer, part_y: integer, part_width: integer, part_height: integer, x: integer, y: integer, width: integer, height: integer)
+    host_canvas_draw_scaled(canvas.pixels, image.pixels, [part_x, part_y, part_width, part_height, x, y, width, height])
 
 # Draws text in the built-in font, its top left corner at `x`, `y`, each
 # character in a cell of `size` pixels; a line break starts a line below.

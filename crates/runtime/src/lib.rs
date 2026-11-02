@@ -30,6 +30,7 @@ pub mod graphics;
 pub mod host;
 #[cfg(target_os = "android")]
 mod jni;
+pub mod jpeg;
 pub mod network;
 pub mod parallel;
 pub mod png;
