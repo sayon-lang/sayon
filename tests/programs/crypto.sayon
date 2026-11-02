@@ -15,3 +15,19 @@ print(crypto.same(first, clone(first)), crypto.same([1, 2], [1, 3]), crypto.same
 result = try crypto.random_bytes(-1)
 if result is error
     print(result.code)
+
+# RFC 4231's first test case, and PBKDF2-HMAC-SHA256's common vectors.
+print(crypto.hex(crypto.hmac_sha256([11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11], strings.bytes("Hi There"))))
+print(crypto.hex(crypto.pbkdf2_sha256(strings.bytes("password"), strings.bytes("salt"), 4096, 32)))
+print(crypto.hex(crypto.pbkdf2_sha256(strings.bytes("password"), strings.bytes("salt"), 2, 20)))
+rounds = try crypto.pbkdf2_sha256([], [], 0, 32)
+if rounds is error
+    print(rounds.code)
+
+# A kept password: the same password twice gives different text, and only
+# the password checks out.
+kept = crypto.hash_password("correct horse battery staple")
+again = crypto.hash_password("correct horse battery staple")
+print(strings.starts_with(kept, "pbkdf2-sha256$600000$"), length(kept), kept != again)
+print(crypto.check_password("correct horse battery staple", kept), crypto.check_password("correct horse battery stapler", kept))
+print(crypto.check_password("anything", "pbkdf2-sha256$x$salt$hash"), crypto.check_password("anything", ""))

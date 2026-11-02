@@ -221,6 +221,8 @@ hosts! {
     TrimEnd = "trim_end"(String) -> String;
     DecimalText = "decimal_text"(Float, Integer) -> String;
     Canonical = "canonical"(String) -> String;
+    HmacSha256 = "hmac_sha256"(Bytes, Bytes) -> Bytes;
+    Pbkdf2Sha256 = "pbkdf2_sha256"(Bytes, Bytes, Integer, Integer) -> Bytes;
 }
 
 impl Host {
@@ -1196,6 +1198,32 @@ pub fn invoke(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> {
             Ok(V::Bytes(hasher.finish().to_vec()))
         }
         Host::RandomBytes => crate::secure_random::bytes(integer(args, 0)).map(V::Bytes),
+        Host::HmacSha256 => Ok(V::Bytes(
+            crate::sha256::Hmac::new(bytes(args, 0))
+                .sign(bytes(args, 1))
+                .to_vec(),
+        )),
+        Host::Pbkdf2Sha256 => {
+            let (iterations, length) = (integer(args, 2), integer(args, 3));
+            if !(1..=10_000_000).contains(&iterations) {
+                return Err((
+                    "ValueError",
+                    format!("PBKDF2 takes 1 to 10000000 iterations, not {iterations}"),
+                ));
+            }
+            if !(1..=1024).contains(&length) {
+                return Err((
+                    "ValueError",
+                    format!("PBKDF2 derives 1 to 1024 bytes, not {length}"),
+                ));
+            }
+            Ok(V::Bytes(crate::sha256::pbkdf2(
+                bytes(args, 0),
+                bytes(args, 1),
+                iterations as u32,
+                length as usize,
+            )))
+        }
         Host::TrimStart => Ok(V::String(string(args, 0).trim_start().to_string())),
         Host::TrimEnd => Ok(V::String(string(args, 0).trim_end().to_string())),
         Host::DecimalText => {

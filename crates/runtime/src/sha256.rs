@@ -1,5 +1,6 @@
 //! SHA-256 (FIPS 180-4): package digests for the compiler, and
-//! `standard/crypto`'s `sha256` for programs.
+//! `standard/crypto`'s `sha256` for programs, with HMAC (RFC 2104) and
+//! PBKDF2 (RFC 8018) over it, for signing messages and keeping passwords.
 
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -12,9 +13,13 @@ const K: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
+/// A hash in progress. Its partial block is kept in place, so that a copy
+/// costs no allocation: HMAC copies one for every message.
+#[derive(Clone)]
 pub struct Sha256 {
     state: [u32; 8],
-    buffer: Vec<u8>,
+    buffer: [u8; 64],
+    buffered: usize,
     length: u64,
 }
 
@@ -25,7 +30,8 @@ impl Default for Sha256 {
                 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
                 0x5be0cd19,
             ],
-            buffer: Vec::with_capacity(64),
+            buffer: [0; 64],
+            buffered: 0,
             length: 0,
         }
     }
@@ -34,35 +40,42 @@ impl Default for Sha256 {
 impl Sha256 {
     pub fn update(&mut self, mut data: &[u8]) {
         self.length += data.len() as u64;
-        if !self.buffer.is_empty() {
-            let needed = 64 - self.buffer.len();
-            let take = needed.min(data.len());
-            self.buffer.extend_from_slice(&data[..take]);
+        if self.buffered > 0 {
+            let take = (64 - self.buffered).min(data.len());
+            self.buffer[self.buffered..self.buffered + take].copy_from_slice(&data[..take]);
+            self.buffered += take;
             data = &data[take..];
-            if self.buffer.len() == 64 {
-                let block: [u8; 64] = self.buffer[..].try_into().expect("block");
-                self.compress(&block);
-                self.buffer.clear();
+            if self.buffered < 64 {
+                return;
             }
+            let block = self.buffer;
+            self.compress(&block);
+            self.buffered = 0;
         }
         let (blocks, rest) = data.as_chunks::<64>();
         for block in blocks {
             self.compress(block);
         }
-        self.buffer.extend_from_slice(rest);
+        self.buffer[..rest.len()].copy_from_slice(rest);
+        self.buffered = rest.len();
     }
 
     pub fn finish(mut self) -> [u8; 32] {
         let bits = self.length.wrapping_mul(8);
-        let mut padding = vec![0x80u8];
-        let used = (self.buffer.len() + 1) % 64;
-        let zeros = if used <= 56 { 56 - used } else { 120 - used };
-        padding.extend(std::iter::repeat_n(0, zeros));
-        padding.extend_from_slice(&bits.to_be_bytes());
+        // A 1 bit, zeros up to 8 bytes before the end of a block, and the
+        // length in bits: 72 bytes at most.
+        let mut padding = [0u8; 72];
+        padding[0] = 0x80;
+        let zeros = if self.buffered < 56 {
+            55 - self.buffered
+        } else {
+            119 - self.buffered
+        };
+        padding[1 + zeros..9 + zeros].copy_from_slice(&bits.to_be_bytes());
         let length = self.length;
-        self.update(&padding);
+        self.update(&padding[..9 + zeros]);
         self.length = length;
-        debug_assert!(self.buffer.is_empty());
+        debug_assert_eq!(self.buffered, 0);
         let mut out = [0u8; 32];
         for (index, word) in self.state.iter().enumerate() {
             out[index * 4..index * 4 + 4].copy_from_slice(&word.to_be_bytes());
@@ -114,6 +127,69 @@ pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// HMAC-SHA256 (RFC 2104) under one key: the inner and outer hashes with
+/// their padded keys taken in already, so that each message costs only its
+/// own blocks.
+#[derive(Clone)]
+pub struct Hmac {
+    inner: Sha256,
+    outer: Sha256,
+}
+
+impl Hmac {
+    pub fn new(key: &[u8]) -> Hmac {
+        // A key longer than a block is its digest.
+        let mut block = [0u8; 64];
+        if key.len() > 64 {
+            let mut hasher = Sha256::default();
+            hasher.update(key);
+            block[..32].copy_from_slice(&hasher.finish());
+        } else {
+            block[..key.len()].copy_from_slice(key);
+        }
+        let mut inner = Sha256::default();
+        inner.update(&block.map(|byte| byte ^ 0x36));
+        let mut outer = Sha256::default();
+        outer.update(&block.map(|byte| byte ^ 0x5c));
+        Hmac { inner, outer }
+    }
+
+    /// The message's authentication code: 32 bytes.
+    pub fn sign(&self, message: &[u8]) -> [u8; 32] {
+        let mut inner = self.inner.clone();
+        inner.update(message);
+        let mut outer = self.outer.clone();
+        outer.update(&inner.finish());
+        outer.finish()
+    }
+}
+
+/// PBKDF2 (RFC 8018) with HMAC-SHA256: `length` bytes derived from a
+/// password and a salt by `iterations` rounds, each block of 32 bytes the
+/// sum (by XOR) of its rounds.
+pub fn pbkdf2(password: &[u8], salt: &[u8], iterations: u32, length: usize) -> Vec<u8> {
+    let hmac = Hmac::new(password);
+    let mut out = Vec::with_capacity(length);
+    let mut number = 1u32;
+    while out.len() < length {
+        let mut first = Vec::with_capacity(salt.len() + 4);
+        first.extend_from_slice(salt);
+        first.extend_from_slice(&number.to_be_bytes());
+        let mut round = hmac.sign(&first);
+        let mut block = round;
+        for _ in 1..iterations {
+            round = hmac.sign(&round);
+            for (sum, byte) in block.iter_mut().zip(round) {
+                *sum ^= byte;
+            }
+        }
+        let take = (length - out.len()).min(32);
+        out.extend_from_slice(&block[..take]);
+        number += 1;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +227,66 @@ mod tests {
         assert_eq!(
             hex(&hasher.finish()),
             "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
+        );
+        // Every length of the last block pads to a whole one.
+        for size in 50..=130 {
+            let data = vec![b'x'; size];
+            let mut split = Sha256::default();
+            split.update(&data[..size / 3]);
+            split.update(&data[size / 3..]);
+            assert_eq!(hex(&split.finish()), digest(&data), "{size} bytes");
+        }
+    }
+
+    #[test]
+    fn hmac_vectors() {
+        // RFC 4231's test cases 1, 2, and 6 (a key longer than a block).
+        let code = |key: &[u8], message: &[u8]| hex(&Hmac::new(key).sign(message));
+        assert_eq!(
+            code(&[0x0b; 20], b"Hi There"),
+            "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+        );
+        assert_eq!(
+            code(b"Jefe", b"what do ya want for nothing?"),
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
+        assert_eq!(
+            code(
+                &[0xaa; 131],
+                b"Test Using Larger Than Block-Size Key - Hash Key First"
+            ),
+            "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"
+        );
+    }
+
+    #[test]
+    fn pbkdf2_vectors() {
+        let derive = |password: &[u8], salt: &[u8], iterations, length| {
+            hex(&pbkdf2(password, salt, iterations, length))
+        };
+        assert_eq!(
+            derive(b"password", b"salt", 1, 32),
+            "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"
+        );
+        assert_eq!(
+            derive(b"password", b"salt", 4096, 32),
+            "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a"
+        );
+        // RFC 7914's vectors, of two blocks.
+        assert_eq!(
+            derive(b"passwd", b"salt", 1, 64),
+            "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc\
+             49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783"
+        );
+        assert_eq!(
+            derive(b"Password", b"NaCl", 80000, 64),
+            "4ddcd8f60b98be21830cee5ef22701f9641a4418d04c0414aeff08876b34ab56\
+             a1d425a1225833549adb841b51c9b3176a272bdebba1d078478f62b397f33c8d"
+        );
+        // A length that is not a whole number of blocks.
+        assert_eq!(
+            derive(b"password", b"salt", 2, 20),
+            "ae4d0c95af6b46d32d0adff928f06dd02a303f8e"
         );
     }
 }

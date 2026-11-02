@@ -1,13 +1,13 @@
 # The standard library's API
 
-Every export of the standard library, read from its declarations in `stdlib/`, with the first paragraph of the comment above each. `sayon run scripts/api_inventory.sayon` writes this page, and `cargo test` checks that it is current, so it always says what the library has. 13 modules hold 372 exports, 372 of them with a description.
+Every export of the standard library, read from its declarations in `stdlib/`, with the first paragraph of the comment above each. `sayon run scripts/api_inventory.sayon` writes this page, and `cargo test` checks that it is current, so it always says what the library has. 13 modules hold 376 exports, 376 of them with a description.
 
 A method is a function whose name starts with its type's, called on a value of the type: `set_add(set, value)` is written `set.add(value)`.
 
 | Module | Exports | For |
 |---|---|---|
 | [`standard/collections.sayon`](#standardcollectionssayon) | 57 | Sorting arrays, and the Set, Queue, Stack, List, and Map collections. |
-| [`standard/crypto.sayon`](#standardcryptosayon) | 4 | Hashing and secure random bytes: SHA-256 digests, and bytes from the system's secure source, fit for keys and tokens, unlike `math.random`. |
+| [`standard/crypto.sayon`](#standardcryptosayon) | 8 | Hashing, signing, passwords, and secure random bytes: SHA-256 digests, HMAC-SHA256 codes, passwords kept as PBKDF2 hashes, and bytes from the system's secure source, fit for keys and tokens, unlike `math.random`. |
 | [`standard/filesystem.sayon`](#standardfilesystemsayon) | 18 | Files, directories, and paths. |
 | [`standard/graphics.sayon`](#standardgraphicssayon) | 50 | Drawing, and windows to show it in. |
 | [`standard/io.sayon`](#standardiosayon) | 30 | Console and file input and output. |
@@ -86,11 +86,15 @@ Sorting arrays, and the Set, Queue, Stack, List, and Map collections.
 
 ## standard/crypto.sayon
 
-Hashing and secure random bytes: SHA-256 digests, and bytes from the system's secure source, fit for keys and tokens, unlike `math.random`.
+Hashing, signing, passwords, and secure random bytes: SHA-256 digests, HMAC-SHA256 codes, passwords kept as PBKDF2 hashes, and bytes from the system's secure source, fit for keys and tokens, unlike `math.random`.
 
 | Export | Declaration | Description |
 |---|---|---|
 | `sha256` | `function sha256(data: Array<byte>) -> Array<byte>` | The SHA-256 digest of bytes (FIPS 180-4): 32 bytes. |
+| `hmac_sha256` | `function hmac_sha256(key: Array<byte>, message: Array<byte>) -> Array<byte>` | The HMAC-SHA256 code of a message under a key (RFC 2104): 32 bytes that only someone with the key could make, for telling that a message, such as a cookie, is one you made. Compare codes with `same`. |
+| `pbkdf2_sha256` | `function pbkdf2_sha256(password: Array<byte>, salt: Array<byte>, rounds: integer, length: integer) -> Array<byte>` | PBKDF2 with HMAC-SHA256 (RFC 8018): `length` bytes derived from a password and a salt by `rounds` rounds of HMAC-SHA256, slow on purpose, so that guessing passwords is slow too. Rounds are 1 to 10,000,000 and the length 1 to 1,024 bytes; others raise `ValueError`. `hash_password` chooses them for keeping passwords. |
+| `hash_password` | `function hash_password(password: string) -> string` | A password made safe to keep: `pbkdf2-sha256$<rounds>$<salt>$<hash>`, from 600,000 rounds of PBKDF2 and a new random salt, so that the same password never gives the same text twice. It takes a moment, on purpose. `check_password` tells whether a password is the one it was made from. |
+| `check_password` | `function check_password(password: string, kept: string) -> boolean` | Whether `password` is the one `hash_password` made `kept` from, comparing the hashes in constant time; false for text `hash_password` does not make. |
 | `random_bytes` | `function random_bytes(count: integer) -> Array<byte>` | `count` bytes from the system's secure random source, 1 MiB at most at a time; a negative or larger count raises `ValueError`. |
 | `hex` | `function hex(data: Array<byte>) -> string` | Bytes as lowercase hexadecimal, two digits for each. |
 | `same` | `function same(first: Array<byte>, second: Array<byte>) -> boolean` | Whether two byte arrays are equal, looking at every byte rather than stopping at the first that differs, for comparing secrets such as tokens. |
