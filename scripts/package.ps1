@@ -138,7 +138,7 @@ libraries for its processor: the Visual Studio Installer adds them with the comp
 "$crossComponent"; ``sayon target setup $crossTarget`` says more.
 
 To start a project: sayon init hello, then cd hello and sayon run.
-The guides are at https://github.com/sayon-lang/docs.sayon-lang.org, and
+The guides are at https://github.com/sayon-lang/www.sayon-lang.org, and
 the VS Code extension at https://github.com/sayon-lang/sayon-vscode.
 "@
 Set-Content -Path (Join-Path $stage "INSTALL.txt") -Value $install -Encoding utf8

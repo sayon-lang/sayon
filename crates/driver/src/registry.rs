@@ -1,4 +1,4 @@
-//! The package registry's protocol (PROTOCOL.md of packages.sayon-lang.org),
+//! The package registry's protocol (PROTOCOL.md of www.sayon-lang.org),
 //! apart from how its requests travel. A registry is named by the address
 //! of its index, which holds a file for each package, a line of JSON for
 //! each version, and `config.json`, which says where the registry's API
@@ -17,8 +17,8 @@ use sayon_syntax::{FileId, Span};
 pub const PROTOCOL: u32 = 1;
 
 /// The registry used when nothing names another, by its index's address:
-/// until Sayon's registry is operated, the one packages.sayon-lang.org
-/// runs on this computer with `sayon run -- --port 4100`.
+/// until Sayon's website is operated, the one www.sayon-lang.org runs on
+/// this computer with `sayon run -- --port 4100`.
 pub const DEFAULT: &str = "http://127.0.0.1:4100/index";
 
 /// Whether an address can be a registry's: HTTPS, or plain HTTP to this

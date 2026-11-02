@@ -1,12 +1,13 @@
 //! The registry end to end: `sayon login`, on the registry's page and with
 //! a token, `publish`, `search`, `info`, `logout`, and `install` of
-//! versions, against the registry itself, a Sayon program, run by the
-//! `sayon` built here from its repository checked out beside this one
-//! (`../packages.sayon-lang.org`, or in `SAYON_REPOSITORIES`); without it,
-//! those tests are skipped. They also send the registry publications that a
-//! package cannot be, keep tokens out of what is written and shown, and
-//! start the registry again on its data. A registry that lies, a server of
-//! the test's own, checks what `sayon install` refuses of one.
+//! versions, against the registry itself, part of Sayon's website, a Sayon
+//! program, run by the `sayon` built here from its repository checked out
+//! beside this one (`../www.sayon-lang.org`, or in `SAYON_REPOSITORIES`);
+//! without it, those tests are skipped. They also send the registry
+//! publications that a package cannot be, keep tokens out of what is
+//! written and shown, and start the registry again on its data. A registry
+//! that lies, a server of the test's own, checks what `sayon install`
+//! refuses of one.
 
 use sayon_driver::archive::{DOMAIN, LARGEST, digest};
 use sayon_driver::json::Json;
@@ -52,10 +53,10 @@ fn registry(base: &Path, accounts: &[&str]) -> Option<Registry> {
     let repositories = std::env::var_os("SAYON_REPOSITORIES")
         .map(PathBuf::from)
         .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."));
-    let repository = repositories.join("packages.sayon-lang.org");
+    let repository = repositories.join("www.sayon-lang.org");
     if !repository.join("src/main.sayon").is_file() {
         eprintln!(
-            "SKIPPED: the registry's tests (no packages.sayon-lang.org in {})",
+            "SKIPPED: the registry's tests (no www.sayon-lang.org in {})",
             repositories.display()
         );
         return None;

@@ -58,14 +58,14 @@ Every example program is checked to behave identically in the interpreter and as
 
 ## Installing
 
-Download the installer for your device from the [releases page](https://github.com/sayon-lang/sayon/releases) and run it. On Windows with an x64 processor (most PCs) that is `sayon-<version>-windows-x64-setup.exe`. It installs Sayon for your user account without administrator rights, makes `sayon` available in new terminals, and can be removed from Settings > Apps. On Linux with an x64 processor it is `sayon-<version>-linux-x64-setup`, which installs into `~/.local/share/sayon` and links `~/.local/bin/sayon`. Installers for other devices arrive as Sayon is validated on them; [Installing](https://github.com/sayon-lang/docs.sayon-lang.org/blob/main/installing.md) lists them and describes every option. No release has been published yet; until then, build the installer from source as described below.
+Download the installer for your device from the [releases page](https://github.com/sayon-lang/sayon/releases) and run it. On Windows with an x64 processor (most PCs) that is `sayon-<version>-windows-x64-setup.exe`. It installs Sayon for your user account without administrator rights, makes `sayon` available in new terminals, and can be removed from Settings > Apps. On Linux with an x64 processor it is `sayon-<version>-linux-x64-setup`, which installs into `~/.local/share/sayon` and links `~/.local/bin/sayon`. Installers for other devices arrive as Sayon is validated on them; [Installing](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/installing.md) lists them and describes every option. No release has been published yet; until then, build the installer from source as described below.
 
 ## Documentation
 
-The guides are in their own repository, [docs.sayon-lang.org](https://github.com/sayon-lang/docs.sayon-lang.org):
+The guides are part of Sayon's website, in [www.sayon-lang.org](https://github.com/sayon-lang/www.sayon-lang.org/tree/main/docs):
 
-- [Installing](https://github.com/sayon-lang/docs.sayon-lang.org/blob/main/installing.md): installers for each device, what they change, and uninstalling
-- [The language](https://github.com/sayon-lang/docs.sayon-lang.org/blob/main/language.md): a reference for everything implemented so far
+- [Installing](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/installing.md): installers for each device, what they change, and uninstalling
+- [The language](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/language.md): a reference for everything implemented so far
 
 The references that change with the compiler are here, in `docs`:
 
@@ -128,13 +128,11 @@ Sayon's other parts have repositories of their own, beside this one:
 
 | Repository | What it holds |
 | --- | --- |
-| [docs.sayon-lang.org](https://github.com/sayon-lang/docs.sayon-lang.org) | The guides: installing, and the language reference |
-| [packages.sayon-lang.org](https://github.com/sayon-lang/packages.sayon-lang.org) | The package registry, written in Sayon: its website, its API, and its protocol |
-| [packages.sayon-lang.org-index](https://github.com/sayon-lang/packages.sayon-lang.org-index) | The registry's index: every published version, which `sayon install` reads |
+| [packages-index](https://github.com/sayon-lang/packages-index) | The registry's index: every published version, which `sayon install` reads |
 | [sayon-vscode](https://github.com/sayon-lang/sayon-vscode) | The VS Code extension: highlighting, the `.sayon` file icon, and the language server's client |
-| [www.sayon-lang.org](https://github.com/sayon-lang/www.sayon-lang.org) | The website |
+| [www.sayon-lang.org](https://github.com/sayon-lang/www.sayon-lang.org) | Sayon's website, written in Sayon: the guides, the package registry with its API and protocol, and accounts |
 
-Checked out beside this repository, as `../packages.sayon-lang.org` and `../sayon-vscode`, the registry and the extension are tested with the `sayon` built here: `cargo test` runs them, and says it skipped them otherwise. `SAYON_REPOSITORIES` names another folder that holds them.
+Checked out beside this repository, as `../www.sayon-lang.org` and `../sayon-vscode`, the registry and the extension are tested with the `sayon` built here: `cargo test` runs them, and says it skipped them otherwise. `SAYON_REPOSITORIES` names another folder that holds them.
 
 ## License
 

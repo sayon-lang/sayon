@@ -46,12 +46,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: sayon
-      # The registry tests run the registry, which lives beside Sayon.
-      - name: Check out the registry
+      # The registry tests run the registry, part of Sayon's website, which
+      # lives beside Sayon.
+      - name: Check out the website
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: sayon-lang/packages.sayon-lang.org
-          path: packages.sayon-lang.org
+          repository: sayon-lang/www.sayon-lang.org
+          path: www.sayon-lang.org
       - name: Build
         working-directory: sayon
         run: cargo build --workspace

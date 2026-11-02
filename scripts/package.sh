@@ -155,7 +155,7 @@ TLS (https:// and network.connect_secure) uses the system's OpenSSL 3
 $requirement
 
 To start a project: sayon init hello, then cd hello and sayon run.
-The guides are at https://github.com/sayon-lang/docs.sayon-lang.org, and
+The guides are at https://github.com/sayon-lang/www.sayon-lang.org, and
 the VS Code extension at https://github.com/sayon-lang/sayon-vscode.
 EOF
 

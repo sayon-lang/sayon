@@ -1,10 +1,10 @@
 //! The registry commands, `sayon login`, `logout`, `publish`, `search`, and
 //! `info`, and the registry client `sayon install` fetches packages with.
-//! The protocol is described in the registry's repository,
-//! packages.sayon-lang.org: a registry is named by its index's address, and
-//! the index's `config.json` says where its API and archives are. The
-//! driver reads what they hold (`sayon_driver::registry`), and `http`
-//! carries the requests.
+//! The protocol is described in the repository of Sayon's website, which
+//! holds the registry, www.sayon-lang.org: a registry is named by its
+//! index's address, and the index's `config.json` says where its API and
+//! archives are. The driver reads what they hold
+//! (`sayon_driver::registry`), and `http` carries the requests.
 
 use crate::compile::{Options, current_project, print_package_error};
 use crate::credentials::{self, Saved};
@@ -78,7 +78,7 @@ fn reachable(registry: &str) -> Result<(), String> {
 
 fn reach(registry: &str, error: String) -> String {
     let local = if registry == registry::DEFAULT {
-        "; it is the registry run on this computer, which `sayon run -- --port 4100` in packages.sayon-lang.org starts, unless SAYON_REGISTRY names another"
+        "; it is the registry run on this computer, which `sayon run -- --port 4100` in www.sayon-lang.org, Sayon's website, starts, unless SAYON_REGISTRY names another"
     } else {
         ""
     };
