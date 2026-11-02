@@ -1129,6 +1129,26 @@ fn the_registry_keeps_its_data_and_finishes_what_a_crash_left() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+/// The path of the link holding `part`, such as /verify/, in the mail to
+/// `to` that the registry kept in its data folder, having no mail server.
+fn mailed_link(base: &Path, to: &str, part: &str) -> String {
+    for file in under(&base.join("registry/mail")) {
+        let text = std::fs::read_to_string(&file).unwrap_or_default();
+        if !text.contains(&format!("To: <{to}>")) {
+            continue;
+        }
+        let found = text
+            .lines()
+            .find(|line| line.starts_with("http") && line.contains(part));
+        if let Some(line) = found {
+            let rest = line.split_once("://").map_or(line, |(_, rest)| rest);
+            let start = rest.find('/').expect("a link has a path");
+            return rest[start..].trim().to_string();
+        }
+    }
+    panic!("no mail to {to} holds a link with {part}");
+}
+
 /// The value of the cookie an answer's head sets, as a request sends it
 /// back, or "" without one.
 fn cookie_of(head: &str) -> String {
@@ -1189,7 +1209,7 @@ fn signing_in_on_the_registrys_page_gives_this_computer_a_token() {
         ("Content-Type", "application/x-www-form-urlencoded"),
         ("Origin", origin.as_str()),
     ];
-    let fields = b"name=carol&password=a+long+walk+home+at+dusk&again=a+long+walk+home+at+dusk";
+    let fields = b"name=carol&email=carol%40example.com&password=a+long+walk+home+at+dusk&again=a+long+walk+home+at+dusk";
     let (status, head, body) = exchange(&host, "POST", "/sign-up", &form, fields);
     assert_eq!(status, 303, "{head}{body}");
     let cookie = cookie_of(&head);
@@ -1241,8 +1261,14 @@ fn signing_in_on_the_registrys_page_gives_this_computer_a_token() {
     );
     assert_eq!((status, me.as_str()), (200, "{\"name\":\"carol\"}"));
     assert!(!seen.contains(&token) && !carol.shown.borrow().contains(&token));
+    // It publishes once the account's email is verified, by the link the
+    // registry mailed, which it keeps in its data folder without a mail
+    // server.
     let package = base.join("strings");
     strings(&package, "0.2.0", "!");
+    carol.fails(&package, &["publish"], "has not verified its email");
+    let link = mailed_link(&base, "carol@example.com", "/verify/");
+    assert_eq!(send(&host, "GET", &link, &[], b"").0, 200);
     carol.ok(&package, &["publish"]);
     kept_secret(&base, &token);
 
