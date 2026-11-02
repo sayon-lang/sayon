@@ -504,6 +504,11 @@ impl<'m> Machine<'m> {
                         SlotValue::Value(value) => value,
                         _ => Value::Nothing,
                     };
+                    // The frame's values go now: when a task finishes,
+                    // `finish_task` may wait for others before it returns,
+                    // and what the task captured, such as a connection,
+                    // must not outlive it meanwhile.
+                    drop(frame);
                     if self.frames.len() == base {
                         if self.current == 0
                             || self
@@ -538,6 +543,8 @@ impl<'m> Machine<'m> {
                             location: None,
                         },
                     };
+                    // As for a return, the frame's values go first.
+                    drop(frame);
                     if self.frames.len() == base {
                         if self.current == 0
                             || self

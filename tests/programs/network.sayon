@@ -46,6 +46,27 @@ parts.finish_sending()
 print(threads.join(gathered))
 parts.close()
 
+# A connection a task captured closes as the task finishes, while every
+# other task waits: the other side reads to its end at once.
+closer = network.listen("127.0.0.1", 0)
+reader = network.connect("127.0.0.1", closer.address().port)
+reader.set_timeout(time.seconds(5))
+accepted = closer.accept()
+heard: Channel<boolean> = threads.new_channel()
+farewell = threads.spawn(function()
+    accepted.write_line("bye")
+    accepted.flush()
+    threads.receive(heard)
+)
+greeting = reader.read_line()
+threads.send(heard, true)
+ending = try reader.read_line()
+if ending is error
+    print(greeting, ending.code, ending.message)
+else
+    print(greeting, ending)
+threads.join(farewell)
+
 # A small HTTP server, for one request at a time.
 function respond(update connection: network.Connection, status: string, headers: Array<string>, body: string)
     connection.write("HTTP/1.1 {status}\r\n")
