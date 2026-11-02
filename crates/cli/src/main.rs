@@ -44,8 +44,8 @@ Usage:
     sayon search <words>             Find packages in the registry
     sayon info <package>             Show a package's versions and dependencies
     sayon publish [--dry-run]        Publish the project's package to the registry
-    sayon login                      Keep the token of an account at the registry
-    sayon logout                     Forget the registry's token
+    sayon login                      Sign in to the registry in the browser
+    sayon logout                     Revoke this computer's token and forget it
     sayon clean                      Remove a project's build output
     sayon doctor                     Check the installation and native toolchain
     sayon target list                List the targets and what each provides
@@ -78,6 +78,10 @@ Options:
                                      or the local one at http://127.0.0.1:4100/index
                                      (search, info, publish, login, logout)
     --dry-run                        Show what would be published, without publishing
+    --token                          Read an account's token from the input instead
+                                     of signing in in the browser (login)
+    --no-browser                     Show the sign-in page's address without
+                                     opening it (login)
     --limit <count>                  How many packages to show, at most 50 (search)
 
 Native builds use clang from LLVM. Set SAYON_CLANG to choose a clang
@@ -213,7 +217,12 @@ fn dispatch(args: &[String]) -> u8 {
         "install" => (&["--quiet", "--locked", "--offline"], &["--color"], false),
         "publish" => (&["--quiet", "--dry-run"], &["--color", "--registry"], false),
         "search" => (&["--quiet"], &["--color", "--registry", "--limit"], false),
-        "info" | "login" | "logout" => (&["--quiet"], &["--color", "--registry"], false),
+        "info" | "logout" => (&["--quiet"], &["--color", "--registry"], false),
+        "login" => (
+            &["--quiet", "--token", "--no-browser"],
+            &["--color", "--registry"],
+            false,
+        ),
         "init" | "clean" | "doctor" | "explain" | "target" | "lsp" => (&[], &[], false),
         other => return usage_error(&format!("unknown command `{other}`")),
     };
@@ -332,7 +341,12 @@ fn dispatch(args: &[String]) -> u8 {
             };
             match (command.as_str(), parsed.positional.as_slice()) {
                 ("publish", []) => registry::publish(&address, parsed.flag("--dry-run"), &options),
-                ("login", []) => registry::login(&address, &options),
+                ("login", []) => registry::login(
+                    &address,
+                    parsed.flag("--token"),
+                    !parsed.flag("--no-browser"),
+                    &options,
+                ),
                 ("logout", []) => registry::logout(&address, &options),
                 ("info", [name]) => registry::info(&address, name, &options),
                 ("search", words) if !words.is_empty() => {
@@ -350,7 +364,7 @@ fn dispatch(args: &[String]) -> u8 {
                     usage_error("`sayon info` takes one package's name, as `sayon info json`")
                 }
                 ("login", _) => usage_error(
-                    "`sayon login` takes no arguments; it asks for the token, so that it stays out of the shell's history",
+                    "`sayon login` takes no arguments; with `--token` it reads the token from its input, so that it stays out of the shell's history",
                 ),
                 _ => usage_error(&format!(
                     "`sayon {command}` takes no arguments; it works on the project in the current directory"

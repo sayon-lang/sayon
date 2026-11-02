@@ -1,12 +1,12 @@
-//! The registry end to end: `sayon login`, `publish`, `search`, `info`,
-//! `logout`, and `install` of versions, against the registry itself, a
-//! Sayon program, run by the `sayon` built here from its repository checked
-//! out beside this one (`../packages.sayon-lang.org`, or in
-//! `SAYON_REPOSITORIES`); without it, those tests are skipped. They also
-//! send the registry publications that a package cannot be, keep tokens out
-//! of what is written and shown, and start the registry again on its data.
-//! A registry that lies, a server of the test's own, checks what `sayon
-//! install` refuses of one.
+//! The registry end to end: `sayon login`, on the registry's page and with
+//! a token, `publish`, `search`, `info`, `logout`, and `install` of
+//! versions, against the registry itself, a Sayon program, run by the
+//! `sayon` built here from its repository checked out beside this one
+//! (`../packages.sayon-lang.org`, or in `SAYON_REPOSITORIES`); without it,
+//! those tests are skipped. They also send the registry publications that a
+//! package cannot be, keep tokens out of what is written and shown, and
+//! start the registry again on its data. A registry that lies, a server of
+//! the test's own, checks what `sayon install` refuses of one.
 
 use sayon_driver::archive::{DOMAIN, LARGEST, digest};
 use sayon_driver::json::Json;
@@ -18,7 +18,9 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 struct Registry {
     child: Child,
@@ -173,6 +175,34 @@ impl Sayon {
         );
         run
     }
+
+    /// Starts `sayon` without waiting for it, with what it shows on its
+    /// standard error coming line by line.
+    fn start(&self, dir: &Path, args: &[&str]) -> (Child, Receiver<String>) {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_sayon"))
+            .args(args)
+            .current_dir(dir)
+            .env("SAYON_REGISTRY", &self.url)
+            .env("SAYON_CACHE", &self.cache)
+            .env("SAYON_CREDENTIALS", &self.credentials)
+            .env_remove("SAYON_TOKEN")
+            .env("NO_COLOR", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("sayon runs");
+        let errors = child.stderr.take().unwrap();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(errors).lines().map_while(Result::ok) {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        (child, receiver)
+    }
 }
 
 fn write(path: &Path, text: &str) {
@@ -242,16 +272,16 @@ fn archive_of(files: &[File]) -> Vec<u8> {
     out
 }
 
-/// Sends a request as no `sayon` would, and reads the status and the body
-/// of the answer. A `Content-Length` given among the headers replaces the
-/// body's.
-fn send(
+/// Sends a request as no `sayon` would, or as a browser does, and reads the
+/// status, the head, and the body of the answer. A `Content-Length` given
+/// among the headers replaces the body's.
+fn exchange(
     host: &str,
     method: &str,
     path: &str,
     headers: &[(&str, &str)],
     body: &[u8],
-) -> (u16, String) {
+) -> (u16, String, String) {
     let mut stream = TcpStream::connect(host).unwrap();
     let mut head = format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
     for (name, value) in headers {
@@ -267,8 +297,20 @@ fn send(
     stream.read_to_end(&mut answer).unwrap();
     let answer = String::from_utf8_lossy(&answer);
     let status = answer.get(9..12).and_then(|code| code.parse().ok());
-    let (_, body) = answer.split_once("\r\n\r\n").unwrap_or_default();
-    (status.unwrap_or(0), body.to_string())
+    let (head, body) = answer.split_once("\r\n\r\n").unwrap_or_default();
+    (status.unwrap_or(0), head.to_string(), body.to_string())
+}
+
+/// The status and the body of the answer to a request [`exchange`] sends.
+fn send(
+    host: &str,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: &[u8],
+) -> (u16, String) {
+    let (status, _, body) = exchange(host, method, path, headers, body);
+    (status, body)
 }
 
 /// What a [`Liar`] answers each path with: a status, and a body.
@@ -411,14 +453,14 @@ fn packages_are_published_found_and_installed() {
     let package = base.join("strings");
     strings(&package, "0.2.0", "!");
     alice.fails(&package, &["publish"], "run `sayon login`");
-    let wrong = alice.run(&base, &["login"], "sayon_not_a_token\n");
+    let wrong = alice.run(&base, &["login", "--token"], "sayon_not_a_token\n");
     assert_ne!(wrong.status, 0);
     assert!(
         wrong.stderr.contains("not one this registry knows"),
         "{}",
         wrong.stderr
     );
-    let login = alice.run(&base, &["login"], &token("alice"));
+    let login = alice.run(&base, &["login", "--token"], &token("alice"));
     assert_eq!(login.status, 0, "{}", login.stderr);
     assert!(login.stderr.contains("as alice"), "{}", login.stderr);
 
@@ -442,7 +484,7 @@ fn packages_are_published_found_and_installed() {
     alice.ok(&package, &["publish"]);
 
     // A name belongs to the account that published it first.
-    let login = bob.run(&base, &["login"], &token("bob"));
+    let login = bob.run(&base, &["login", "--token"], &token("bob"));
     assert_eq!(login.status, 0, "{}", login.stderr);
     strings(&package, "0.4.0", "?");
     bob.fails(&package, &["publish"], "belongs to the account `alice`");
@@ -563,18 +605,33 @@ fn packages_are_published_found_and_installed() {
     );
     alice.fails(&app, &["install"], "there is no package `wordz`");
 
+    // `sayon logout` revokes the token on the registry as well.
     let out = alice.ok(&base, &["logout"]);
-    assert!(out.stderr.contains("logged out"), "{}", out.stderr);
+    assert!(
+        out.stderr.contains("its token is revoked"),
+        "{}",
+        out.stderr
+    );
     alice.fails(&package, &["publish"], "run `sayon login`");
+    let revoked = format!("Bearer {}", registry.tokens.get("alice").as_str().unwrap());
+    let me = send(
+        &registry.host(),
+        "GET",
+        "/api/v1/me",
+        &[("Authorization", &revoked)],
+        b"",
+    );
+    assert_eq!(me.0, 401, "{}", me.1);
 
     // A token is shown once, when it is made, and kept in the credentials:
     // in nothing `sayon` showed, and in no file of the projects, the cache,
-    // or the registry, which keeps its SHA-256.
-    let accounts = std::fs::read_to_string(base.join("registry/accounts.json")).unwrap();
+    // or the registry, which keeps the SHA-256 of those not revoked.
+    let tokens = std::fs::read_to_string(base.join("registry/tokens.json")).unwrap();
     for name in ["alice", "bob"] {
         let token = registry.tokens.get(name).as_str().unwrap();
         let hash = digest(token.as_bytes());
-        assert!(accounts.contains(&hash["sha256:".len()..]), "{accounts}");
+        let listed = tokens.contains(&hash["sha256:".len()..]);
+        assert_eq!(listed, name == "bob", "{tokens}");
         for sayon in [&alice, &bob] {
             assert!(!sayon.shown.borrow().contains(token));
         }
@@ -779,7 +836,7 @@ fn a_registry_that_lies_is_refused() {
         200,
         br#"{"name":"mallory\nhttp://127.0.0.1:4100/index mallory planted"}"#,
     );
-    let login = sayon.run(&base, &["login"], "sayon_not_a_token\n");
+    let login = sayon.run(&base, &["login", "--token"], "sayon_not_a_token\n");
     assert_ne!(login.status, 0);
     assert!(
         login
@@ -976,7 +1033,9 @@ fn publications_a_package_cannot_be_are_refused() {
     let data = base.join("registry");
     let kept: Vec<PathBuf> = under(&data)
         .into_iter()
-        .filter(|path| path.is_file() && !path.ends_with("accounts.json"))
+        .filter(|path| {
+            path.is_file() && !path.ends_with("accounts.json") && !path.ends_with("tokens.json")
+        })
         .collect();
     assert!(kept.is_empty(), "{kept:?}");
     answers(put("strings/1.0.0", &alice, &good), 201, &digest(&good));
@@ -999,7 +1058,7 @@ fn the_registry_keeps_its_data_and_finishes_what_a_crash_left() {
     };
     let token = first.tokens.get("alice").as_str().unwrap().to_string();
     let alice = Sayon::new(&first.url, base.join("cache"), base.join("credentials"));
-    let login = alice.run(&base, &["login"], &format!("{token}\n"));
+    let login = alice.run(&base, &["login", "--token"], &format!("{token}\n"));
     assert_eq!(login.status, 0, "{}", login.stderr);
     let package = base.join("strings");
     strings(&package, "0.2.0", "!");
@@ -1023,6 +1082,7 @@ fn the_registry_keeps_its_data_and_finishes_what_a_crash_left() {
     let half = &listed[..listed.len() / 2];
     write(Path::new(&format!("{}.tmp", file.display())), half);
     write(&data.join("accounts.json.tmp"), "{\"alice\": ");
+    write(&data.join("tokens.json.tmp"), "{\"");
 
     // Started again on its data, without making accounts, the registry
     // knows the token and lists what it listed; publishing 0.3.0 again
@@ -1031,7 +1091,7 @@ fn the_registry_keeps_its_data_and_finishes_what_a_crash_left() {
         return;
     };
     let alice = Sayon::new(&second.url, base.join("cache"), base.join("credentials"));
-    let login = alice.run(&base, &["login"], &format!("{token}\n"));
+    let login = alice.run(&base, &["login", "--token"], &format!("{token}\n"));
     assert_eq!(login.status, 0, "{}", login.stderr);
     let info = alice.ok(&base, &["info", "strings"]);
     assert!(
@@ -1065,5 +1125,149 @@ fn the_registry_keeps_its_data_and_finishes_what_a_crash_left() {
     assert!(!alice.shown.borrow().contains(&token));
     kept_secret(&base, &token);
     drop(second);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// The value of the cookie an answer's head sets, as a request sends it
+/// back, or "" without one.
+fn cookie_of(head: &str) -> String {
+    head.lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("set-cookie").then(|| {
+                value
+                    .split(';')
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            })
+        })
+        .unwrap_or_default()
+}
+
+/// The page `sayon login` shows for its sign-in, once it shows it.
+fn sign_in_page(lines: &Receiver<String>, seen: &mut String) -> String {
+    loop {
+        let line = lines
+            .recv_timeout(Duration::from_secs(120))
+            .unwrap_or_else(|_| panic!("sayon login showed no page: {seen}"));
+        seen.push_str(&line);
+        seen.push('\n');
+        if let Some(start) = line.find("http://")
+            && line.contains("/login/")
+        {
+            return line[start..].trim().to_string();
+        }
+    }
+}
+
+/// Waits for a `sayon` that was started, and gives its exit status and the
+/// rest of what it showed.
+fn finish(mut child: Child, lines: Receiver<String>, seen: &mut String) -> i32 {
+    let status = child.wait().unwrap().code().unwrap_or(-1);
+    for line in lines.iter() {
+        seen.push_str(&line);
+        seen.push('\n');
+    }
+    status
+}
+
+#[test]
+fn signing_in_on_the_registrys_page_gives_this_computer_a_token() {
+    let base = scratch("browser");
+    let Some(registry) = registry(&base, &[]) else {
+        return;
+    };
+    let host = registry.host();
+    let origin = format!("http://{host}");
+    let carol = Sayon::new(&registry.url, base.join("cache"), base.join("credentials"));
+
+    // An account made on the registry's page: the browser is signed in.
+    let form = [
+        ("Content-Type", "application/x-www-form-urlencoded"),
+        ("Origin", origin.as_str()),
+    ];
+    let fields = b"name=carol&password=a+long+walk+home+at+dusk&again=a+long+walk+home+at+dusk";
+    let (status, head, body) = exchange(&host, "POST", "/sign-up", &form, fields);
+    assert_eq!(status, 303, "{head}{body}");
+    let cookie = cookie_of(&head);
+    assert!(cookie.starts_with("sayon_session="), "{head}");
+    let signed = [
+        ("Content-Type", "application/x-www-form-urlencoded"),
+        ("Origin", origin.as_str()),
+        ("Cookie", cookie.as_str()),
+    ];
+
+    // `sayon login` shows the page of its sign-in, with its code, and waits
+    // until the sign-in is approved there.
+    let mut seen = String::new();
+    let (child, lines) = carol.start(&base, &["login", "--no-browser"]);
+    let page = sign_in_page(&lines, &mut seen);
+    let path = page.trim_start_matches(&origin).to_string();
+    let code = path.trim_start_matches("/login/");
+    assert!(seen.contains(&format!("the code {code}")), "{seen}");
+    let (status, approval) = send(&host, "GET", &path, &signed[2..], b"");
+    assert_eq!(status, 200, "{approval}");
+    assert!(approval.contains("Approve this sign-in?"), "{approval}");
+    // A form from another site approves nothing.
+    let elsewhere = [signed[0], ("Origin", "https://example.com"), signed[2]];
+    assert_eq!(
+        send(&host, "POST", &path, &elsewhere, b"decision=approve").0,
+        403
+    );
+    assert_eq!(
+        send(&host, "POST", &path, &signed, b"decision=approve").0,
+        303
+    );
+    assert_eq!(finish(child, lines, &mut seen), 0, "{seen}");
+    assert!(seen.contains("as carol"), "{seen}");
+
+    // The token it keeps is the account's, and is shown nowhere.
+    let kept = std::fs::read_to_string(base.join("credentials")).unwrap();
+    let token = kept
+        .split_whitespace()
+        .find(|word| word.starts_with("sayon_"))
+        .expect("the credentials hold a token")
+        .to_string();
+    let bearer = format!("Bearer {token}");
+    let (status, me) = send(
+        &host,
+        "GET",
+        "/api/v1/me",
+        &[("Authorization", &bearer)],
+        b"",
+    );
+    assert_eq!((status, me.as_str()), (200, "{\"name\":\"carol\"}"));
+    assert!(!seen.contains(&token) && !carol.shown.borrow().contains(&token));
+    let package = base.join("strings");
+    strings(&package, "0.2.0", "!");
+    carol.ok(&package, &["publish"]);
+    kept_secret(&base, &token);
+
+    // A sign-in denied on its page gives no token.
+    let mut seen = String::new();
+    let (child, lines) = carol.start(&base, &["login", "--no-browser"]);
+    let page = sign_in_page(&lines, &mut seen);
+    let path = page.trim_start_matches(&origin).to_string();
+    assert_eq!(send(&host, "POST", &path, &signed, b"decision=deny").0, 303);
+    assert_ne!(finish(child, lines, &mut seen), 0, "{seen}");
+    assert!(seen.contains("denied"), "{seen}");
+
+    // `sayon logout` revokes the token.
+    let out = carol.ok(&base, &["logout"]);
+    assert!(
+        out.stderr.contains("its token is revoked"),
+        "{}",
+        out.stderr
+    );
+    let (status, _) = send(
+        &host,
+        "GET",
+        "/api/v1/me",
+        &[("Authorization", &bearer)],
+        b"",
+    );
+    assert_eq!(status, 401);
     let _ = std::fs::remove_dir_all(&base);
 }
