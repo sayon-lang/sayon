@@ -58,14 +58,15 @@ Every example program is checked to behave identically in the interpreter and as
 
 ## Installing
 
-Download the installer for your device from the [releases page](https://github.com/sayon-lang/sayon/releases) and run it. On Windows with an x64 processor (most PCs) that is `sayon-<version>-windows-x64-setup.exe`. It installs Sayon for your user account without administrator rights, makes `sayon` available in new terminals, and can be removed from Settings > Apps. On Linux with an x64 processor it is `sayon-<version>-linux-x64-setup`, which installs into `~/.local/share/sayon` and links `~/.local/bin/sayon`. Installers for other devices arrive as Sayon is validated on them; [Installing](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/installing.md) lists them and describes every option. No release has been published yet; until then, build the installer from source as described below.
+Download the installer for your device from the [releases page](https://github.com/sayon-lang/sayon/releases) and run it. On Windows with an x64 processor (most PCs) that is `sayon-<version>-windows-x64-setup.exe`. It installs Sayon for your user account without administrator rights, makes `sayon` available in new terminals, and can be removed from Settings > Apps. On Linux with an x64 processor it is `sayon-<version>-linux-x64-setup`, which installs into `~/.local/share/sayon` and links `~/.local/bin/sayon`. Installers for other devices arrive as Sayon is validated on them; [Installing](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/get-started/installing.md) lists them and describes every option. No release has been published yet; until then, build the installer from source as described below.
 
 ## Documentation
 
 The guides are part of Sayon's website, in [www.sayon-lang.org](https://github.com/sayon-lang/www.sayon-lang.org/tree/main/docs):
 
-- [Installing](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/installing.md): installers for each device, what they change, and uninstalling
-- [The language](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/language.md): a reference for everything implemented so far
+- [Installing](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/get-started/installing.md): installers for each device, what they change, and uninstalling
+- [Your first program](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/get-started/first-program.md): a script, a project, checking, testing, and formatting, step by step
+- [Every guide](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/README.md), by category: the language as implemented so far, its standard library, its tools, and references to look things up
 
 The references that change with the compiler are here, in `docs`:
 

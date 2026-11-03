@@ -19,7 +19,7 @@ Both execution modes run the same IR. The runtime's text rules (number formattin
 
 ## Grammar
 
-Layout is described in [the language reference](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/language.md#source-files): a statement ends at a line start outside delimiters, and a block is the run of lines indented deeper than its header, all at the indentation of the block's first line. `NEWLINE`, `INDENT`, and `DEDENT` below stand for those layout events; the lexer does not produce them as tokens.
+Layout is described in [the language reference](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/language/basics.md#source-files): a statement ends at a line start outside delimiters, and a block is the run of lines indented deeper than its header, all at the indentation of the block's first line. `NEWLINE`, `INDENT`, and `DEDENT` below stand for those layout events; the lexer does not produce them as tokens.
 
 ```ebnf
 module      = { statement } ;
