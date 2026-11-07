@@ -441,7 +441,7 @@ impl<'m> Machine<'m> {
                 Err(error)
             }
             Err(RunError::TaskFailures(mut failures)) => Err(failures.remove(0)),
-            Err(RunError::Fatal(message)) => Err(ErrorValue {
+            Err(RunError::Fatal(message) | RunError::Stopped(message)) => Err(ErrorValue {
                 code: "InternalError".to_string(),
                 message,
                 location: None,

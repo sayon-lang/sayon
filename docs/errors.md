@@ -489,6 +489,12 @@ if supports("processes")
 
 or check and build the program for targets that have it. `sayon target list` shows what each target lacks.
 
+In the sandbox (`sayon run --sandbox`), a program has only the console, tasks, clocks, random numbers, and the library's pure parts: no files, environment, input, other programs, network, windows, threads, C functions, or time zones. The message says "programs in the sandbox cannot", and `supports` is false for the rest.
+
+### E_SANDBOX_IMPORT
+
+A program run with `sayon run --sandbox` imports something other than a module of the standard library. In the sandbox a program is one file: it imports only `standard/...` modules, and no other file is read for it, nor the project around it. Put what the program needs in its own file.
+
 ### E_UNKNOWN_PLATFORM
 
 A platform branch compares `platform` or `processor` with a name that is not one, such as `platform == "windos"`, so its branch would never apply. `platform` is one of `"windows"`, `"linux"`, `"macos"`, `"android"`, `"ios"`, `"web"`, and `"wasi"`; `processor` is `"x64"`, `"arm64"`, or `"wasm32"`.
@@ -644,6 +650,12 @@ A task waited for something no task could ever provide: every task was waiting, 
 ### DecodeError
 
 JSON did not fit the type `json.decode` or `json.from_json` was reading it into: a value of the wrong kind, a structure field that is missing, a name that is not a variant of the enum, or an integer with a fraction or outside its type's range. The message starts with the path to the place in the JSON value, such as `$.points[2].x`, and says what was expected and what was found.
+
+### SandboxError
+
+A program in the sandbox (`sayon run --sandbox`) reached an operation the sandbox does not give it. The checker refuses such programs with `E_CAPABILITY` before they run, so this is the sandbox's second gate, while the program runs.
+
+A program that goes past the sandbox's limits is stopped instead, and nothing catches that: it ends with status 3 and "the sandbox stopped the program", saying which limit it went past: 5 seconds of processor time, 10 seconds in all, 256 MiB of memory, or 64 KiB of output.
 
 ### ForeignError
 

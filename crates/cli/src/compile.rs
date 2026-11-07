@@ -262,6 +262,7 @@ fn driver_options(
         target,
         overlays: Default::default(),
         index: false,
+        sandbox: false,
     })
 }
 
@@ -297,6 +298,7 @@ pub fn editor_options(entry: &Path) -> Result<sayon_driver::Options, String> {
         target: sayon_target::host(),
         overlays: Default::default(),
         index: true,
+        sandbox: false,
     })
 }
 
@@ -310,7 +312,38 @@ pub fn compile(
     target: &'static sayon_target::Target,
 ) -> Result<Compiled, u8> {
     let driver_options = driver_options(entry, root, options, tests, false, target)?;
-    let output = match sayon_driver::compile(entry, &driver_options) {
+    compile_with(entry, &driver_options, options)
+}
+
+/// Loads, checks, and lowers one file for the sandbox, printing any
+/// diagnostics: on its own, outside any project around it, importing only
+/// the standard library, for the sandbox's target.
+pub fn compile_sandboxed(entry: &Path, options: &Options) -> Result<Compiled, u8> {
+    let root = entry
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let driver_options = sayon_driver::Options {
+        stdlib: stdlib_dir(),
+        tests: false,
+        root: Some(root),
+        lint: false,
+        packages: Default::default(),
+        target: sayon_target::sandbox(),
+        overlays: Default::default(),
+        index: false,
+        sandbox: true,
+    };
+    compile_with(entry, &driver_options, options)
+}
+
+fn compile_with(
+    entry: &Path,
+    driver_options: &sayon_driver::Options,
+    options: &Options,
+) -> Result<Compiled, u8> {
+    let output = match sayon_driver::compile(entry, driver_options) {
         Ok(output) => output,
         Err(sayon_driver::EntryError(message)) => {
             eprintln!("error: {message}");

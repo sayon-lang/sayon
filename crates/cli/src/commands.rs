@@ -43,6 +43,7 @@ fn report_run_error(error: sayon_interp::RunError, options: &Options) -> u8 {
             eprintln!("fatal error: {message}");
             status::FATAL
         }
+        sayon_interp::RunError::Stopped(reason) => crate::sandbox::stopped(&reason),
     }
 }
 
@@ -172,6 +173,33 @@ pub fn run(source: &Source, options: &Options, program_args: &[String]) -> u8 {
     let result = sayon_interp::Machine::new(&compiled.module, &compiled.sources, &mut out).run();
     let _ = out.flush();
     drop(out);
+    finished(result, options)
+}
+
+/// `sayon run --sandbox`: runs one file from anyone, kept from what the
+/// sandbox does not give it, and within its limits, which count from the
+/// start, the checking too (see `sandbox`).
+pub fn run_sandboxed(file: &Path, options: &Options) -> u8 {
+    crate::sandbox::enter();
+    let compiled = match crate::compile::compile_sandboxed(file, options) {
+        Ok(compiled) => compiled,
+        Err(code) => return code,
+    };
+    // Written a line at a time, so that what the program printed before
+    // the sandbox stops it shows.
+    let mut out = std::io::stdout();
+    let mut machine = sayon_interp::Machine::new(&compiled.module, &compiled.sources, &mut out);
+    machine.sandbox(sayon_interp::Sandbox {
+        capabilities: sayon_target::SANDBOX,
+        output_limit: crate::sandbox::OUTPUT,
+    });
+    let result = machine.run();
+    let _ = out.flush();
+    finished(result, options)
+}
+
+/// The status a program's run ends with, reporting how it failed.
+fn finished(result: Result<i32, sayon_interp::RunError>, options: &Options) -> u8 {
     match result {
         Ok(code) if (0..=255).contains(&code) => code as u8,
         Ok(code) => {
@@ -756,7 +784,8 @@ pub fn test(files: &[String], options: &Options) -> u8 {
                                 }
                             }
                         }
-                        sayon_interp::RunError::Fatal(message) => {
+                        sayon_interp::RunError::Fatal(message)
+                        | sayon_interp::RunError::Stopped(message) => {
                             println!("          fatal: {message}")
                         }
                     }

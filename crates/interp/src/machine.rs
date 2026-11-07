@@ -38,6 +38,18 @@ pub enum RunError {
     TaskFailures(Vec<ErrorValue>),
     /// A failure that ends execution without running cleanup.
     Fatal(String),
+    /// The sandbox stopped the program, at once, for the reason given,
+    /// such as having written more than it lets a program write.
+    Stopped(String),
+}
+
+/// What a program in the sandbox (`sayon run --sandbox`) may use, and how
+/// much it may write. The checker keeps it from the rest; this refuses them
+/// again while it runs, so that no mistake of the checker lets one through.
+pub struct Sandbox {
+    pub capabilities: &'static [sayon_target::Capability],
+    /// The bytes it may write to its output and errors together.
+    pub output_limit: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -92,6 +104,12 @@ pub struct Machine<'m> {
     nested: Vec<(usize, Nested)>,
     /// The values of finally functions that run.
     held: Vec<Value>,
+    /// The sandbox the program runs in, if any, and what it wrote so far.
+    sandbox: Option<Sandbox>,
+    written: usize,
+    /// Why the sandbox stopped the program, once it did: the operation that
+    /// went too far fails, and the program stops there.
+    stopped: Option<String>,
 }
 
 /// What runs inside an operation, from the frame below it.
@@ -146,6 +164,16 @@ fn write_steps<R>(current: &mut Value, steps: &[Step], f: impl FnOnce(&mut Value
         (step, value) => panic!("invalid mutable path step {step:?} into {value:?}"),
     };
     write_steps(next, rest, f)
+}
+
+/// The bytes a write of the console holds: those of its text, or of its
+/// bytes, or none for a flush.
+fn written_size(values: &[Value]) -> usize {
+    match values {
+        [Value::Str(text), ..] => text.len(),
+        [Value::Array(bytes), ..] => bytes.len(),
+        _ => 0,
+    }
 }
 
 /// The part of a value that one step leads to.
@@ -211,7 +239,53 @@ impl<'m> Machine<'m> {
             prune_channels_at: 64,
             nested: Vec::new(),
             held: Vec::new(),
+            sandbox: None,
+            written: 0,
+            stopped: None,
         }
+    }
+
+    /// Runs the program in a sandbox: it may use only the capabilities
+    /// given, and write only so much.
+    pub fn sandbox(&mut self, sandbox: Sandbox) {
+        self.sandbox = Some(sandbox);
+    }
+
+    /// The error for an operation the sandbox does not give the program:
+    /// the checker refuses such programs, so this is only a second gate.
+    fn refused(&self, capability: sayon_target::Capability, span: Span) -> ErrorValue {
+        self.error(
+            "SandboxError",
+            format!(
+                "programs in the sandbox cannot {} (`{capability}`)",
+                capability.description()
+            ),
+            span,
+        )
+    }
+
+    /// Whether the sandbox, if any, lets the program use a capability.
+    fn allows(&self, capability: sayon_target::Capability) -> bool {
+        self.sandbox
+            .as_ref()
+            .is_none_or(|sandbox| sandbox.capabilities.contains(&capability))
+    }
+
+    /// Counts `bytes` the program is about to write; past the sandbox's
+    /// limit, it stops the program instead, before they are written.
+    fn count_written(&mut self, bytes: usize, span: Span) -> Result<(), ErrorValue> {
+        let Some(sandbox) = &self.sandbox else {
+            return Ok(());
+        };
+        let limit = sandbox.output_limit;
+        self.written = self.written.saturating_add(bytes);
+        if self.written <= limit {
+            return Ok(());
+        }
+        let reason = format!("it wrote more than {} KiB of output", limit / 1024);
+        let problem = self.error("SandboxError", reason.clone(), span);
+        self.stopped = Some(reason);
+        Err(problem)
     }
 
     /// The machine of a task on a thread of its own.
@@ -264,8 +338,8 @@ impl<'m> Machine<'m> {
         T: From<i32>,
     {
         // Nothing more runs after a fatal error, as in compiled programs,
-        // which stop at once.
-        if let Err(RunError::Fatal(_)) = &result {
+        // which stop at once, nor after the sandbox stops a program.
+        if let Err(RunError::Fatal(_) | RunError::Stopped(_)) = &result {
             return result;
         }
         self.shutdown();
@@ -415,7 +489,7 @@ impl<'m> Machine<'m> {
             Ok(value) => Ok(value),
             Err(RunError::Uncaught(problem)) => Err(problem),
             Err(RunError::TaskFailures(mut failures)) => Err(failures.remove(0)),
-            Err(RunError::Fatal(message)) => Err(ErrorValue {
+            Err(RunError::Fatal(message) | RunError::Stopped(message)) => Err(ErrorValue {
                 code: "InternalError".to_string(),
                 message,
                 location: None,
@@ -461,6 +535,8 @@ impl<'m> Machine<'m> {
                     }
                     RunError::Fatal(message) => message,
                     RunError::TaskFailures(_) => format!("the finally function `{name}` failed"),
+                    // The sandbox's stop stays what it is.
+                    stopped @ RunError::Stopped(_) => return Err(stopped),
                 };
                 return Err(RunError::Fatal(message));
             }
@@ -651,6 +727,11 @@ impl<'m> Machine<'m> {
                             self.write(dest, value);
                         }
                         self.jump(*normal);
+                    }
+                    // Nothing catches the sandbox's stop.
+                    Err(_) if self.stopped.is_some() => {
+                        let reason = self.stopped.take().unwrap_or_default();
+                        return Err(RunError::Stopped(reason));
                     }
                     Err(problem) => {
                         let slot = function.error_slot.0 as usize;
@@ -1462,6 +1543,7 @@ impl<'m> Machine<'m> {
                     });
                 }
                 line.push('\n');
+                self.count_written(line.len(), span)?;
                 self.output().write_all(line.as_bytes()).map_err(|error| {
                     self.error("IOError", format!("could not write output: {error}"), span)
                 })?;
@@ -1513,6 +1595,16 @@ impl<'m> Machine<'m> {
                     }
                     Err((code, message)) => Err(self.error(code, message, span)),
                 }
+            }
+            Op::ReadFile(_) | Op::WriteFile { .. }
+                if !self.allows(sayon_target::Capability::Files) =>
+            {
+                Err(self.refused(sayon_target::Capability::Files, span))
+            }
+            Op::CallForeign { .. } | Op::RawRead { .. } | Op::RawWrite { .. }
+                if !self.allows(sayon_target::Capability::Foreign) =>
+            {
+                Err(self.refused(sayon_target::Capability::Foreign, span))
             }
             Op::ReadFile(path) => {
                 let path = self.string(path);
@@ -1673,6 +1765,11 @@ impl<'m> Machine<'m> {
         tags: Option<(u32, u32)>,
         span: Span,
     ) -> Result<Value, ErrorValue> {
+        if let Some(capability) = sayon_check::usage::host_capability(function)
+            && !self.allows(capability)
+        {
+            return Err(self.refused(capability, span));
+        }
         let values: Vec<Value> = args
             .iter()
             .map(|arg| {
@@ -1683,6 +1780,7 @@ impl<'m> Machine<'m> {
         match function {
             Host::Write => {
                 let text = values[0].as_str().to_string();
+                self.count_written(text.len(), span)?;
                 let written = {
                     let mut out = self.output();
                     out.write_all(text.as_bytes()).and_then(|_| out.flush())
@@ -1696,6 +1794,7 @@ impl<'m> Machine<'m> {
                 if matches!(&values[0], Value::Stream(stream)
                     if sayon_runtime::streams::is_standard_output(stream.id())) =>
             {
+                self.count_written(written_size(&values[1..]), span)?;
                 let written = match &values[1..] {
                     [Value::Str(text)] => self.output().write_all(text.as_bytes()),
                     [Value::Array(bytes)] => {
@@ -1708,10 +1807,13 @@ impl<'m> Machine<'m> {
                     self.error("IOError", format!("could not write output: {error}"), span)
                 });
             }
+            Host::WriteError => {
+                self.count_written(written_size(&values), span)?;
+                let _ = self.output().flush();
+            }
             // What the program printed shows before it waits for input or
             // another program writes.
-            Host::WriteError
-            | Host::ReadLine
+            Host::ReadLine
             | Host::Start
             | Host::StreamReadLine
             | Host::StreamRead
@@ -1725,6 +1827,7 @@ impl<'m> Machine<'m> {
                 if matches!(&values[0], Value::Stream(stream)
                     if sayon_runtime::streams::is_standard_error(stream.id())) =>
             {
+                self.count_written(written_size(&values[1..]), span)?;
                 let _ = self.output().flush();
             }
             _ => {}

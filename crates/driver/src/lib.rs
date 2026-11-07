@@ -43,6 +43,10 @@ pub struct Options {
     /// the program is checked even past syntax errors, whose follow-on
     /// errors are left out.
     pub index: bool,
+    /// The program is a stranger's, for `sayon run --sandbox`: its own
+    /// files import only the standard library, so that the compiler reads
+    /// no other file for it.
+    pub sandbox: bool,
 }
 
 pub struct Output {
@@ -100,6 +104,7 @@ pub fn compile(entry: &Path, options: &Options) -> Result<Output, EntryError> {
         stdlib: options.stdlib.clone(),
         packages: &options.packages,
         overlays: &options.overlays,
+        sandbox: options.sandbox,
     };
     let entry_file = match decode(entry, &entry_name, text, loader.sources) {
         Ok(file) => file,
@@ -230,16 +235,20 @@ pub fn compile(entry: &Path, options: &Options) -> Result<Output, EntryError> {
 fn missing_capability(target: &sayon_target::Target, need: sayon_check::usage::Need) -> Diagnostic {
     let capability = need.capability;
     let provided: Vec<&str> = target.capabilities.iter().map(|c| c.name()).collect();
+    let (programs, giver) = if target.is_sandbox() {
+        ("programs in the sandbox".to_string(), "the sandbox")
+    } else {
+        (format!("{} programs", target.name), target.name)
+    };
     Diagnostic::error(
         "E_CAPABILITY",
         format!(
-            "{} programs cannot {} (`{capability}`)",
-            target.name,
+            "{programs} cannot {} (`{capability}`)",
             capability.description()
         ),
     )
     .primary(need.span, format!("this needs `{capability}`"))
-    .note(format!("{} provides {}", target.name, provided.join(", ")))
+    .note(format!("{giver} provides {}", provided.join(", ")))
     .help(format!(
         "put this in a branch that only targets with it check, such as `if supports(\"{capability}\")`"
     ))
@@ -318,6 +327,8 @@ struct Loader<'s> {
     stdlib: Option<PathBuf>,
     packages: &'s packages::Packages,
     overlays: &'s HashMap<PathBuf, String>,
+    /// The program's own files import only the standard library.
+    sandbox: bool,
 }
 
 /// Where a module comes from: its package's root and kind.
@@ -412,6 +423,19 @@ impl Loader<'_> {
         let span = statement.path_span;
         let text = statement.path.as_str();
         let module = &self.modules[from];
+        // In the sandbox the program is a single file: nothing else is read
+        // for it, so that no error shows another file's lines.
+        if self.sandbox && !module.standard && !text.starts_with("standard/") {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_SANDBOX_IMPORT",
+                    format!("a program in the sandbox cannot import `{text}`"),
+                )
+                .primary(span, "only the standard library can be imported here")
+                .help("import a module of the standard library, such as `standard/strings.sayon`, or put what you need in this file"),
+            );
+            return None;
+        }
         let (origin, relative, name) = if let Some(rest) = text.strip_prefix("standard/") {
             let Some(stdlib) = self.stdlib.clone() else {
                 self.diagnostics.push(

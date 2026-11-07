@@ -8,5 +8,5 @@ mod foreign;
 mod machine;
 pub mod value;
 
-pub use machine::{MAX_CALL_DEPTH, Machine, RunError};
+pub use machine::{MAX_CALL_DEPTH, Machine, RunError, Sandbox};
 pub use value::{ErrorValue, Value};

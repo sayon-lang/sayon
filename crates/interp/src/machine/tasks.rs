@@ -263,6 +263,9 @@ impl<'m> Machine<'m> {
                 });
                 Progress::Done(Value::Task(TaskHandle(state)))
             }
+            Op::SpawnParallel { .. } if !self.allows(sayon_target::Capability::Threads) => {
+                Progress::Failed(self.refused(sayon_target::Capability::Threads, span))
+            }
             Op::SpawnParallel { body, .. } => self.spawn_parallel(body, span),
             Op::Join { task } => {
                 let reference = self.resolve(task);

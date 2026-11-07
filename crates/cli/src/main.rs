@@ -6,9 +6,14 @@ mod credentials;
 mod explain;
 mod http;
 mod registry;
+mod sandbox;
 
 use std::collections::HashMap;
 use std::process::ExitCode;
+
+/// The system's allocator, counting what it gives, for the sandbox's limit.
+#[global_allocator]
+static ALLOCATOR: sandbox::Counting = sandbox::Counting;
 
 /// Exit statuses. A program's own `main` result is passed through unchanged.
 pub mod status {
@@ -33,6 +38,11 @@ Sayon: Programming made easy. Safety made automatic.
 Usage:
     sayon run [file] [-- args]       Check and run a program with the interpreter
     sayon run --native [file]        Compile to a native executable and run it
+    sayon run --sandbox <file>       Run a program from anyone, kept from the
+                                     computer: only the console, tasks, clocks,
+                                     random numbers, and the library's pure
+                                     parts, 5 s of processor time, 10 s in all,
+                                     256 MiB of memory, and 64 KiB of output
     sayon build [file]               Compile a native executable
     sayon check [file]               Report problems without running anything
     sayon lint [file]                Also report likely mistakes and naming problems
@@ -204,7 +214,11 @@ fn dispatch(args: &[String]) -> u8 {
             println!("sayon {}", env!("CARGO_PKG_VERSION"));
             return status::SUCCESS;
         }
-        "run" => (&["--quiet", "--native", "--release"], &["--color"], true),
+        "run" => (
+            &["--quiet", "--native", "--release", "--sandbox"],
+            &["--color"],
+            true,
+        ),
         "check" => (&["--quiet"], &["--color", "--target"], false),
         "lint" => (&["--quiet"], &["--color", "--deny", "--target"], false),
         "build" => (
@@ -250,6 +264,21 @@ fn dispatch(args: &[String]) -> u8 {
         quiet: parsed.flag("--quiet"),
     };
     match command.as_str() {
+        "run" if parsed.flag("--sandbox") => match parsed.positional.as_slice() {
+            [file]
+                if !parsed.flag("--native")
+                    && !parsed.flag("--release")
+                    && parsed.rest.is_empty() =>
+            {
+                commands::run_sandboxed(std::path::Path::new(file), &options)
+            }
+            [_] => usage_error(
+                "`sayon run --sandbox` runs a program in the interpreter, without `--native`, `--release`, or arguments",
+            ),
+            _ => {
+                usage_error("`sayon run --sandbox` takes one source file, which it runs on its own")
+            }
+        },
         "run" | "check" | "build" | "lint" => {
             if parsed.positional.len() > 1 {
                 return usage_error(&format!("`sayon {command}` takes one source file"));

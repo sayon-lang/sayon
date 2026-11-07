@@ -74,6 +74,7 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | Feature | State | Milestone |
 |---|---|---|
 | `sayon run` (interpreter) | experimental | M1 |
+| `sayon run --sandbox`: one file from anyone, kept from the computer: checked for this computer with only the console, tasks, clocks, random numbers, and the library's pure parts (`E_CAPABILITY` otherwise, and `supports` false), refused them again while it runs (`SandboxError`), importing only the standard library (`E_SANDBOX_IMPORT`), outside any project; stopped after 5 seconds of processor time or 10 in all, past 256 MiB of memory, or past 64 KiB of output, with the operating system's limits behind these (a job object on Windows, a processor-time limit on Linux) | experimental | M5 |
 | `sayon check` | experimental | M1 |
 | `sayon build`, `sayon run --native` on Windows x64 (M1) and Linux x86-64 (M3) | experimental | M1, M3 |
 | Targets: `--target` for `check`, `lint`, and `build` (repeatable, `all`, `native`, short names, triples); `sayon target list` and `setup`; `[compiler]` `targets` and `required_capabilities` in `sayon.toml` | experimental | M4 |

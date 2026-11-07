@@ -570,6 +570,54 @@ pub fn host() -> &'static Target {
         .expect("the host is a target")
 }
 
+/// What a program in the sandbox (`sayon run --sandbox`) may use: the
+/// console, tasks, clocks, random numbers, and the library's pure parts.
+/// Nothing reaches files, the environment, input, other programs, the
+/// network, windows, threads, C, or time zones.
+pub const SANDBOX: &[Capability] = &[
+    Capability::Console,
+    Capability::Tasks,
+    Capability::Clock,
+    Capability::Random,
+    Capability::Json,
+    Capability::Math,
+    Capability::Text,
+    Capability::Collections,
+];
+
+/// This computer's target as the sandbox has it: the host's platform and
+/// processor, so that a program's platform branches are the ones that run,
+/// with only the capabilities of [`SANDBOX`].
+pub fn sandbox() -> &'static Target {
+    static SANDBOXED: std::sync::OnceLock<Target> = std::sync::OnceLock::new();
+    SANDBOXED.get_or_init(|| {
+        let host = host();
+        let capabilities: Vec<Capability> = host
+            .capabilities
+            .iter()
+            .copied()
+            .filter(|capability| SANDBOX.contains(capability))
+            .collect();
+        Target {
+            name: host.name,
+            triple: host.triple,
+            platform: host.platform,
+            processor: host.processor,
+            pointer_size: host.pointer_size,
+            state: host.state,
+            planned: host.planned,
+            capabilities: Box::leak(capabilities.into_boxed_slice()),
+        }
+    })
+}
+
+impl Target {
+    /// Whether this is [`sandbox`]'s target.
+    pub fn is_sandbox(&self) -> bool {
+        std::ptr::eq(self, sandbox())
+    }
+}
+
 /// The target a name means: `native`, a target's name, an alias, or a
 /// triple.
 pub fn find(name: &str) -> Option<&'static Target> {
@@ -620,6 +668,32 @@ mod tests {
             (1, 0x3510_7330_1b5e_a1c4),
             "the capability manifest changed: raise CAPABILITY_MANIFEST and record its digest"
         );
+    }
+
+    #[test]
+    fn the_sandbox_is_this_computer_with_fewer_capabilities() {
+        let sandboxed = sandbox();
+        assert!(sandboxed.is_sandbox() && !host().is_sandbox() && !sandboxed.is_host());
+        assert_eq!(
+            (sandboxed.platform, sandboxed.processor),
+            (host().platform, host().processor)
+        );
+        assert!(sandboxed.provides(Capability::Console) && sandboxed.provides(Capability::Tasks));
+        for capability in [
+            Capability::Files,
+            Capability::Environment,
+            Capability::Input,
+            Capability::Processes,
+            Capability::Network,
+            Capability::Http,
+            Capability::Tls,
+            Capability::Graphics,
+            Capability::Threads,
+            Capability::Foreign,
+            Capability::TimeZones,
+        ] {
+            assert!(!sandboxed.provides(capability), "{capability}");
+        }
     }
 
     #[test]
