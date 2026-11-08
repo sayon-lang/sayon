@@ -336,6 +336,8 @@ A `File` holds a `HostStream`, a type only the standard library can name: in bot
 
 Every compiled function has the signature `i32 f(ptr result, ptr error, i64 argument_count, parameters...)`. It returns 0 after writing its result through `result`, or 1 after storing an `Error` pointer through `error`. Callers always pass every parameter; a parameter the caller omitted is computed from its default in the callee's prologue, selected by `argument_count`.
 
+A function whose result fits in a register (an integer, a float, a boolean, `nothing`, or a pointer such as a dictionary's or an error's) and that is no coroutine hands its result back in one instead: its body is `{ T, ptr } f.direct(i64 argument_count, parameters...)`, which returns the result with a null error, or the error, both in registers, and every direct call calls it. The caller stores the result where it goes only on success, and the error in its own error slot only on failure, as the callee would have. Nothing passes through memory on the way back, so the result slots in the caller become registers, and a call returns as cheaply as checking for an error allows: `fib(40)` went from 1.41 s to 1.22 s, against 0.70 s for Rust with its overflow checks on, which has no error to check. `f` itself stays, a wrapper with the usual signature, for calls through function values.
+
 | Parameter | Passed as |
 |---|---|
 | Copy type, read or `own` | the value |

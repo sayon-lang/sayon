@@ -2,10 +2,14 @@
 //!
 //! Each IR function becomes `i32 @sayon.fn.N(ptr %ret, ptr %err, i64 %argc,
 //! params...)`, returning 0 after writing its result through `%ret` or 1
-//! after storing an error through `%err`. Owned parameters are passed by
-//! value; borrowed parameters as pointers. Slots are stack allocations that
-//! start zeroed, so dropping a slot that never received a value (or whose
-//! value moved out) does nothing.
+//! after storing an error through `%err`. A function whose result fits in a
+//! register, and that is no coroutine, is `{ T, ptr } @sayon.fn.N.direct(i64
+//! %argc, params...)` instead, handing back the result and a null error, or
+//! the error, and direct calls call it; `@sayon.fn.N` is then a wrapper with
+//! the usual convention, for calls through function values. Owned
+//! parameters are passed by value; borrowed parameters as pointers. Slots
+//! are stack allocations that start zeroed, so dropping a slot that never
+//! received a value (or whose value moved out) does nothing.
 
 use crate::layout::SHARED_HEADER;
 use crate::layout::{
@@ -169,6 +173,25 @@ impl<'m> Codegen<'m> {
             coroutines: crate::coroutines::functions(module),
             dialect,
         }
+    }
+
+    /// The LLVM type of `function`'s result when it hands the result back in
+    /// a register: a result that fits in one, of a function that is no
+    /// coroutine. Such a function's body is `@sayon.fn.N.direct`, which
+    /// returns `{ T, i32 }`, the result and the status, and direct calls
+    /// call it; `@sayon.fn.N` is a wrapper with the usual convention, for
+    /// calls through function values and the like.
+    pub(crate) fn direct_result(&mut self, function: FunctionId) -> Option<String> {
+        if self.coroutines.contains(&function) {
+            return None;
+        }
+        let ret = self.module.function(function).ret.clone();
+        let llvm = self.llvm(&ret);
+        matches!(
+            llvm.as_str(),
+            "i1" | "i8" | "i16" | "i32" | "i64" | "float" | "double" | "ptr"
+        )
+        .then_some(llvm)
     }
 
     /// The table of helpers a dictionary with keys of type `key` uses:
@@ -655,6 +678,10 @@ pub(crate) struct FnEmit<'c, 'm> {
     after: Vec<(String, Type)>,
     /// Whether the function is lowered to a coroutine.
     coroutine: bool,
+    /// The LLVM type of the result, when the function hands it back in a
+    /// register with its status (`Codegen::direct_result`). The body then
+    /// keeps the result in a local `%ret` until it returns.
+    direct: Option<String>,
     /// The function's calls that report a failed check, emitted after its
     /// blocks.
     reports: Vec<Report>,
@@ -684,6 +711,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             body: Body::new(),
             after: Vec::new(),
             coroutine: false,
+            direct: None,
             reports: Vec::new(),
         }
     }
@@ -699,11 +727,15 @@ impl<'c, 'm> FnEmit<'c, 'm> {
     fn emit(mut self, index: usize) -> String {
         let f = self.f;
         self.coroutine = self.cg.coroutines.contains(&FunctionId(index as u32));
-        let mut params = vec![
-            "ptr %ret".to_string(),
-            "ptr %err".to_string(),
-            "i64 %argc".to_string(),
-        ];
+        self.direct = self.cg.direct_result(FunctionId(index as u32));
+        let mut params = vec!["i64 %argc".to_string()];
+        if self.direct.is_none() {
+            params.insert(0, "ptr %ret".to_string());
+            params.insert(1, "ptr %err".to_string());
+        }
+        // The arguments the wrapper of a direct function passes on: each
+        // parameter as it came.
+        let mut passed = vec!["i64 %argc".to_string()];
         for (position, slot) in f.params.iter().enumerate() {
             let definition = f.slot(*slot);
             let environment = definition.name.as_deref() == Some("<environment>");
@@ -731,6 +763,11 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 SlotKind::Ref { .. } => "ptr".to_string(),
                 SlotKind::Value => self.cg.llvm(&definition.ty),
             };
+            let plain = match definition.kind {
+                SlotKind::Ref { .. } => "ptr".to_string(),
+                SlotKind::Value => self.cg.llvm(&definition.ty),
+            };
+            passed.push(format!("{plain} %p{position}"));
             params.push(format!("{llvm} %p{position}"));
         }
         for (id, definition) in f.slots.iter().enumerate() {
@@ -770,6 +807,23 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             self.terminator(&block.term);
         }
         self.emit_reports();
+        if let Some(llvm) = &self.direct {
+            // The body hands back `{ result, error }`; the wrapper keeps the
+            // usual convention, storing the result on success and the
+            // error on failure.
+            let mut wrapper_params = vec!["ptr %ret".to_string(), "ptr %err".to_string()];
+            wrapper_params.extend(params.iter().cloned());
+            return format!(
+                "; {name}\ndefine internal {{ {llvm}, ptr }} @sayon.fn.{index}.direct({}) {{\nentry:\n{}  br label %b0\n{}}}\n\n\
+                 ; {name}, called through its value\ndefine internal i32 @sayon.fn.{index}({}) {{\nentry:\n  %both = call {{ {llvm}, ptr }} @sayon.fn.{index}.direct({})\n  %error = extractvalue {{ {llvm}, ptr }} %both, 1\n  %failed = icmp ne ptr %error, null\n  br i1 %failed, label %failure, label %returned\nreturned:\n  %value = extractvalue {{ {llvm}, ptr }} %both, 0\n  store {llvm} %value, ptr %ret\n  ret i32 0\nfailure:\n  store ptr %error, ptr %err\n  ret i32 1\n}}\n\n",
+                params.join(", "),
+                self.body.allocas,
+                self.body.code,
+                wrapper_params.join(", "),
+                passed.join(", "),
+                name = f.name.replace('\n', " "),
+            );
+        }
         if !self.coroutine {
             return format!(
                 "; {}\ndefine internal i32 @sayon.fn.{index}({}) {{\nentry:\n{}  br label %b0\n{}}}\n\n",
@@ -809,6 +863,21 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         } else {
             self.body.line(format!("ret i32 {status}"));
         }
+    }
+
+    /// Returns from a function that hands back `{ result, error }`: the
+    /// result with a null error, or the error.
+    fn give_back(&mut self, value: &str, error: &str) {
+        let llvm = self.direct.clone().expect("a function that returns directly");
+        let first = self.body.tmp();
+        self.body.line(format!(
+            "{first} = insertvalue {{ {llvm}, ptr }} poison, {llvm} {value}, 0"
+        ));
+        let both = self.body.tmp();
+        self.body.line(format!(
+            "{both} = insertvalue {{ {llvm}, ptr }} {first}, ptr {error}, 1"
+        ));
+        self.body.line(format!("ret {{ {llvm}, ptr }} {both}"));
     }
 
     /// Whether an operation's call can stop to wait, in a coroutine.
@@ -1974,16 +2043,24 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     "{value} = load {ret_llvm}, ptr %s{}",
                     self.f.ret_slot.0
                 ));
-                self.body
-                    .line(format!("store {ret_llvm} {value}, ptr %ret"));
-                self.finish("0");
+                if self.direct.is_some() {
+                    self.give_back(&value, "null");
+                } else {
+                    self.body
+                        .line(format!("store {ret_llvm} {value}, ptr %ret"));
+                    self.finish("0");
+                }
             }
             Terminator::ReturnError => {
                 let value = self.body.tmp();
                 self.body
                     .line(format!("{value} = load ptr, ptr {}", self.error_slot()));
-                self.body.line(format!("store ptr {value}, ptr %err"));
-                self.finish("1");
+                if self.direct.is_some() {
+                    self.give_back("zeroinitializer", &value);
+                } else {
+                    self.body.line(format!("store ptr {value}, ptr %err"));
+                    self.finish("1");
+                }
             }
             Terminator::Unreachable => self.body.line("unreachable"),
             Terminator::Op {
@@ -2222,6 +2299,46 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                         None if reference => values.push("ptr null".to_string()),
                         None => values.push(format!("{param_llvm} zeroinitializer")),
                     }
+                }
+                if let Some(llvm) = self.cg.direct_result(*function) {
+                    // The result and the error come back in registers. The
+                    // result goes to its place on success, and the error to
+                    // this function's error slot on failure, where the
+                    // callee would have stored them.
+                    let target = dest.map(|place| self.place_ptr(place).0);
+                    let mut all = vec![format!("i64 {}", args.len())];
+                    all.extend(values);
+                    let both = self.body.tmp();
+                    self.body.line(format!(
+                        "{both} = call {{ {llvm}, ptr }} @sayon.fn.{}.direct({})",
+                        function.0,
+                        all.join(", ")
+                    ));
+                    let error = self.body.tmp();
+                    self.body
+                        .line(format!("{error} = extractvalue {{ {llvm}, ptr }} {both}, 1"));
+                    let failed = self.body.tmp();
+                    self.body.line(format!("{failed} = icmp ne ptr {error}, null"));
+                    let failure = self.body.label("failure");
+                    let returned = self.body.label("returned");
+                    let called = self.body.label("called");
+                    self.body
+                        .line(format!("br i1 {failed}, label %{failure}, label %{returned}"));
+                    self.body.start(&failure);
+                    self.body.line(format!("store ptr {error}, ptr {err}"));
+                    self.body.line(format!("br label %{called}"));
+                    self.body.start(&returned);
+                    if let Some(target) = target {
+                        let value = self.body.tmp();
+                        self.body
+                            .line(format!("{value} = extractvalue {{ {llvm}, ptr }} {both}, 0"));
+                        self.body.line(format!("store {llvm} {value}, ptr {target}"));
+                    }
+                    self.body.line(format!("br label %{called}"));
+                    self.body.start(&called);
+                    let status = self.body.tmp();
+                    self.body.line(format!("{status} = zext i1 {failed} to i32"));
+                    return Some(status);
                 }
                 let ret_pointer = match dest {
                     Some(place) => self.place_ptr(place).0,

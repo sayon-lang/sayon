@@ -1,0 +1,10 @@
+10 0.25 true false -5 40 12
+caught: 9 is odd kept 7
+caught: 3 is odd kept 7
+caught: ConversionError [1, 2, 3]
+halved 5
+true
+1 failure(Error("the key \"b\" is not in the dictionary"))
+6 6
+caught through a value: 3 is odd
+210

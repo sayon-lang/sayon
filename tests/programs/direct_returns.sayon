@@ -1,0 +1,73 @@
+# Functions whose results fit in a register hand them back in one, beside
+# the error, in compiled programs. A failed call leaves its target as it
+# was, errors travel up through every call, and the same functions called
+# through their values give the same results.
+
+function halve(value: integer) -> integer
+    if value % 2 != 0
+        error("{value} is odd")
+    return value / 2
+
+function steps(value: integer) -> integer
+    if value == 1
+        return 0
+    return steps(halve(value)) + 1
+
+function ratio(a: integer, b: integer) -> float
+    return float(a) / float(b)
+
+function even(value: integer) -> boolean
+    return value % 2 == 0
+
+function nothing_back(value: integer) -> nothing
+    if value < 0
+        error("negative")
+    return nothing
+
+function small(value: integer) -> integer8
+    return integer8(value)
+
+function scaled(value: integer, factor: integer = 10) -> integer
+    return value * factor
+
+function lookup(table: Dict<string, integer>, key: string) -> integer
+    return table[key]
+
+function main()
+    print(steps(1024), ratio(1, 4), even(6), even(7), small(-5), scaled(4), scaled(4, 3))
+    # A failure leaves the variable it would have set as it was.
+    kept = 7
+    try
+        kept = halve(9)
+    catch problem
+        print("caught:", problem, "kept", kept)
+    try
+        kept = steps(96)
+    catch problem
+        print("caught:", problem, "kept", kept)
+    numbers = [1, 2, 3]
+    try
+        numbers[1] = small(300)
+    catch problem
+        print("caught:", problem.code, numbers)
+    outcome = try halve(10)
+    if outcome is error
+        print("unexpected")
+    else
+        print("halved", outcome)
+    failed = try nothing_back(-1)
+    print(failed is error)
+    table: Dict<string, integer> = ["a" = 1]
+    print(lookup(table, "a"), try lookup(table, "b"))
+    # The same functions as values.
+    halving = halve
+    measure = steps
+    print(halving(12), measure(64))
+    try
+        print(measure(12))
+    catch problem
+        print("caught through a value:", problem)
+    total = 0
+    for value in [2, 4, 6, 8]
+        total += halve(value) + scaled(value)
+    print(total)
