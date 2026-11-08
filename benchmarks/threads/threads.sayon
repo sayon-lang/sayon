@@ -1,0 +1,53 @@
+# Threads: count the steps of the Collatz sequence from every number below
+# a limit, the numbers shared out among four threads. Plain integer work
+# spread over the processor's cores, so time on the clock falls as the
+# cores share it.
+
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+threads = import("standard/threads.sayon")
+
+type Share = [total: integer, longest: integer, start: integer]
+
+function steps(start: integer) -> integer
+    n = start
+    count = 0
+    while n != 1
+        if n % 2 == 0
+            n = n / 2
+        else
+            n = 3 * n + 1
+        count += 1
+    return count
+
+function work(low: integer, high: integer) -> Share
+    share = Share(total = 0, longest = 0, start = 0)
+    for n in range(low, high)
+        count = steps(n)
+        share.total += count
+        if count > share.longest
+            share.longest = count
+            share.start = n
+    return share
+
+function main()
+    limit = 100000
+    arguments = os.arguments()
+    if length(arguments) > 0
+        limit = strings.parse_integer(arguments[0])
+    parts = 4
+    workers: Array<Task<Share>> = []
+    for part in range(parts)
+        low = 1 + (limit - 1) * part / parts
+        high = 1 + (limit - 1) * (part + 1) / parts
+        push(workers, threads.spawn_parallel(function() -> Share
+            return work(low, high)
+        ))
+    all = Share(total = 0, longest = 0, start = 0)
+    while length(workers) > 0
+        share = threads.join(remove(workers, 0))
+        all.total += share.total
+        if share.longest > all.longest
+            all.longest = share.longest
+            all.start = share.start
+    print(all.total, all.start, all.longest)

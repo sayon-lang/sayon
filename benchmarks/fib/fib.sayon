@@ -1,0 +1,18 @@
+# Fib: the Fibonacci numbers worked out the slow way, by a function that
+# calls itself twice for each number. Nothing but calls, comparisons, and
+# additions, so it shows what a function call costs.
+
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+function fib(n: integer) -> integer
+    if n < 2
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+function main()
+    n = 30
+    arguments = os.arguments()
+    if length(arguments) > 0
+        n = strings.parse_integer(arguments[0])
+    print(fib(n))

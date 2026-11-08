@@ -1,0 +1,32 @@
+# Matrix: multiply two square matrices of floating point numbers, each
+# kept row by row in one array. Three nested loops over arrays, the kind
+# of work compilers like to turn into vector instructions.
+
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+function multiply(a: Array<float>, b: Array<float>, update c: Array<float>, n: integer)
+    for i in range(n)
+        for k in range(n)
+            factor = a[i * n + k]
+            for j in range(n)
+                c[i * n + j] += factor * b[k * n + j]
+
+function main()
+    n = 200
+    arguments = os.arguments()
+    if length(arguments) > 0
+        n = strings.parse_integer(arguments[0])
+    a: Array<float> = []
+    b: Array<float> = []
+    c: Array<float> = []
+    for i in range(n)
+        for j in range(n)
+            push(a, float((i + j) % 10) / 10.0)
+            push(b, float((i * j) % 7) / 7.0)
+            push(c, 0.0)
+    multiply(a, b, c, n)
+    total = 0.0
+    for value in c
+        total += value
+    print(strings.decimal(total, 6), strings.decimal(c[(n / 2) * n + n / 3], 6))

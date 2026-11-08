@@ -1,0 +1,32 @@
+# Hash map: put a lot of integer keys into the standard library's hash
+# map, look each one up, take every other one out, and look them all up
+# again. Hashing, probing, and memory for the table.
+
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+function main()
+    total = 100000
+    arguments = os.arguments()
+    if length(arguments) > 0
+        total = strings.parse_integer(arguments[0])
+    keys: Array<integer> = []
+    state = 42
+    for _i in range(total)
+        state = (state * 1103515245 + 12345) % 2147483648
+        push(keys, state)
+    table: Dict<integer, integer> = []
+    for i in range(total)
+        table[keys[i]] = i
+    sum = 0
+    for key in keys
+        sum += table[key]
+    position = 0
+    while position < total
+        remove(table, keys[position])
+        position += 2
+    found = 0
+    for key in keys
+        if haskey(table, key)
+            found += 1
+    print(length(table), sum, found)

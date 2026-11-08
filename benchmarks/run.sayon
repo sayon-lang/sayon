@@ -1,12 +1,18 @@
-# Runs the benchmarks. Each program is built in C++, Rust, and Sayon, the way
-# each language builds for release, and run with the same input. The first
-# run of each checks that all three print the same thing; then they take
-# turns, several runs each. Each program's README gets a table of what its
-# three versions measured, and results.md a summary of them all.
+# Runs the benchmarks. Each program is built in C++ and Rust, the way each
+# language builds for release, in Rust again with its overflow checks on,
+# and in Sayon, then run with each of its inputs, from small to large. The
+# first run of every build at every input checks that they all print the
+# same thing; then the builds take turns, several runs each. Each
+# program's README gets tables of what its builds measured, and
+# RESULTS.md the whole picture.
 #
-#     sayon run run.sayon                    all of them, 5 runs each
+#     sayon run run.sayon                    all of them, 7 runs each
 #     sayon run run.sayon -- nbody sort      only these
-#     sayon run run.sayon -- --runs 9
+#     sayon run run.sayon -- --runs 3        fewer runs, rougher numbers
+#     sayon run run.sayon -- --quick         only the smallest inputs, to try
+#                                            it out; it writes no tables
+#     sayon run run.sayon -- --report        the tables again, from the last
+#                                            full run's measurements.json
 #
 # Run it from this folder. It needs clang++ and rustc on the path. It uses
 # the sayon on the path too, unless SAYON names another one.
@@ -14,40 +20,66 @@
 collections = import("standard/collections.sayon")
 filesystem = import("standard/filesystem.sayon")
 io = import("standard/io.sayon")
+json = import("standard/json.sayon")
 os = import("standard/os.sayon")
 strings = import("standard/strings.sayon")
 time = import("standard/time.sayon")
 
-# A benchmark, and the input it gets.
-type Benchmark = [name: string, input: string]
+# A benchmark, and its inputs, smallest first.
+type Benchmark = [name: string, inputs: Array<string>]
 
-# One language's build of a benchmark.
-type Build = [language: string, program: string]
+# One build of a benchmark: its column's name, its executable, how long
+# the compiler took in nanoseconds, and the executable's size in bytes.
+type Build = [label: string, program: string, building: integer, size: integer]
 
-# What a build's runs measured: processor time in nanoseconds and peak
-# memory in bytes, for each run, and the size of its executable.
-type Measured = [times: Array<integer>, memory: Array<integer>, size: integer]
+# What a build's runs measured at one input: processor time and time on
+# the clock in nanoseconds, and peak memory in bytes, for each run.
+type Measured = [times: Array<integer>, walls: Array<integer>, memory: Array<integer>]
 
-# One row of the results.
-type Row = [benchmark: Benchmark, measured: Array<Measured>]
+# A benchmark's builds, and what each measured at each input, as
+# `results[input][build]`.
+type Row = [benchmark: Benchmark, builds: Array<Build>, results: Array<Array<Measured>>]
 
 # The computer and the compilers the numbers come from.
 type Setting = [day: string, computer: string, cpp: string, rust: string, sayon: string]
+
+# Everything a full run measured, as measurements.json keeps it.
+type Saved = [setting: Setting, runs: integer, rows: Array<Row>]
+
+# Every run's numbers from the last full run.
+constant MEASUREMENTS = "measurements.json"
+
+# Processor time below this many nanoseconds is a few of the system's
+# clock ticks, about 16 ms each on Windows, too coarse to compare.
+constant TOO_SHORT = 50000000
 
 # Where a benchmark's README holds what this writes.
 constant START = "<!-- results: run.sayon writes this part -->"
 constant END = "<!-- end of results -->"
 
+# The builds, in the order of the tables' columns.
+constant CPP = 0
+constant RUST = 1
+constant CHECKED = 2
+constant SAYON = 3
+constant COLUMNS = "| C++ | Rust | Rust, checked | Sayon |"
+
 function all_benchmarks() -> Array<Benchmark>
     return [
-        Benchmark(name = "fannkuch", input = "10"),
-        Benchmark(name = "nbody", input = "2000000"),
-        Benchmark(name = "spectral_norm", input = "1500"),
-        Benchmark(name = "mandelbrot", input = "2000"),
-        Benchmark(name = "binary_trees", input = "15"),
-        Benchmark(name = "word_count", input = "2000000"),
-        Benchmark(name = "sort", input = "3000000"),
-        Benchmark(name = "text", input = "1000000")
+        Benchmark(name = "hello", inputs = ["1"]),
+        Benchmark(name = "fib", inputs = ["34", "37", "40"]),
+        Benchmark(name = "fannkuch", inputs = ["10", "11"]),
+        Benchmark(name = "nbody", inputs = ["1000000", "4000000", "12000000"]),
+        Benchmark(name = "spectral_norm", inputs = ["1000", "2000", "4000"]),
+        Benchmark(name = "mandelbrot", inputs = ["1000", "2000", "4000"]),
+        Benchmark(name = "matrix", inputs = ["400", "700", "1000"]),
+        Benchmark(name = "sieve", inputs = ["10000000", "40000000", "100000000"]),
+        Benchmark(name = "binary_trees", inputs = ["13", "15", "17"]),
+        Benchmark(name = "hash_map", inputs = ["200000", "800000", "2000000"]),
+        Benchmark(name = "word_count", inputs = ["1000000", "4000000", "10000000"]),
+        Benchmark(name = "sort", inputs = ["1000000", "3000000", "10000000"]),
+        Benchmark(name = "text", inputs = ["300000", "1000000", "3000000"]),
+        Benchmark(name = "threads", inputs = ["1000000", "4000000", "10000000"])
     ]
 
 # The name of a program file on this system.
@@ -89,48 +121,57 @@ function setting(sayon: string) -> Setting
         sayon = "{first_line(sayon, ["version"])} with `--release`"
     )
 
+# Builds one version, timing its compiler.
+function compile(label: string, program: string, compiler: string, arguments: Array<string>) -> Build
+    started = time.start()
+    must_run(compiler, arguments)
+    building = time.elapsed(started).nanoseconds
+    return Build(label = clone(label), program = clone(program), building = building, size = filesystem.size(program))
+
 function build(benchmark: Benchmark, sayon: string, folder: string) -> Array<Build>
-    name = clone(benchmark.name)
-    source = filesystem.join(name, name)
-    out = filesystem.join(folder, name)
+    source = filesystem.join(benchmark.name, benchmark.name)
+    out = filesystem.join(folder, benchmark.name)
     cpp = executable("{out}-cpp")
     rust = executable("{out}-rust")
+    checked = executable("{out}-rust-checked")
     native = executable("{out}-sayon")
-    must_run("clang++", ["-O2", "-std=c++20", "{source}.cpp", "-o", clone(cpp)])
-    must_run("rustc", ["-C", "opt-level=3", "-o", clone(rust), "{source}.rs"])
-    must_run(sayon, ["build", "--release", "-q", "{source}.sayon", "-o", clone(native)])
     return [
-        Build(language = "C++", program = cpp),
-        Build(language = "Rust", program = rust),
-        Build(language = "Sayon", program = native)
+        compile("C++", cpp, "clang++", ["-O2", "-std=c++20", "{source}.cpp", "-o", clone(cpp)]),
+        compile("Rust", rust, "rustc", ["-C", "opt-level=3", "-o", clone(rust), "{source}.rs"]),
+        compile("Rust, checked", checked, "rustc", ["-C", "opt-level=3", "-C", "overflow-checks=on", "-o", clone(checked), "{source}.rs"]),
+        compile("Sayon", native, sayon, ["build", "--release", "-q", "{source}.sayon", "-o", clone(native)])
     ]
 
-# Runs each build once, which also brings the programs into the disk cache
-# and past any virus scan of a new file, and fails unless all three print
-# the same.
-function check(benchmark: Benchmark, builds: Array<Build>)
+# Runs each build once with the input, which also brings the programs into
+# the disk cache and past any virus scan of a new file, and fails unless
+# they all print the same.
+function check(benchmark: Benchmark, input: string, builds: Array<Build>)
     expected = ""
-    for build in builds
-        output = strings.replace(must_run(build.program, [clone(benchmark.input)]), "\r\n", "\n")
-        if build.language == "C++"
+    for each in builds
+        output = strings.replace(must_run(each.program, [clone(input)]), "\r\n", "\n")
+        if each.label == "C++"
             expected = output
         elseif output != expected
-            error("{benchmark.name} in {build.language} printed\n{output}\nbut in C++\n{expected}")
+            error("{benchmark.name} {input} in {each.label} printed\n{output}\nbut in C++\n{expected}")
 
 # The builds take turns, so that whatever else the computer does at the
 # time falls on all of them alike.
-function measure(benchmark: Benchmark, builds: Array<Build>, runs: integer) -> Array<Measured>
+function measure(benchmark: Benchmark, input: string, builds: Array<Build>, runs: integer) -> Array<Measured>
     results: Array<Measured> = []
-    for build in builds
+    for _each in builds
         times: Array<integer> = []
+        walls: Array<integer> = []
         memory: Array<integer> = []
-        push(results, Measured(times = times, memory = memory, size = filesystem.size(build.program)))
+        push(results, Measured(times = times, walls = walls, memory = memory))
     for _round in range(runs)
         for index in range(length(builds))
-            done = os.run(builds[index].program, [clone(benchmark.input)])
+            started = time.start()
+            done = os.run(builds[index].program, [clone(input)])
+            wall = time.elapsed(started).nanoseconds
             if done.status != 0
-                error("{benchmark.name} in {builds[index].language} failed with status {done.status}")
+                error("{benchmark.name} {input} in {builds[index].label} failed with status {done.status}")
             push(results[index].times, done.usage.processor_time.nanoseconds)
+            push(results[index].walls, wall)
             push(results[index].memory, done.usage.peak_memory)
     return results
 
@@ -143,7 +184,10 @@ function median(values: Array<integer>) -> integer
     ordered = sorted(values)
     return ordered[length(ordered) / 2]
 
+# A time, in milliseconds when it is short.
 function seconds(nanoseconds: integer) -> string
+    if nanoseconds < 100000000
+        return "{(nanoseconds + 500000) / 1000000} ms"
     return "{strings.decimal(float(nanoseconds) / 1000000000.0, 2)} s"
 
 function megabytes(bytes: integer) -> string
@@ -152,13 +196,43 @@ function megabytes(bytes: integer) -> string
 function kilobytes(bytes: integer) -> string
     return "{(bytes + 512) / 1024} KB"
 
-# Sayon's value against the better of C++'s and Rust's, as a factor: below
-# 1 is better.
+# Sayon's value against the better of C++'s and Rust's, as a factor:
+# below 1 is better. Nothing measured counts as a nanosecond, so that a
+# program too quick to measure gives 1.
 function factor(values: Array<integer>) -> float
-    best = values[0]
-    if values[1] < best
-        best = values[1]
-    return float(values[2]) / float(best)
+    best = values[CPP]
+    if values[RUST] < best
+        best = values[RUST]
+    if best < 1
+        best = 1
+    mine = values[SAYON]
+    if mine < 1
+        mine = 1
+    return float(mine) / float(best)
+
+# Whether processor times are long enough to compare: the better of C++'s
+# and Rust's is at least a few clock ticks.
+function timed(values: Array<integer>) -> boolean
+    best = values[CPP]
+    if values[RUST] < best
+        best = values[RUST]
+    return best >= TOO_SHORT
+
+# The factor to show for processor times, unless they are too short.
+function compared_times(values: Array<integer>) -> string
+    if not timed(values)
+        return "too short to tell"
+    return times_text(factor(values))
+
+# One value against another, as a factor.
+function against(value: integer, other: integer) -> float
+    top = value
+    if top < 1
+        top = 1
+    bottom = other
+    if bottom < 1
+        bottom = 1
+    return float(top) / float(bottom)
 
 function times_text(value: float) -> string
     return "{strings.decimal(value, 2)}×"
@@ -170,37 +244,100 @@ function medians(measured: Array<Measured>, update pick) -> Array<integer>
         push(values, median(pick(each)))
     return values
 
-# A program's own table: each version's numbers side by side.
-function program_table(row: Row, runs: integer, used: Setting) -> string
-    times = medians(row.measured, function(each: Measured) return clone(each.times))
-    memory = medians(row.measured, function(each: Measured) return clone(each.memory))
-    ranges: Array<string> = []
-    for each in row.measured
-        ordered = sorted(each.times)
-        push(ranges, "{strings.decimal(float(ordered[0]) / 1000000000.0, 2)} to {seconds(ordered[length(ordered) - 1])}")
-    speed = factor(times)
+function add_all(update lines: Array<string>, more: Array<string>)
+    for line in more
+        push(lines, clone(line))
+
+# A table of the medians of what `pick` takes, a row for each input.
+# `coarse` says the values are processor times, counted in clock ticks.
+function input_table(row: Row, update pick, show, coarse: boolean) -> Array<string>
+    lines = ["| Input {COLUMNS} Sayon against the better |", "|---:|---:|---:|---:|---:|---:|"]
+    for position in range(length(row.benchmark.inputs))
+        values = medians(row.results[position], pick)
+        compared = times_text(factor(values))
+        if coarse
+            compared = compared_times(values)
+        push(lines, "| {row.benchmark.inputs[position]} | {show(values[CPP])} | {show(values[RUST])} | {show(values[CHECKED])} | {show(values[SAYON])} | {compared} |")
+    return lines
+
+# The fastest and slowest of each build's runs, a row for each input.
+function spread_table(row: Row) -> Array<string>
+    lines = ["| Input {COLUMNS}", "|---:|---:|---:|---:|---:|"]
+    for position in range(length(row.benchmark.inputs))
+        cells: Array<string> = []
+        for each in row.results[position]
+            ordered = sorted(each.times)
+            push(cells, "{seconds(ordered[0])} to {seconds(ordered[length(ordered) - 1])}")
+        push(lines, "| {row.benchmark.inputs[position]} | {strings.join(cells, " | ")} |")
+    return lines
+
+function build_table(row: Row) -> Array<string>
+    building: Array<string> = []
+    sizes: Array<string> = []
+    for each in row.builds
+        push(building, seconds(each.building))
+        push(sizes, kilobytes(each.size))
+    return [
+        "| {COLUMNS}",
+        "|---|---:|---:|---:|---:|",
+        "| Time to build | {strings.join(building, " | ")} |",
+        "| Executable | {strings.join(sizes, " | ")} |"
+    ]
+
+# What a program's largest input showed, in a sentence or two. A program
+# too brief for processor time to tell is compared by time on the clock.
+function verdict(row: Row) -> string
+    largest = length(row.benchmark.inputs) - 1
+    times = medians(row.results[largest], function(each: Measured) return clone(each.times))
+    walls = medians(row.results[largest], function(each: Measured) return clone(each.walls))
+    memory = medians(row.results[largest], function(each: Measured) return clone(each.memory))
+    start = "At the largest input"
+    kind = "processor time"
+    compared = clone(times)
+    if not timed(times)
+        start = "Processor time is too short to tell here, so by time on the clock"
+        kind = "time"
+        compared = clone(walls)
+    speed = factor(compared)
     room = factor(memory)
-    verdict = "Sayon took {times_text(speed)} the time of the faster of the other two"
+    said = "{start}, Sayon took {times_text(speed)} the {kind} of the faster of C++ and Rust"
     if speed < 1.0
-        verdict = "Sayon was the fastest, in {times_text(speed)} the time of the faster of the other two"
+        said = "{start}, Sayon was the fastest, in {times_text(speed)} the {kind} of the faster of C++ and Rust"
     held = "held {times_text(room)} the memory of the leaner one"
     if room < 1.0
         held = "held the least memory, {times_text(room)} that of the leaner one"
-    lines = [
-        "| | C++ | Rust | Sayon |",
-        "|---|---:|---:|---:|",
-        "| Processor time, median | {seconds(times[0])} | {seconds(times[1])} | {seconds(times[2])} |",
-        "| Fastest and slowest run | {ranges[0]} | {ranges[1]} | {ranges[2]} |",
-        "| Peak memory, median | {megabytes(memory[0])} | {megabytes(memory[1])} | {megabytes(memory[2])} |",
-        "| Executable | {kilobytes(row.measured[0].size)} | {kilobytes(row.measured[1].size)} | {kilobytes(row.measured[2].size)} |",
-        "",
-        "{verdict}, and {held}.",
-        "",
-        "Input {row.benchmark.input}, {runs} runs of each, measured on {used.day} on {used.computer}. C++: {used.cpp}. Rust: {used.rust}. Sayon: {used.sayon}."
-    ]
+    checks = against(compared[CHECKED], compared[RUST])
+    return "{said}, and {held}. With its overflow checks on, Rust took {times_text(checks)} its own {kind} without them."
+
+# A program's own tables, for its README.
+function program_section(row: Row, runs: integer, used: Setting) -> string
+    lines: Array<string> = []
+    push(lines, "Processor time, the median of {runs} runs:")
+    push(lines, "")
+    add_all(lines, input_table(row, function(each: Measured) return clone(each.times), seconds, true))
+    push(lines, "")
+    push(lines, "The fastest and slowest runs:")
+    push(lines, "")
+    add_all(lines, spread_table(row))
+    push(lines, "")
+    push(lines, "Peak memory:")
+    push(lines, "")
+    add_all(lines, input_table(row, function(each: Measured) return clone(each.memory), megabytes, false))
+    push(lines, "")
+    push(lines, "Time on the clock, from starting the program to its end:")
+    push(lines, "")
+    add_all(lines, input_table(row, function(each: Measured) return clone(each.walls), seconds, false))
+    push(lines, "")
+    push(lines, "Building:")
+    push(lines, "")
+    add_all(lines, build_table(row))
+    push(lines, "")
+    push(lines, verdict(row))
+    push(lines, "")
+    push(lines, "Measured on {used.day} on {used.computer}, {runs} runs of each build at each input. C++: {used.cpp}. Rust: {used.rust}, and again with `-C overflow-checks=on`. Sayon: {used.sayon}.")
     return strings.join(lines, "\n")
 
-# Puts a program's table into its README, between the markers.
+# Puts a program's tables into its README, between the markers.
 function write_table(name: string, table: string)
     path = filesystem.join(name, "README.md")
     readme = io.read_file(path)
@@ -212,14 +349,78 @@ function write_table(name: string, table: string)
         error("{path} has no `{END}` line after the results")
     io.write_file(path, "{head[0]}{START}\n\n{table}\n\n{END}{tail[1]}")
 
-# A summary table of the medians of what `pick` takes from each build.
-function summary(rows: Array<Row>, update pick, show) -> string
-    lines = ["| Benchmark | Input | C++ | Rust | Sayon | Sayon against the better |", "|---|---:|---:|---:|---:|---:|"]
+# The medians of what `pick` takes at each program's largest input, a row
+# for each program. `coarse` says the values are processor times.
+function largest_table(rows: Array<Row>, update pick, show, against_what: string, coarse: boolean) -> Array<string>
+    lines = ["| Benchmark | Input {COLUMNS} Sayon against the {against_what} |", "|---|---:|---:|---:|---:|---:|---:|"]
     for row in rows
-        values = medians(row.measured, pick)
-        name = clone(row.benchmark.name)
-        push(lines, "| [{name}]({name}/README.md) | {row.benchmark.input} | {show(values[0])} | {show(values[1])} | {show(values[2])} | {times_text(factor(values))} |")
-    return strings.join(lines, "\n")
+        largest = length(row.benchmark.inputs) - 1
+        values = medians(row.results[largest], pick)
+        compared = times_text(factor(values))
+        if coarse
+            compared = compared_times(values)
+        push(lines, "| [{row.benchmark.name}]({row.benchmark.name}/README.md) | {row.benchmark.inputs[largest]} | {show(values[CPP])} | {show(values[RUST])} | {show(values[CHECKED])} | {show(values[SAYON])} | {compared} |")
+    return lines
+
+# Sayon against the better of C++ and Rust at every input, smallest first.
+function growth_table(rows: Array<Row>) -> Array<string>
+    lines = ["| Benchmark | Inputs | Sayon against the better, at each |", "|---|---|---|"]
+    for row in rows
+        factors: Array<string> = []
+        for position in range(length(row.benchmark.inputs))
+            values = medians(row.results[position], function(each: Measured) return clone(each.times))
+            push(factors, compared_times(values))
+        push(lines, "| {row.benchmark.name} | {strings.join(row.benchmark.inputs, ", ")} | {strings.join(factors, ", ")} |")
+    return lines
+
+# What Rust's overflow checks cost it, beside Sayon, which always checks.
+function checks_table(rows: Array<Row>) -> Array<string>
+    lines = ["| Benchmark | Rust | Rust, checked | What the checks cost Rust | Sayon | Sayon against checked Rust |", "|---|---:|---:|---:|---:|---:|"]
+    for row in rows
+        largest = length(row.benchmark.inputs) - 1
+        values = medians(row.results[largest], function(each: Measured) return clone(each.times))
+        cost = "too short to tell"
+        beside = "too short to tell"
+        if timed(values)
+            cost = times_text(against(values[CHECKED], values[RUST]))
+            beside = times_text(against(values[SAYON], values[CHECKED]))
+        push(lines, "| {row.benchmark.name} | {seconds(values[RUST])} | {seconds(values[CHECKED])} | {cost} | {seconds(values[SAYON])} | {beside} |")
+    return lines
+
+function building_table(rows: Array<Row>) -> Array<string>
+    lines = ["| Benchmark | Time to build: C++, Rust, Rust checked, Sayon | Executable: C++, Rust, Rust checked, Sayon |", "|---|---:|---:|"]
+    for row in rows
+        building: Array<string> = []
+        sizes: Array<string> = []
+        for each in row.builds
+            push(building, seconds(each.building))
+            push(sizes, kilobytes(each.size))
+        push(lines, "| {row.benchmark.name} | {strings.join(building, ", ")} | {strings.join(sizes, ", ")} |")
+    return lines
+
+# How many programs Sayon did better on, at their largest inputs.
+function tally(rows: Array<Row>) -> string
+    timed_count = 0
+    fastest = 0
+    faster_than_rust = 0
+    leanest = 0
+    leaner_than_rust = 0
+    for row in rows
+        largest = length(row.benchmark.inputs) - 1
+        times = medians(row.results[largest], function(each: Measured) return clone(each.times))
+        memory = medians(row.results[largest], function(each: Measured) return clone(each.memory))
+        if timed(times)
+            timed_count += 1
+            if factor(times) < 1.0
+                fastest += 1
+            if times[SAYON] < times[RUST]
+                faster_than_rust += 1
+        if factor(memory) < 1.0
+            leanest += 1
+        if memory[SAYON] < memory[RUST]
+            leaner_than_rust += 1
+    count = length(rows)
+    return "At the largest inputs, Sayon took the least processor time of the three on {fastest} of the {timed_count} programs that run long enough to time, and less than Rust on {faster_than_rust}. It held the least memory on {leanest} of all {count}, and less than Rust on {leaner_than_rust}."
 
 function report(rows: Array<Row>, runs: integer, used: Setting) -> string
     lines = [
@@ -228,24 +429,43 @@ function report(rows: Array<Row>, runs: integer, used: Setting) -> string
         "Measured on {used.day} on {used.computer}.",
         "",
         "- C++: {used.cpp}",
-        "- Rust: {used.rust}",
+        "- Rust: {used.rust}. *Rust, checked* is the same build with `-C overflow-checks=on`, which checks integer arithmetic for overflow, as Sayon always does.",
         "- Sayon: {used.sayon}",
         "",
-        "Each number is the median of {runs} runs. Processor time adds up the time the program's threads ran, and the system's time on its behalf, so it barely changes with what else the computer is doing. Peak memory is the most the program held in memory at once. Each program's README has its own table, with the fastest and slowest runs and the size of each executable.",
+        "Each program ran at two or three inputs, the largest taking seconds. At each input, every build first ran once to check that they all print the same thing, then they took turns, {runs} runs each, and each number here is the median of those runs. *Sayon against the better* divides Sayon's number by the better of C++'s and Rust's, so below 1 means Sayon did better. Processor time under 50 ms is a few of the system's clock ticks, too coarse to compare, so it says *too short to tell* instead. Each program's README has its full tables: every input, the fastest and slowest runs, time on the clock, and how long each build took. [measurements.json](measurements.json) has every run's numbers.",
         "",
-        "## Processor time",
+        tally(rows),
         "",
-        summary(rows, function(each: Measured) return clone(each.times), seconds),
+        "## Processor time at the largest input",
         "",
-        "## Peak memory",
-        "",
-        summary(rows, function(each: Measured) return clone(each.memory), megabytes),
+        "How long the program ran on the processor, its threads added up, and the system's time on its behalf. It hardly changes with what else the computer is doing.",
         ""
     ]
+    add_all(lines, largest_table(rows, function(each: Measured) return clone(each.times), seconds, "better", true))
+    add_all(lines, ["", "## Peak memory at the largest input", "", "The most memory the program held at once.", ""])
+    add_all(lines, largest_table(rows, function(each: Measured) return clone(each.memory), megabytes, "leaner", false))
+    add_all(lines, ["", "## Time on the clock at the largest input", "", "From starting the program to its end, as a person waiting for it would count. Threads that run at once shorten it, and a busy computer lengthens it.", ""])
+    add_all(lines, largest_table(rows, function(each: Measured) return clone(each.walls), seconds, "better", false))
+    add_all(lines, ["", "## As the input grows", "", "Sayon's processor time against the better of C++ and Rust, at each input.", ""])
+    add_all(lines, growth_table(rows))
+    add_all(lines, ["", "## What checking for overflow costs", "", "Sayon checks every integer operation for overflow in every build. Rust does in debug builds, and in release builds only when asked, as the checked build does. This compares the two Rust builds at the largest input, and Sayon with the checked one.", ""])
+    add_all(lines, checks_table(rows))
+    add_all(lines, ["", "## Building", "", "How long each compiler took to build the program, and how big the executable is.", ""])
+    add_all(lines, building_table(rows))
+    push(lines, "")
     return strings.join(lines, "\n")
 
+# Writes each program's tables and RESULTS.md from what a full run saved.
+function write_all(saved: Saved)
+    for row in saved.rows
+        write_table(row.benchmark.name, program_section(row, saved.runs, saved.setting))
+    text = report(saved.rows, saved.runs, saved.setting)
+    io.write_file("RESULTS.md", text)
+    print(text)
+
 function main()
-    runs = 5
+    runs = 7
+    quick = false
     chosen: Array<string> = []
     arguments = os.arguments()
     position = 0
@@ -253,6 +473,13 @@ function main()
         if arguments[position] == "--runs" and position + 1 < length(arguments)
             runs = strings.parse_integer(arguments[position + 1])
             position += 2
+        elseif arguments[position] == "--quick"
+            quick = true
+            position += 1
+        elseif arguments[position] == "--report"
+            loaded: Saved = json.decode(io.read_file(MEASUREMENTS))
+            write_all(loaded)
+            return
         else
             push(chosen, clone(arguments[position]))
             position += 1
@@ -265,23 +492,30 @@ function main()
     if not filesystem.exists(folder)
         filesystem.create_directory(folder)
     rows: Array<Row> = []
-    for benchmark in all_benchmarks()
-        if length(chosen) > 0 and not contains(chosen, benchmark.name)
+    for listed in all_benchmarks()
+        if length(chosen) > 0 and not contains(chosen, listed.name)
             continue
-        print("{benchmark.name} ({benchmark.input})")
+        benchmark = clone(listed)
+        if quick
+            benchmark.inputs = [clone(listed.inputs[0])]
         builds = build(benchmark, sayon, folder)
-        check(benchmark, builds)
-        measured = measure(benchmark, builds, runs)
-        for index in range(length(builds))
-            print("  {builds[index].language}: {seconds(median(measured[index].times))}, {megabytes(median(measured[index].memory))}")
-        finished = Row(benchmark = clone(benchmark), measured = measured)
-        write_table(benchmark.name, program_table(finished, runs, used))
+        results: Array<Array<Measured>> = []
+        for input in benchmark.inputs
+            print("{benchmark.name} ({input})")
+            check(benchmark, input, builds)
+            measured = measure(benchmark, input, builds, runs)
+            for index in range(length(builds))
+                print("  {builds[index].label}: {seconds(median(measured[index].times))}, {megabytes(median(measured[index].memory))}")
+            push(results, measured)
+        finished = Row(benchmark = clone(benchmark), builds = builds, results = results)
+        if not quick
+            write_table(benchmark.name, program_section(finished, runs, used))
         push(rows, finished)
-    if length(chosen) == 0
-        text = report(rows, runs, used)
-        io.write_file("results.md", text)
+    if length(chosen) == 0 and not quick
+        saved = Saved(setting = clone(used), runs = runs, rows = rows)
+        io.write_file(MEASUREMENTS, json.encode_value(saved))
         print("")
-        print(text)
+        write_all(saved)
 
 function contains(names: Array<string>, name: string) -> boolean
     for each in names
