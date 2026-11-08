@@ -1,0 +1,11 @@
+abcdabcd
+xxxx
+startpq
+1000 1000
+hello!
+["a", "bc"]
+constant changed
+["dos", "two", "three"] ["uno", "one"]
+[1, 2, 7] [3]
+index 3 is out of bounds for an array of length 3
+index -1 is out of bounds for an array of length 1

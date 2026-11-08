@@ -1,0 +1,3 @@
+function main()
+    letters = ["a", "b"]
+    swap(letters, 0, letters, 1)

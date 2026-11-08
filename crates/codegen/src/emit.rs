@@ -306,6 +306,7 @@ impl<'m> Codegen<'m> {
         out.push_str(&self.constant_defs);
         out.push('\n');
         out.push_str(RUNTIME_DECLARATIONS);
+        out.push_str(RANGE_LENGTH);
         if module.target.processor == "wasm32" {
             out.push_str(crate::coroutines::GLUE);
         }
@@ -644,6 +645,25 @@ pub(crate) struct FnEmit<'c, 'm> {
     after: Vec<(String, Type)>,
     /// Whether the function is lowered to a coroutine.
     coroutine: bool,
+    /// The function's calls that report a failed check, emitted after its
+    /// blocks.
+    reports: Vec<Report>,
+}
+
+/// One call of a runtime function that sets the error for a failed check,
+/// shared by every check in the function that fails the same way into the
+/// same error block. Each check comes from a block of its own with its own
+/// values, which phi nodes gather. A function with many checks then has one
+/// call where it had one per check, and stays small enough for LLVM to
+/// inline.
+struct Report {
+    label: String,
+    callee: &'static str,
+    /// The types of the arguments after the error slot.
+    types: &'static [&'static str],
+    error: BlockId,
+    /// The block each check comes from, and its arguments.
+    incoming: Vec<(String, Vec<String>)>,
 }
 
 impl<'c, 'm> FnEmit<'c, 'm> {
@@ -654,6 +674,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             body: Body::new(),
             after: Vec::new(),
             coroutine: false,
+            reports: Vec::new(),
         }
     }
 
@@ -675,7 +696,16 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         ];
         for (position, slot) in f.params.iter().enumerate() {
             let definition = f.slot(*slot);
+            let environment = definition.name.as_deref() == Some("<environment>");
             let llvm = match definition.kind {
+                // An `update` parameter borrows its place exclusively: the
+                // checker lets nothing else reach it while the call lasts,
+                // so LLVM may keep what it read from it. A closure's
+                // environment and a coroutine, which outlives its first
+                // call, are left as they are.
+                SlotKind::Ref { mutable: true } if !self.coroutine && !environment => {
+                    "ptr noalias".to_string()
+                }
                 SlotKind::Ref { .. } => "ptr".to_string(),
                 SlotKind::Value => self.cg.llvm(&definition.ty),
             };
@@ -717,6 +747,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             }
             self.terminator(&block.term);
         }
+        self.emit_reports();
         if !self.coroutine {
             return format!(
                 "; {}\ndefine internal i32 @sayon.fn.{index}({}) {{\nentry:\n{}  br label %b0\n{}}}\n\n",
@@ -1122,16 +1153,38 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     panic!("push onto {ty}")
                 };
                 let size = self.cg.layouts.size_of(&element);
-                self.body.line(format!(
-                    "call void @sayon_array_reserve(ptr {pointer}, i64 1, i64 {size})"
-                ));
-                let data = self.body.tmp();
-                self.body.line(format!("{data} = load ptr, ptr {pointer}"));
+                // The runtime is called only when the array is full.
                 let length_ptr = self.body.tmp();
                 self.body.line(format!("{length_ptr} = getelementptr inbounds %sayon.array, ptr {pointer}, i32 0, i32 1"));
                 let length = self.body.tmp();
                 self.body
                     .line(format!("{length} = load i64, ptr {length_ptr}"));
+                let capacity_ptr = self.body.tmp();
+                self.body.line(format!("{capacity_ptr} = getelementptr inbounds %sayon.array, ptr {pointer}, i32 0, i32 2"));
+                let capacity = self.body.tmp();
+                self.body
+                    .line(format!("{capacity} = load i64, ptr {capacity_ptr}"));
+                let room = self.body.tmp();
+                self.body
+                    .line(format!("{room} = icmp slt i64 {length}, {capacity}"));
+                self.cg
+                    .intrinsic("declare i1 @llvm.expect.i1(i1, i1)".to_string());
+                let expected = self.body.tmp();
+                self.body.line(format!(
+                    "{expected} = call i1 @llvm.expect.i1(i1 {room}, i1 true)"
+                ));
+                let grow = self.body.label("grow");
+                let ready = self.body.label("ready");
+                self.body
+                    .line(format!("br i1 {expected}, label %{ready}, label %{grow}"));
+                self.body.start(&grow);
+                self.body.line(format!(
+                    "call void @sayon_array_reserve(ptr {pointer}, i64 1, i64 {size})"
+                ));
+                self.body.line(format!("br label %{ready}"));
+                self.body.start(&ready);
+                let data = self.body.tmp();
+                self.body.line(format!("{data} = load ptr, ptr {pointer}"));
                 let element_llvm = self.cg.llvm(&element);
                 let slot = self.body.tmp();
                 self.body.line(format!(
@@ -1142,6 +1195,13 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 self.body.line(format!("{grown} = add i64 {length}, 1"));
                 self.body
                     .line(format!("store i64 {grown}, ptr {length_ptr}"));
+            }
+            Inst::Append { string, value } => {
+                let (pointer, _) = self.place_ptr(string);
+                let (more, _) = self.pointer(value);
+                self.body.line(format!(
+                    "call void @sayon_str_append(ptr {pointer}, ptr {more})"
+                ));
             }
             Inst::DictSet { dict, key, value } => {
                 let (pointer, ty) = self.place_ptr(dict);
@@ -1215,9 +1275,16 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 self.body.line(format!("store i1 {result}, ptr {dest}"));
             }
             Rvalue::Format(parts) => {
-                let builder = self.body.tmp();
-                self.body
-                    .line(format!("{builder} = call ptr @sayon_builder_new()"));
+                // Room for the text around the values, and a few bytes for
+                // each value.
+                let guess: usize = parts
+                    .iter()
+                    .map(|part| match part {
+                        FormatPart::Text(text) => text.len(),
+                        FormatPart::Value(..) => 8,
+                    })
+                    .sum();
+                let builder = self.start_builder(guess);
                 for part in parts {
                     match part {
                         FormatPart::Text(text) => self.builder_text(&builder, text),
@@ -1231,7 +1298,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     }
                 }
                 self.body.line(format!(
-                    "call void @sayon_builder_finish(ptr {builder}, ptr {dest})"
+                    "call void @sayon_builder_end(ptr {builder}, ptr {dest})"
                 ));
             }
             Rvalue::Concat(lhs, rhs) => {
@@ -1249,7 +1316,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 }
                 let size = self.cg.layouts.size_of(element);
                 self.body.line(format!(
-                    "call void @sayon_array_reserve(ptr {dest}, i64 {}, i64 {size})",
+                    "call void @sayon_array_exact(ptr {dest}, i64 {}, i64 {size})",
                     items.len()
                 ));
                 let data = self.body.tmp();
@@ -1536,9 +1603,20 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             }
             Rvalue::RangeLength(range) => {
                 let (pointer, _) = self.pointer(range);
+                let mut fields = Vec::new();
+                for field in 0..3 {
+                    let address = self.body.tmp();
+                    self.body.line(format!(
+                        "{address} = getelementptr inbounds %sayon.range, ptr {pointer}, i32 0, i32 {field}"
+                    ));
+                    let value = self.body.tmp();
+                    self.body.line(format!("{value} = load i64, ptr {address}"));
+                    fields.push(value);
+                }
                 let result = self.body.tmp();
                 self.body.line(format!(
-                    "{result} = call i64 @sayon_range_length(ptr {pointer})"
+                    "{result} = call i64 @sayon.range_length(i64 {}, i64 {}, i64 {})",
+                    fields[0], fields[1], fields[2]
                 ));
                 self.body.line(format!("store i64 {result}, ptr {dest}"));
             }
@@ -2222,24 +2300,26 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             Op::Convert { from, to, value } => Some(self.convert(from, to, value, dest, span)),
             Op::CheckIndex { array, index } => {
                 let (pointer, _) = self.pointer(array);
-                let field = self.body.tmp();
-                self.body.line(format!(
-                    "{field} = getelementptr inbounds %sayon.array, ptr {pointer}, i32 0, i32 1"
-                ));
-                let length = self.body.tmp();
-                self.body.line(format!("{length} = load i64, ptr {field}"));
+                let length = self.array_length(&pointer);
                 let (_, position, _) = self.value(index);
+                // Compared without sign, a negative position is past the end.
+                let inside = self.body.tmp();
+                self.body
+                    .line(format!("{inside} = icmp ult i64 {position}, {length}"));
                 let location = self.cg.location(span);
-                let status = self.body.tmp();
-                self.body.line(format!(
-                    "{status} = call i32 @sayon_check_index(ptr {err}, i64 {position}, i64 {length}, ptr {location})"
-                ));
+                self.check(
+                    &inside,
+                    "sayon_check_index",
+                    &["i64", "i64", "ptr"],
+                    vec![position.clone(), length, location],
+                    error,
+                );
                 if let Some(place) = dest {
                     let (target, _) = self.place_ptr(place);
                     self.body
                         .line(format!("store i64 {position}, ptr {target}"));
                 }
-                Some(status)
+                Some("0".to_string())
             }
             Op::MakeView { base, start, end } => {
                 let (pointer, ty) = self.place_ptr(base);
@@ -2263,11 +2343,31 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     Some(end) => self.value(end).1,
                     None => length.clone(),
                 };
+                // 0 <= start <= end <= length; compared without sign, an end
+                // within the length is not negative.
+                let from_zero = self.body.tmp();
+                self.body
+                    .line(format!("{from_zero} = icmp sge i64 {start}, 0"));
+                let ordered = self.body.tmp();
+                self.body
+                    .line(format!("{ordered} = icmp sle i64 {start}, {end}"));
+                let within = self.body.tmp();
+                self.body
+                    .line(format!("{within} = icmp ule i64 {end}, {length}"));
+                let starts = self.body.tmp();
+                self.body
+                    .line(format!("{starts} = and i1 {from_zero}, {ordered}"));
+                let inside = self.body.tmp();
+                self.body
+                    .line(format!("{inside} = and i1 {starts}, {within}"));
                 let location = self.cg.location(span);
-                let status = self.body.tmp();
-                self.body.line(format!(
-                    "{status} = call i32 @sayon_check_view(ptr {err}, i64 {start}, i64 {end}, i64 {length}, ptr {location})"
-                ));
+                self.check(
+                    &inside,
+                    "sayon_check_view",
+                    &["i64", "i64", "i64", "ptr"],
+                    vec![start.clone(), end.clone(), length, location],
+                    error,
+                );
                 let element_llvm = self.cg.llvm(&element);
                 let first = self.body.tmp();
                 self.body.line(format!(
@@ -2282,7 +2382,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     self.body
                         .line(format!("store i64 {count}, ptr {target_length}"));
                 }
-                Some(status)
+                Some("0".to_string())
             }
             Op::SplitView { view, count } => {
                 let (pointer, ty) = self.place_ptr(view);
@@ -2296,17 +2396,20 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 self.body
                     .line(format!("{length} = load i64, ptr {length_field}"));
                 let (_, count, _) = self.value(count);
-                let location = self.cg.location(span);
-                let status = self.body.tmp();
-                self.body.line(format!(
-                    "{status} = call i32 @sayon_check_split(ptr {err}, i64 {count}, i64 {length}, ptr {location})"
-                ));
-                // On failure the view is left as it was.
-                let ok = self.body.tmp();
-                self.body.line(format!("{ok} = icmp eq i32 {status}, 0"));
-                let taken = self.body.tmp();
+                // 0 <= count <= length. On failure the view is left as it
+                // was.
+                let inside = self.body.tmp();
                 self.body
-                    .line(format!("{taken} = select i1 {ok}, i64 {count}, i64 0"));
+                    .line(format!("{inside} = icmp ule i64 {count}, {length}"));
+                let location = self.cg.location(span);
+                self.check(
+                    &inside,
+                    "sayon_check_split",
+                    &["i64", "i64", "ptr"],
+                    vec![count.clone(), length.clone(), location],
+                    error,
+                );
+                let taken = count;
                 let element_llvm = self.cg.llvm(&element);
                 let rest = self.body.tmp();
                 self.body.line(format!(
@@ -2325,7 +2428,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 self.body.line(format!("store ptr {rest}, ptr {pointer}"));
                 self.body
                     .line(format!("store i64 {remaining}, ptr {length_field}"));
-                Some(status)
+                Some("0".to_string())
             }
             Op::Swap {
                 array,
@@ -2339,12 +2442,133 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 let size = self.cg.layouts.size_of(&element);
                 let (_, first, _) = self.value(first);
                 let (_, second, _) = self.value(second);
+                let length = self.array_length(&pointer);
+                let first_inside = self.body.tmp();
+                self.body
+                    .line(format!("{first_inside} = icmp ult i64 {first}, {length}"));
+                let second_inside = self.body.tmp();
+                self.body
+                    .line(format!("{second_inside} = icmp ult i64 {second}, {length}"));
+                let inside = self.body.tmp();
+                self.body
+                    .line(format!("{inside} = and i1 {first_inside}, {second_inside}"));
+                // The runtime names the position that is outside.
                 let location = self.cg.location(span);
-                let status = self.body.tmp();
+                self.check(
+                    &inside,
+                    "sayon_array_swap",
+                    &["ptr", "i64", "i64", "i64", "ptr"],
+                    vec![
+                        pointer.clone(),
+                        first.clone(),
+                        second.clone(),
+                        size.to_string(),
+                        location,
+                    ],
+                    error,
+                );
+                // Each element is read before either is written, so a
+                // position swapped with itself keeps its element.
+                let element_llvm = self.cg.llvm(&element);
+                let data = self.body.tmp();
+                self.body.line(format!("{data} = load ptr, ptr {pointer}"));
+                let first_slot = self.body.tmp();
                 self.body.line(format!(
-                    "{status} = call i32 @sayon_array_swap(ptr {err}, ptr {pointer}, i64 {first}, i64 {second}, i64 {size}, ptr {location})"
+                    "{first_slot} = getelementptr inbounds {element_llvm}, ptr {data}, i64 {first}"
                 ));
-                Some(status)
+                let second_slot = self.body.tmp();
+                self.body.line(format!(
+                    "{second_slot} = getelementptr inbounds {element_llvm}, ptr {data}, i64 {second}"
+                ));
+                let first_value = self.body.tmp();
+                self.body.line(format!(
+                    "{first_value} = load {element_llvm}, ptr {first_slot}"
+                ));
+                let second_value = self.body.tmp();
+                self.body.line(format!(
+                    "{second_value} = load {element_llvm}, ptr {second_slot}"
+                ));
+                self.body.line(format!(
+                    "store {element_llvm} {second_value}, ptr {first_slot}"
+                ));
+                self.body.line(format!(
+                    "store {element_llvm} {first_value}, ptr {second_slot}"
+                ));
+                Some("0".to_string())
+            }
+            Op::Exchange {
+                first_array,
+                first,
+                second_array,
+                second,
+            } => {
+                let (one, ty) = self.place_ptr(first_array);
+                let Type::Array(element) = ty else {
+                    panic!("swap in {ty}")
+                };
+                let (other, _) = self.place_ptr(second_array);
+                let (_, first, _) = self.value(first);
+                let (_, second, _) = self.value(second);
+                let one_length = self.array_length(&one);
+                let other_length = self.array_length(&other);
+                let first_inside = self.body.tmp();
+                self.body.line(format!(
+                    "{first_inside} = icmp ult i64 {first}, {one_length}"
+                ));
+                let second_inside = self.body.tmp();
+                self.body.line(format!(
+                    "{second_inside} = icmp ult i64 {second}, {other_length}"
+                ));
+                let inside = self.body.tmp();
+                self.body
+                    .line(format!("{inside} = and i1 {first_inside}, {second_inside}"));
+                // The position outside its array: the first one's if both are.
+                let position = self.body.tmp();
+                self.body.line(format!(
+                    "{position} = select i1 {first_inside}, i64 {second}, i64 {first}"
+                ));
+                let length = self.body.tmp();
+                self.body.line(format!(
+                    "{length} = select i1 {first_inside}, i64 {other_length}, i64 {one_length}"
+                ));
+                let location = self.cg.location(span);
+                self.check(
+                    &inside,
+                    "sayon_check_index",
+                    &["i64", "i64", "ptr"],
+                    vec![position, length, location],
+                    error,
+                );
+                let element_llvm = self.cg.llvm(&element);
+                let mut slots = Vec::new();
+                for (array, index) in [(&one, &first), (&other, &second)] {
+                    let data = self.body.tmp();
+                    self.body.line(format!("{data} = load ptr, ptr {array}"));
+                    let slot = self.body.tmp();
+                    self.body.line(format!(
+                        "{slot} = getelementptr inbounds {element_llvm}, ptr {data}, i64 {index}"
+                    ));
+                    slots.push(slot);
+                }
+                let one_value = self.body.tmp();
+                self.body.line(format!(
+                    "{one_value} = load {element_llvm}, ptr {}",
+                    slots[0]
+                ));
+                let other_value = self.body.tmp();
+                self.body.line(format!(
+                    "{other_value} = load {element_llvm}, ptr {}",
+                    slots[1]
+                ));
+                self.body.line(format!(
+                    "store {element_llvm} {other_value}, ptr {}",
+                    slots[0]
+                ));
+                self.body.line(format!(
+                    "store {element_llvm} {one_value}, ptr {}",
+                    slots[1]
+                ));
+                Some("0".to_string())
             }
             Op::RemoveAt { array, index } => {
                 let (pointer, ty) = self.place_ptr(array);
@@ -2399,9 +2623,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 Some(status)
             }
             Op::Print(values) => {
-                let builder = self.body.tmp();
-                self.body
-                    .line(format!("{builder} = call ptr @sayon_builder_new()"));
+                let builder = self.start_builder(16 * values.len());
                 for (index, (operand, _)) in values.iter().enumerate() {
                     if index > 0 {
                         self.builder_text(&builder, " ");
@@ -2414,7 +2636,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 }
                 let line = self.body.alloca("%sayon.str");
                 self.body.line(format!(
-                    "call void @sayon_builder_finish(ptr {builder}, ptr {line})"
+                    "call void @sayon_builder_end(ptr {builder}, ptr {line})"
                 ));
                 let location = self.cg.location(span);
                 let status = self.body.tmp();
@@ -2455,12 +2677,26 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     Some(place) => self.place_ptr(place).0,
                     None => self.body.alloca("%sayon.range"),
                 };
-                let location = self.cg.location(span);
-                let status = self.body.tmp();
-                self.body.line(format!(
-                    "{status} = call i32 @sayon_range_new(ptr {err}, i64 {s}, i64 {e}, i64 {step}, ptr {location}, ptr {target})"
-                ));
-                Some(status)
+                if step != "1" {
+                    let moves = self.body.tmp();
+                    self.body.line(format!("{moves} = icmp ne i64 {step}, 0"));
+                    let location = self.cg.location(span);
+                    self.check(
+                        &moves,
+                        "sayon_range_new",
+                        &["i64", "i64", "i64", "ptr", "ptr"],
+                        vec![s.clone(), e.clone(), step.clone(), location, target.clone()],
+                        error,
+                    );
+                }
+                for (field, value) in [s, e, step].iter().enumerate() {
+                    let pointer = self.body.tmp();
+                    self.body.line(format!(
+                        "{pointer} = getelementptr inbounds %sayon.range, ptr {target}, i32 0, i32 {field}"
+                    ));
+                    self.body.line(format!("store i64 {value}, ptr {pointer}"));
+                }
+                Some("0".to_string())
             }
             Op::ToNumber {
                 text,
@@ -2551,6 +2787,9 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 args,
                 tags,
             } => {
+                if let Some(status) = self.math(*function, args, dest) {
+                    return Some(status);
+                }
                 let count = args.len().max(1);
                 let argv = self.body.alloca(&format!("[{count} x ptr]"));
                 for (index, arg) in args.iter().enumerate() {
@@ -2562,7 +2801,11 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     self.body.line(format!("store ptr {pointer}, ptr {entry}"));
                 }
                 let location = self.cg.location(span);
-                let code = *function as u32;
+                // Each primitive has an entry of its own, so that a program
+                // links only those it calls.
+                let entry = format!("sayon_host_{}", function.name());
+                self.cg
+                    .intrinsic(format!("declare i32 @{entry}(ptr, ptr, ptr, ptr, ptr)"));
                 match tags {
                     Some((string_tag, nothing_tag)) => {
                         let text = self.body.alloca("%sayon.str");
@@ -2572,7 +2815,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                         self.body.line(format!("store i1 false, ptr {present}"));
                         let status = self.body.tmp();
                         self.body.line(format!(
-                            "{status} = call i32 @sayon_host_call(ptr {err}, i32 {code}, ptr {argv}, ptr {text}, ptr {present}, ptr {location})"
+                            "{status} = call i32 @{entry}(ptr {err}, ptr {argv}, ptr {text}, ptr {present}, ptr {location})"
                         ));
                         self.finish_instruction();
                         let ok = self.body.tmp();
@@ -2612,7 +2855,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                         };
                         let status = self.body.tmp();
                         self.body.line(format!(
-                            "{status} = call i32 @sayon_host_call(ptr {err}, i32 {code}, ptr {argv}, ptr {out}, ptr null, ptr {location})"
+                            "{status} = call i32 @{entry}(ptr {err}, ptr {argv}, ptr {out}, ptr null, ptr {location})"
                         ));
                         Some(status)
                     }
@@ -2923,7 +3166,6 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         span: Span,
         error: BlockId,
     ) -> String {
-        let err = self.error_slot();
         let llvm = int_llvm(ty);
         let (_, a, _) = self.value(lhs);
         let (_, b, _) = self.value(rhs);
@@ -2972,11 +3214,13 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 self.body.start(&fail);
                 let code = self.cg.c_string("DivisionByZeroError");
                 let message = self.cg.c_string("integer division by zero");
-                let status = self.body.tmp();
-                self.body.line(format!(
-                    "{status} = call i32 @sayon_error_raise_text(ptr {err}, ptr {code}, ptr {message}, ptr {location})"
-                ));
-                self.body.line(format!("br label %b{}", error.0));
+                self.report(
+                    &fail,
+                    "sayon_error_raise_text",
+                    &["ptr", "ptr", "ptr"],
+                    vec![code, message, location.clone()],
+                    error,
+                );
                 self.body.start(&ok);
                 if ty.signed() {
                     // MIN / -1 overflows; MIN % -1 is 0.
@@ -3031,6 +3275,180 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         "0".to_string()
     }
 
+    /// Goes on when `holds` is true. Otherwise a cold block destroys what the
+    /// instruction made so far and goes to the function's call of `callee`
+    /// with `values` (see [`Report`]), which sets the error and goes on to
+    /// the error block. The check itself stays in the function, where LLVM
+    /// can see through it, hoist it out of a loop, or prove it always holds.
+    fn check(
+        &mut self,
+        holds: &str,
+        callee: &'static str,
+        types: &'static [&'static str],
+        values: Vec<String>,
+        error: BlockId,
+    ) {
+        self.cg
+            .intrinsic("declare i1 @llvm.expect.i1(i1, i1)".to_string());
+        let expected = self.body.tmp();
+        self.body.line(format!(
+            "{expected} = call i1 @llvm.expect.i1(i1 {holds}, i1 true)"
+        ));
+        let fail = self.body.label("check_failed");
+        let ok = self.body.label("check_ok");
+        self.body
+            .line(format!("br i1 {expected}, label %{ok}, label %{fail}"));
+        self.body.start(&fail);
+        for (pointer, ty) in self.after.clone() {
+            let drop = self.cg.helper(Helper::Drop, &ty);
+            self.body.line(format!("call void {drop}(ptr {pointer})"));
+        }
+        self.report(&fail, callee, types, values, error);
+        self.body.start(&ok);
+    }
+
+    /// Ends the block `from`, where a check failed, by going to the
+    /// function's call of `callee` with `values` (see [`Report`]).
+    fn report(
+        &mut self,
+        from: &str,
+        callee: &'static str,
+        types: &'static [&'static str],
+        values: Vec<String>,
+        error: BlockId,
+    ) {
+        let position = match self
+            .reports
+            .iter()
+            .position(|report| report.callee == callee && report.error == error)
+        {
+            Some(position) => position,
+            None => {
+                let label = self.body.label("report");
+                self.reports.push(Report {
+                    label,
+                    callee,
+                    types,
+                    error,
+                    incoming: Vec::new(),
+                });
+                self.reports.len() - 1
+            }
+        };
+        let report = &mut self.reports[position];
+        report.incoming.push((from.to_string(), values));
+        let line = format!("br label %{}", report.label);
+        self.body.line(line);
+    }
+
+    /// The blocks of the function's [`Report`]s.
+    fn emit_reports(&mut self) {
+        let err = self.error_slot();
+        for report in std::mem::take(&mut self.reports) {
+            self.body.start(&report.label);
+            let mut arguments = vec![format!("ptr {err}")];
+            for (position, ty) in report.types.iter().enumerate() {
+                let incoming: Vec<String> = report
+                    .incoming
+                    .iter()
+                    .map(|(block, values)| format!("[ {}, %{block} ]", values[position]))
+                    .collect();
+                let value = self.body.tmp();
+                self.body
+                    .line(format!("{value} = phi {ty} {}", incoming.join(", ")));
+                arguments.push(format!("{ty} {value}"));
+            }
+            let status = self.body.tmp();
+            self.body.line(format!(
+                "{status} = call i32 @{}({}) cold",
+                report.callee,
+                arguments.join(", ")
+            ));
+            self.body.line(format!("br label %b{}", report.error.0));
+        }
+    }
+
+    /// A primitive of `standard/math`, called without the host call's
+    /// dispatch. Square roots and rounding toward a whole number are LLVM's
+    /// own operations; the others are the runtime's functions, which LLVM
+    /// is told only compute, so it can move or drop them like arithmetic.
+    /// Both give what the interpreter gives: Rust's functions of `f64`, or
+    /// operations exact in IEEE arithmetic. `None` for other primitives.
+    fn math(
+        &mut self,
+        function: sayon_runtime::host::Host,
+        args: &[Operand],
+        dest: Option<&Place>,
+    ) -> Option<String> {
+        use sayon_runtime::host::Host;
+        let callee = match function {
+            Host::Sqrt => "llvm.sqrt.f64",
+            Host::Floor => "llvm.floor.f64",
+            Host::Ceil => "llvm.ceil.f64",
+            Host::Trunc => "llvm.trunc.f64",
+            Host::Round => "sayon_math_round",
+            Host::Sin => "sayon_math_sin",
+            Host::Cos => "sayon_math_cos",
+            Host::Tan => "sayon_math_tan",
+            Host::Asin => "sayon_math_asin",
+            Host::Acos => "sayon_math_acos",
+            Host::Atan => "sayon_math_atan",
+            Host::Atan2 => "sayon_math_atan2",
+            Host::Exp => "sayon_math_exp",
+            Host::Log => "sayon_math_log",
+            Host::Log10 => "sayon_math_log10",
+            Host::Log2 => "sayon_math_log2",
+            Host::Pow => "sayon_math_pow",
+            _ => return None,
+        };
+        let parameters = vec!["double"; args.len()].join(", ");
+        let attributes = if callee.starts_with("llvm.") {
+            ""
+        } else {
+            " memory(none) nounwind willreturn"
+        };
+        self.cg.intrinsic(format!(
+            "declare double @{callee}({parameters}){attributes}"
+        ));
+        let values: Vec<String> = args
+            .iter()
+            .map(|arg| format!("double {}", self.value(arg).1))
+            .collect();
+        let result = self.body.tmp();
+        self.body.line(format!(
+            "{result} = call double @{callee}({})",
+            values.join(", ")
+        ));
+        if let Some(place) = dest {
+            let (target, _) = self.place_ptr(place);
+            self.body
+                .line(format!("store double {result}, ptr {target}"));
+        }
+        Some("0".to_string())
+    }
+
+    /// Starts a builder in a slot of the function's own, with room for
+    /// `guess` bytes, and gives its address. The runtime's builder is three
+    /// words the size of an address.
+    fn start_builder(&mut self, guess: usize) -> String {
+        let builder = self.body.alloca("[3 x ptr]");
+        self.body.line(format!(
+            "call void @sayon_builder_start(ptr {builder}, i64 {guess})"
+        ));
+        builder
+    }
+
+    /// The array's length, loaded from its header at `pointer`.
+    fn array_length(&mut self, pointer: &str) -> String {
+        let field = self.body.tmp();
+        self.body.line(format!(
+            "{field} = getelementptr inbounds %sayon.array, ptr {pointer}, i32 0, i32 1"
+        ));
+        let length = self.body.tmp();
+        self.body.line(format!("{length} = load i64, ptr {field}"));
+        length
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn overflow_branch(
         &mut self,
@@ -3042,7 +3460,6 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         location: &str,
         error: BlockId,
     ) {
-        let err = self.error_slot();
         let fail = self.body.label("overflow");
         let ok = self.body.label("no_overflow");
         self.body
@@ -3051,12 +3468,19 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         let wide_a = self.widen(ty, a);
         let wide_b = self.widen(ty, b);
         let symbol = self.cg.c_string(symbol);
-        let status = self.body.tmp();
-        self.body.line(format!(
-            "{status} = call i32 @sayon_error_overflow(ptr {err}, ptr {symbol}, i64 {wide_a}, i64 {wide_b}, i32 {}, ptr {location})",
-            int_code(ty)
-        ));
-        self.body.line(format!("br label %b{}", error.0));
+        self.report(
+            &fail,
+            "sayon_error_overflow",
+            &["ptr", "i64", "i64", "i32", "ptr"],
+            vec![
+                symbol,
+                wide_a,
+                wide_b,
+                int_code(ty).to_string(),
+                location.to_string(),
+            ],
+            error,
+        );
         self.body.start(&ok);
     }
 
@@ -3174,18 +3598,45 @@ impl<'c, 'm> FnEmit<'c, 'm> {
 
 pub(crate) const MEMCPY: &str = "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)";
 
+/// How many values a range gives, as the runtime's `range_length` counts
+/// them, but where LLVM can inline it and fold a constant step. The count
+/// is taken without overflowing: the distance between the ends fits an
+/// unsigned 64-bit number, and the step's size too, even the smallest
+/// integer's. A step is never 0 once the range is made; the divisor is
+/// kept from 0 all the same.
+const RANGE_LENGTH: &str = "
+define internal i64 @sayon.range_length(i64 %start, i64 %end, i64 %step) alwaysinline {
+entry:
+  %rising = icmp sgt i64 %step, 0
+  %low = select i1 %rising, i64 %start, i64 %end
+  %high = select i1 %rising, i64 %end, i64 %start
+  %some = icmp slt i64 %low, %high
+  %distance = sub i64 %high, %low
+  %back = sub i64 0, %step
+  %size = select i1 %rising, i64 %step, i64 %back
+  %still = icmp eq i64 %size, 0
+  %divisor = select i1 %still, i64 1, i64 %size
+  %last = sub i64 %distance, 1
+  %whole = udiv i64 %last, %divisor
+  %count = add i64 %whole, 1
+  %length = select i1 %some, i64 %count, i64 0
+  ret i64 %length
+}
+";
+
 const RUNTIME_DECLARATIONS: &str = "\
 declare ptr @sayon_alloc(i64)
 declare void @sayon_free(ptr, i64)
 declare void @sayon_str_drop(ptr)
 declare void @sayon_str_clone(ptr, ptr)
 declare void @sayon_str_concat(ptr, ptr, ptr)
+declare void @sayon_str_append(ptr, ptr)
 declare zeroext i1 @sayon_str_eq(ptr, ptr)
 declare i32 @sayon_str_cmp(ptr, ptr)
 declare i64 @sayon_str_chars(ptr)
 declare i32 @sayon_str_char_at(ptr, ptr, i64, ptr, ptr)
 declare void @sayon_str_next_char(ptr, ptr, ptr)
-declare ptr @sayon_builder_new()
+declare void @sayon_builder_start(ptr, i64)
 declare void @sayon_builder_bytes(ptr, ptr, i64)
 declare void @sayon_builder_str(ptr, ptr, i1 zeroext)
 declare void @sayon_builder_int(ptr, i64, i32)
@@ -3194,16 +3645,17 @@ declare void @sayon_builder_f32(ptr, float)
 declare void @sayon_builder_bool(ptr, i1 zeroext)
 declare void @sayon_builder_error(ptr, ptr, i1 zeroext)
 declare void @sayon_builder_range(ptr, ptr)
-declare void @sayon_builder_finish(ptr, ptr)
+declare void @sayon_builder_end(ptr, ptr)
 declare i32 @sayon_print(ptr, ptr, ptr)
 declare void @sayon_array_reserve(ptr, i64, i64)
+declare void @sayon_array_exact(ptr, i64, i64)
 declare void @sayon_array_free(ptr, i64)
-declare i32 @sayon_check_index(ptr, i64, i64, ptr)
+declare i32 @sayon_check_index(ptr, i64, i64, ptr) cold
 declare void @sayon_dict_new(ptr, ptr, i64)
 declare zeroext i1 @sayon_dict_remove(ptr, ptr, ptr)
 declare i32 @sayon_array_remove(ptr, ptr, i64, i64, ptr, ptr)
 declare i32 @sayon_array_swap(ptr, ptr, i64, i64, i64, ptr)
-declare i32 @sayon_check_view(ptr, i64, i64, i64, ptr)
+declare i32 @sayon_check_view(ptr, i64, i64, i64, ptr) cold
 declare i64 @sayon_str_hash(ptr)
 declare i64 @sayon_dict_len(ptr)
 declare i64 @sayon_dict_find(ptr, ptr)
@@ -3216,8 +3668,8 @@ declare void @sayon_dict_clone(ptr, ptr, ptr)
 declare zeroext i1 @sayon_dict_eq(ptr, ptr, ptr)
 declare i32 @sayon_error_raise(ptr, ptr, ptr, ptr)
 declare i32 @sayon_error_raise_text(ptr, ptr, ptr, ptr)
-declare i32 @sayon_error_overflow(ptr, ptr, i64, i64, i32, ptr)
-declare i32 @sayon_error_negate(ptr, i64, i32, ptr)
+declare i32 @sayon_error_overflow(ptr, ptr, i64, i64, i32, ptr) cold
+declare i32 @sayon_error_negate(ptr, i64, i32, ptr) cold
 declare void @sayon_error_drop(ptr)
 declare void @sayon_stream_drop(ptr)
 declare ptr @sayon_shared_new(i64)
@@ -3227,7 +3679,7 @@ declare zeroext i1 @sayon_shared_upgrade(ptr)
 declare void @sayon_weak_retain(ptr)
 declare void @sayon_weak_release(ptr)
 declare void @sayon_weak_clone(ptr, ptr)
-declare i32 @sayon_check_split(ptr, i64, i64, ptr)
+declare i32 @sayon_check_split(ptr, i64, i64, ptr) cold
 declare void @sayon_c_string_drop(ptr)
 declare void @sayon_builder_c_string(ptr, ptr, i1)
 declare void @sayon_builder_pointer(ptr, i64)
@@ -3270,11 +3722,10 @@ declare i32 @sayon_f64_to_f32(ptr, double, ptr, ptr)
 declare i32 @sayon_tonumber(ptr, ptr, ptr, ptr, ptr, ptr)
 declare i32 @sayon_range_new(ptr, i64, i64, i64, ptr, ptr)
 declare i64 @sayon_range_length(ptr)
-declare i32 @sayon_assert_failed(ptr, ptr, ptr)
+declare i32 @sayon_assert_failed(ptr, ptr, ptr) cold
 declare i32 @sayon_read_file(ptr, ptr, ptr, ptr)
 declare i32 @sayon_write_file(ptr, ptr, ptr, ptr)
 declare i32 @sayon_exit_status(i64)
 declare void @sayon_runtime_finish()
 declare void @sayon_runtime_init()
-declare i32 @sayon_host_call(ptr, i32, ptr, ptr, ptr, ptr)
 ";

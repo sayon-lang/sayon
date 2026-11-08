@@ -402,10 +402,21 @@ impl PipeOutput {
 
 // ----- the program -------------------------------------------------------------------------
 
+/// What a finished program used: the most memory it held at once, in bytes,
+/// and the processor time it took, in nanoseconds, its own and the system's
+/// on its behalf. Zero where the system does not say.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Usage {
+    pub peak_memory: i64,
+    pub processor_time: i64,
+}
+
 pub struct Process {
     /// The exit status once the program has finished: its code, or -1 when
     /// it was stopped without one.
     status: Mutex<Option<i64>>,
+    /// Set before the status is.
+    usage: Mutex<Usage>,
     /// Kept once the program has finished, so that its handle stays valid
     /// while the process value lives.
     child: Mutex<Option<Child>>,
@@ -483,6 +494,7 @@ impl Process {
         };
         let process = Arc::new(Process {
             status: Mutex::new(None),
+            usage: Mutex::new(Usage::default()),
             child: Mutex::new(None),
             id: child.id(),
             #[cfg(windows)]
@@ -494,11 +506,8 @@ impl Process {
         let waiting = std::thread::Builder::new()
             .name("process".to_string())
             .spawn(move || {
-                let status = child
-                    .wait()
-                    .ok()
-                    .and_then(|s| s.code())
-                    .map_or(-1, i64::from);
+                let (status, usage) = platform::wait(&mut child);
+                *lock(&shared.usage) = usage;
                 *lock(&shared.child) = Some(child);
                 *lock(&shared.status) = Some(status);
                 wake();
@@ -533,6 +542,20 @@ impl Process {
         }
     }
 
+    /// What the program used, once it has finished.
+    pub fn usage(&self) -> Result<Usage, HostError> {
+        if lock(&self.status).is_none() {
+            return Err((
+                "ValueError",
+                format!(
+                    "{} has not finished, so what it used is not known yet; wait for it first",
+                    self.name
+                ),
+            ));
+        }
+        Ok(*lock(&self.usage))
+    }
+
     /// Stops the program, unless it has finished.
     pub fn kill(&self) -> Result<(), HostError> {
         let status = lock(&self.status);
@@ -551,23 +574,90 @@ impl Process {
     }
 }
 
+/// The exit status of a program the system ended without one.
+fn status(code: Option<i32>) -> i64 {
+    code.map_or(-1, i64::from)
+}
+
 #[cfg(windows)]
 mod platform {
+    use super::Usage;
+    use std::process::Child;
+
+    /// What `K32GetProcessMemoryInfo` fills in.
+    #[repr(C)]
+    #[derive(Default)]
+    struct MemoryCounters {
+        size: u32,
+        page_faults: u32,
+        peak_working_set: usize,
+        working_set: usize,
+        peak_paged_pool: usize,
+        paged_pool: usize,
+        peak_nonpaged_pool: usize,
+        nonpaged_pool: usize,
+        pagefile: usize,
+        peak_pagefile: usize,
+    }
+
     #[link(name = "kernel32")]
     unsafe extern "system" {
         fn TerminateProcess(process: usize, code: u32) -> i32;
+        fn K32GetProcessMemoryInfo(process: usize, counters: *mut MemoryCounters, size: u32)
+        -> i32;
+        fn GetProcessTimes(
+            process: usize,
+            creation: *mut u64,
+            exit: *mut u64,
+            kernel: *mut u64,
+            user: *mut u64,
+        ) -> i32;
     }
 
     pub fn stop(process: &super::Process) -> bool {
         // SAFETY: the handle is the running program's.
         unsafe { TerminateProcess(process.handle, 1) != 0 }
     }
+
+    /// Waits for the program, then asks the system what it used, through
+    /// its handle, which stays open as long as `child` does.
+    pub fn wait(child: &mut Child) -> (i64, Usage) {
+        use std::os::windows::io::AsRawHandle;
+        let status = super::status(child.wait().ok().and_then(|s| s.code()));
+        let handle = child.as_raw_handle() as usize;
+        let mut usage = Usage::default();
+        let mut counters = MemoryCounters {
+            size: std::mem::size_of::<MemoryCounters>() as u32,
+            ..MemoryCounters::default()
+        };
+        // SAFETY: the handle is the finished program's, and the counters
+        // are as big as they say.
+        if unsafe { K32GetProcessMemoryInfo(handle, &mut counters, counters.size) } != 0 {
+            usage.peak_memory = counters.peak_working_set as i64;
+        }
+        let (mut creation, mut exit, mut kernel, mut user) = (0, 0, 0, 0);
+        // SAFETY: as above; the times are counts of 100 nanoseconds.
+        if unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) } != 0
+        {
+            usage.processor_time = ((kernel + user) as i64).saturating_mul(100);
+        }
+        (status, usage)
+    }
 }
 
 #[cfg(unix)]
 mod platform {
+    use super::Usage;
+    use std::process::Child;
+
+    // `wait4` fills in a `struct rusage` read as 64-bit words.
+    const _: () = assert!(std::mem::size_of::<std::ffi::c_long>() == 8);
+
     unsafe extern "C" {
         fn kill(process: i32, signal: i32) -> i32;
+        /// The `usage` is a `struct rusage`: two `timeval`s, the user and
+        /// system time, then 14 `long`s, the first the most memory held.
+        fn wait4(process: i32, status: *mut i32, options: i32, usage: *mut [i64; 18]) -> i32;
     }
 
     pub fn stop(process: &super::Process) -> bool {
@@ -576,12 +666,53 @@ mod platform {
         // still its own.
         unsafe { kill(process.id as i32, KILL) == 0 }
     }
+
+    /// Waits for the program with `wait4`, which tells what it used as it
+    /// collects the exit status.
+    pub fn wait(child: &mut Child) -> (i64, Usage) {
+        let mut raw = 0;
+        let mut usage = [0i64; 18];
+        loop {
+            // SAFETY: the program is this one's child and not yet waited
+            // for; `usage` is as big as a `struct rusage` on 64-bit systems.
+            let waited = unsafe { wait4(child.id() as i32, &mut raw, 0, &mut usage) };
+            if waited > 0 {
+                break;
+            }
+            if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                // Not this one's to wait for after all: ask the usual way.
+                let status = super::status(child.wait().ok().and_then(|s| s.code()));
+                return (status, Usage::default());
+            }
+        }
+        // Exited on its own, rather than stopped by a signal.
+        let code = (raw & 0x7f == 0).then_some((raw >> 8) & 0xff);
+        let microseconds = |seconds: i64, micro: i64| seconds * 1_000_000 + micro;
+        let time = microseconds(usage[0], usage[1]) + microseconds(usage[2], usage[3]);
+        // Bytes on macOS, kilobytes elsewhere.
+        let unit = if cfg!(target_os = "macos") { 1 } else { 1024 };
+        (
+            super::status(code),
+            Usage {
+                peak_memory: usage[4].saturating_mul(unit),
+                processor_time: time.saturating_mul(1000),
+            },
+        )
+    }
 }
 
 /// Systems that start no programs, such as WASI, never have one to stop.
 #[cfg(not(any(windows, unix)))]
 mod platform {
+    use super::Usage;
+    use std::process::Child;
+
     pub fn stop(_process: &super::Process) -> bool {
         false
+    }
+
+    pub fn wait(child: &mut Child) -> (i64, Usage) {
+        let status = super::status(child.wait().ok().and_then(|s| s.code()));
+        (status, Usage::default())
     }
 }

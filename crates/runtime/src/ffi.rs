@@ -78,7 +78,13 @@ pub struct SayonDict {
     value_size: usize,
 }
 
+/// Text being put together, as `sayon_builder_*` append to it. Compiled code
+/// keeps one on its own stack, as three words the size of an address, from
+/// `sayon_builder_start` to `sayon_builder_end`.
 pub struct Builder(String);
+
+const _: () = assert!(std::mem::size_of::<Builder>() == 3 * std::mem::size_of::<usize>());
+const _: () = assert!(std::mem::align_of::<Builder>() == std::mem::align_of::<usize>());
 
 pub(crate) type DropFn = Option<unsafe extern "C" fn(*mut u8)>;
 type CloneFn = Option<unsafe extern "C" fn(*const u8, *mut u8)>;
@@ -107,7 +113,10 @@ unsafe fn c_str<'a>(text: *const c_char) -> &'a str {
     unsafe { CStr::from_ptr(text).to_str().unwrap_or("") }
 }
 
-fn owned(text: String) -> SayonStr {
+/// The string that owns `text`'s buffer. A little room to spare stays, as
+/// moving the text to a buffer of its exact size would cost more than the
+/// bytes saved; more than that is given back.
+fn owned(mut text: String) -> SayonStr {
     if text.is_empty() {
         return SayonStr {
             ptr: std::ptr::null(),
@@ -115,11 +124,17 @@ fn owned(text: String) -> SayonStr {
             cap: 0,
         };
     }
-    let bytes = text.into_bytes().into_boxed_slice();
-    let len = bytes.len() as i64;
-    let ptr = Box::into_raw(bytes) as *const u8;
+    let spare = text.capacity() - text.len();
+    if spare > 16 && spare > text.len() / 4 {
+        text.shrink_to_fit();
+    }
+    let mut text = std::mem::ManuallyDrop::new(text);
     allocated();
-    SayonStr { ptr, len, cap: len }
+    SayonStr {
+        ptr: text.as_mut_ptr(),
+        len: text.len() as i64,
+        cap: text.capacity() as i64,
+    }
 }
 
 /// One-byte strings for every ASCII character, so that most characters
@@ -194,13 +209,16 @@ fn widen(value: i64, code: u32) -> i128 {
 /// Releases an owned string and leaves it empty.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_str_drop(s: *mut SayonStr) {
-    // SAFETY: `s` is a valid string; owned data came from `owned`.
+    // SAFETY: `s` is a valid string; owned data came from `owned` or a
+    // clone, a buffer of `cap` bytes, of which only the first `len` need
+    // hold text.
     unsafe {
         let value = &mut *s;
         if value.cap > 0 {
-            let slice =
-                std::ptr::slice_from_raw_parts_mut(value.ptr as *mut u8, value.cap as usize);
-            drop(Box::from_raw(slice));
+            std::alloc::dealloc(
+                value.ptr as *mut u8,
+                std::alloc::Layout::from_size_align_unchecked(value.cap as usize, 1),
+            );
             released();
         }
         *value = SayonStr {
@@ -241,6 +259,61 @@ pub unsafe extern "C" fn sayon_str_concat(
         text.push_str(a);
         text.push_str(b);
         *out = owned(text);
+    }
+}
+
+/// Adds the text of `more` to the end of `text`, in `text`'s own buffer when
+/// it has room, and otherwise in one twice as big, so that adding piece
+/// after piece takes time in proportion to the text's length. `more` may be
+/// `text` itself.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sayon_str_append(text: *mut SayonStr, more: *const SayonStr) {
+    // SAFETY: valid strings; an owned one's buffer holds `cap` bytes.
+    unsafe {
+        let (source, count) = ((*more).ptr, (*more).len as usize);
+        if count == 0 {
+            return;
+        }
+        let target = &mut *text;
+        let length = target.len as usize;
+        if target.cap == 0 {
+            // Text among the program's constants, or none: it gets a
+            // buffer, of at least the 16 bytes the system's allocator
+            // would give for less, so that a few more short pieces fit.
+            let mut joined = String::with_capacity((length + count).max(16));
+            joined.push_str(as_str(text));
+            joined.push_str(as_str(more));
+            *target = owned(joined);
+            return;
+        }
+        let mut buffer = target.ptr as *mut u8;
+        let capacity = target.cap as usize;
+        // Where `more` lies in the buffer, when it is the same text.
+        let within = (source as usize)
+            .checked_sub(buffer as usize)
+            .filter(|offset| *offset < capacity);
+        let needed = length + count;
+        if needed > capacity {
+            let grown = needed.max(capacity * 2);
+            buffer = std::alloc::realloc(
+                buffer,
+                std::alloc::Layout::from_size_align_unchecked(capacity, 1),
+                grown,
+            );
+            if buffer.is_null() {
+                std::alloc::handle_alloc_error(std::alloc::Layout::from_size_align_unchecked(
+                    grown, 1,
+                ));
+            }
+            target.ptr = buffer;
+            target.cap = grown as i64;
+        }
+        let from = match within {
+            Some(offset) => buffer.add(offset) as *const u8,
+            None => source,
+        };
+        std::ptr::copy(from, buffer.add(length), count);
+        target.len = needed as i64;
     }
 }
 
@@ -312,10 +385,12 @@ pub unsafe extern "C" fn sayon_str_chars(s: *const SayonStr) -> i64 {
 
 // ----- building text -------------------------------------------------------------------
 
+/// Starts a builder in the memory at `b`, with room for `capacity` bytes:
+/// the caller's guess, which saves growing the text a step at a time.
 #[unsafe(no_mangle)]
-pub extern "C" fn sayon_builder_new() -> *mut Builder {
-    allocated();
-    Box::into_raw(Box::new(Builder(String::new())))
+pub unsafe extern "C" fn sayon_builder_start(b: *mut Builder, capacity: i64) {
+    // SAFETY: `b` is room for a builder, which nothing holds yet.
+    unsafe { b.write(Builder(String::with_capacity(capacity.max(0) as usize))) }
 }
 
 #[unsafe(no_mangle)]
@@ -407,15 +482,12 @@ pub unsafe extern "C" fn sayon_builder_range(b: *mut Builder, r: *const SayonRan
     }
 }
 
-/// Consumes the builder and produces an owned string.
+/// Ends a builder, giving its text as an owned string, which takes over the
+/// builder's buffer.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn sayon_builder_finish(b: *mut Builder, out: *mut SayonStr) {
-    // SAFETY: `b` came from `sayon_builder_new` and is not used again.
-    unsafe {
-        let builder = Box::from_raw(b);
-        released();
-        *out = owned(builder.0);
-    }
+pub unsafe extern "C" fn sayon_builder_end(b: *mut Builder, out: *mut SayonStr) {
+    // SAFETY: `b` was started by `sayon_builder_start` and is not used again.
+    unsafe { *out = owned(b.read().0) }
 }
 
 // ----- output ----------------------------------------------------------------------------
@@ -475,6 +547,31 @@ pub unsafe extern "C" fn sayon_free(pointer: *mut u8, size: i64) {
 
 fn array_layout(capacity: usize, element_size: usize) -> Layout {
     Layout::from_size_align((capacity * element_size).max(1), ELEMENT_ALIGN).expect("array layout")
+}
+
+/// Gives an array room for exactly `count` elements, as an array written out
+/// in full or a clone holds from the start. Growing with `push` instead
+/// leaves room to spare (see `sayon_array_reserve`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sayon_array_exact(a: *mut SayonArray, count: i64, element_size: i64) {
+    // SAFETY: `a` is a valid array whose storage came from this module.
+    unsafe {
+        let array = &mut *a;
+        if count <= array.cap {
+            return;
+        }
+        if array.cap > 0 {
+            return sayon_array_reserve(a, count - array.len, element_size);
+        }
+        let layout = array_layout(count as usize, element_size.max(1) as usize);
+        allocated();
+        let pointer = alloc(layout);
+        if pointer.is_null() {
+            std::alloc::handle_alloc_error(layout);
+        }
+        array.ptr = pointer;
+        array.cap = count;
+    }
 }
 
 /// Ensures room for `additional` more elements.
@@ -1592,6 +1689,40 @@ pub extern "C" fn sayon_exit_status(code: i64) -> i32 {
     }
 }
 
+// ----- math --------------------------------------------------------------------
+
+/// The functions of `standard/math` that compiled code calls directly rather
+/// than through their entries as primitives, which gather their arguments
+/// first.
+/// They are the functions the interpreter's primitives use, so both give the
+/// same results.
+macro_rules! math {
+    ($($name:ident = |$($x:ident),+| $body:expr;)*) => {
+        $(
+            #[unsafe(no_mangle)]
+            pub extern "C" fn $name($($x: f64),+) -> f64 {
+                $body
+            }
+        )*
+    };
+}
+
+math! {
+    sayon_math_round = |x| x.round();
+    sayon_math_sin = |x| x.sin();
+    sayon_math_cos = |x| x.cos();
+    sayon_math_tan = |x| x.tan();
+    sayon_math_asin = |x| x.asin();
+    sayon_math_acos = |x| x.acos();
+    sayon_math_atan = |x| x.atan();
+    sayon_math_atan2 = |y, x| y.atan2(x);
+    sayon_math_exp = |x| x.exp();
+    sayon_math_log = |x| x.ln();
+    sayon_math_log10 = |x| x.log10();
+    sayon_math_log2 = |x| x.log2();
+    sayon_math_pow = |base, exponent| base.powf(exponent);
+}
+
 // ----- host primitives -------------------------------------------------------
 
 /// Records the program's arguments (without the program name).
@@ -1607,6 +1738,7 @@ pub extern "C" fn sayon_runtime_init() {
 /// Runs a primitive, letting other tasks run while it waits for a socket:
 /// it runs again whenever the socket may be ready, until it finishes or
 /// waits longer than the socket's timeout.
+#[cfg_attr(not(debug_assertions), inline(always))]
 fn call_waiting(
     host: crate::host::Host,
     values: &[crate::host::HostArg],
@@ -1614,7 +1746,7 @@ fn call_waiting(
     use crate::network::{BLOCKED_CODE, take_blocked, timeout_message};
     let mut started = None;
     loop {
-        match crate::host::invoke(host, values) {
+        match crate::host::run(host, values) {
             Err((code, _)) if code == BLOCKED_CODE => {
                 let blocked = take_blocked().expect("what the primitive waits for");
                 let started = *started.get_or_insert_with(crate::clock::Instant::now);
@@ -1667,21 +1799,21 @@ unsafe fn fetch(
     }
 }
 
-/// Calls a host primitive. `args` points to one pointer per argument value,
-/// in the primitive's parameter order. The result is written through `out`;
-/// for an optional string, whether it is present is written through
-/// `present` and the text through `out` when it is.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn sayon_host_call(
+/// What each primitive's entry does (see `host::entries`), inlined there in a
+/// release build so that only the primitive's own code stays. `args` points to one pointer per
+/// argument value, in the primitive's parameter order. The result is written
+/// through `out`; for an optional string, whether it is present is written
+/// through `present` and the text through `out` when it is.
+#[cfg_attr(not(debug_assertions), inline(always))]
+pub(crate) unsafe fn host_entry(
+    host: crate::host::Host,
     err: *mut *mut SayonError,
-    code: u32,
     args: *const *const u8,
     out: *mut u8,
     present: *mut bool,
     location: *const c_char,
 ) -> i32 {
-    use crate::host::{Host, HostArg, HostType, HostValue};
-    let host = Host::from_code(code).expect("known host primitive");
+    use crate::host::{HostArg, HostType, HostValue};
     // SAFETY: the generated code passes valid pointers matching the
     // primitive's parameter and result types.
     unsafe {
@@ -1730,10 +1862,17 @@ pub unsafe extern "C" fn sayon_host_call(
             });
         }
         #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-        if host == Host::Fetch {
+        if host == crate::host::Host::Fetch {
             return fetch(err, &values, out, location);
         }
-        match call_waiting(host, &values) {
+        // Only a primitive that can wait for a socket brings in the
+        // scheduler's waiting.
+        let result = if host.may_wait() {
+            call_waiting(host, &values)
+        } else {
+            crate::host::run(host, &values)
+        };
+        match result {
             Ok(HostValue::String(text)) => *(out as *mut SayonStr) = owned(text),
             Ok(HostValue::Integer(value)) => *(out as *mut i64) = value,
             Ok(HostValue::Float(value)) => *(out as *mut f64) = value,

@@ -1603,6 +1603,22 @@ impl<'l, 'p> FnLower<'l, 'p> {
             hir::Place::Local(local) => {
                 let slot = self.local_slots[local];
                 let ty = self.f.slots[slot.0 as usize].ty.clone();
+                // `text = text + more` adds to the text where it is.
+                if ty == Type::String
+                    && let hir::ExprKind::Binary {
+                        op: BinaryOp::Add,
+                        lhs,
+                        rhs,
+                    } = &value.kind
+                    && matches!(&lhs.kind, hir::ExprKind::Local { local: same, .. } if same == local)
+                {
+                    let more = self.operand(rhs, Want::Read);
+                    self.push(Inst::Append {
+                        string: Place::slot(slot),
+                        value: more,
+                    });
+                    return;
+                }
                 let temp = self.temp(ty.clone());
                 self.expr_into(value, Place::slot(temp));
                 self.push(Inst::Drop(Place::slot(slot)));
@@ -1684,6 +1700,13 @@ impl<'l, 'p> FnLower<'l, 'p> {
         let ty = self.place_type(place);
         let rhs = self.operand(value, Want::Read);
         let target = self.hir_place_read(place);
+        if ty == Type::String && op == BinaryOp::Add {
+            self.push(Inst::Append {
+                string: target,
+                value: rhs,
+            });
+            return;
+        }
         let current = if ty.is_copy() {
             Operand::Copy(target.clone())
         } else {
@@ -3107,6 +3130,23 @@ impl<'l, 'p> FnLower<'l, 'p> {
                 let view = self.place_of(&args[0].expr, Want::Mut);
                 let count = self.operand(&args[1].expr, Want::Owned);
                 self.op(Op::SplitView { view, count }, Some(dest), span);
+            }
+            Builtin::Swap if args.len() == 4 => {
+                let first_array = self.place_of(&args[0].expr, Want::Mut);
+                let first = self.operand(&args[1].expr, Want::Read);
+                let second_array = self.place_of(&args[2].expr, Want::Mut);
+                let second = self.operand(&args[3].expr, Want::Read);
+                self.op(
+                    Op::Exchange {
+                        first_array,
+                        first,
+                        second_array,
+                        second,
+                    },
+                    None,
+                    span,
+                );
+                self.assign(dest, Rvalue::Use(Operand::Const(Constant::Nothing)));
             }
             Builtin::Swap => {
                 let array = self.place_of(&args[0].expr, Want::Mut);

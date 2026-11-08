@@ -31,6 +31,8 @@ if missing is error
 # What a program reads, and the environment it has.
 sorted = os.run("sort", [], "", "pear\napple\nfig\n")
 print(strings.split(strings.trim(strings.replace(sorted.output, "\r", "")), "\n"))
+# And what it used, as the system counts it.
+print(sorted.usage.peak_memory > 0, sorted.usage.processor_time.nanoseconds >= 0)
 command = "echo $SAYON_GREETING"
 if os.platform() == "windows"
     command = "echo %SAYON_GREETING%"

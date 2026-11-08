@@ -1001,6 +1001,19 @@ impl<'m> Machine<'m> {
                     other => panic!("push onto {other:?}"),
                 });
             }
+            Inst::Append { string, value } => {
+                let more = self.string(value);
+                let reference = self.resolve(string);
+                self.with_mut(&reference, |target| match target {
+                    Value::Str(text) => {
+                        let mut joined = String::with_capacity(text.len() + more.len());
+                        joined.push_str(text);
+                        joined.push_str(&more);
+                        *text = Rc::from(joined.as_str());
+                    }
+                    other => panic!("text added to {other:?}"),
+                });
+            }
             Inst::DictSet { dict, key, value } => {
                 let key = self.take(key);
                 let value = self.take(value);
@@ -1475,6 +1488,46 @@ impl<'m> Machine<'m> {
                     Value::Array(items) => items.swap(first as usize, second as usize),
                     other => panic!("swap in {other:?}"),
                 });
+                Ok(Value::Nothing)
+            }
+            Op::Exchange {
+                first_array,
+                first,
+                second_array,
+                second,
+            } => {
+                let (first, second) = (self.int(first), self.int(second));
+                let one = self.resolve(first_array);
+                let other = self.resolve(second_array);
+                for (reference, index) in [(&one, first), (&other, second)] {
+                    let length = self.read(reference, |v| match v {
+                        Value::Array(items) => items.len(),
+                        other => panic!("swap in {other:?}"),
+                    });
+                    if index < 0 || index >= length as i128 {
+                        let message = if length == 0 {
+                            format!("index {index} is out of bounds: the array is empty")
+                        } else {
+                            format!(
+                                "index {index} is out of bounds for an array of length {length}"
+                            )
+                        };
+                        return Err(self.error("BoundsError", message, span));
+                    }
+                }
+                fn element(value: &mut Value, index: i128) -> &mut Value {
+                    match value {
+                        Value::Array(items) => &mut items[index as usize],
+                        other => panic!("swap in {other:?}"),
+                    }
+                }
+                let taken = self.with_mut(&one, |target| {
+                    std::mem::replace(element(target, first), Value::Nothing)
+                });
+                let given = self.with_mut(&other, |target| {
+                    std::mem::replace(element(target, second), taken)
+                });
+                self.with_mut(&one, |target| *element(target, first) = given);
                 Ok(Value::Nothing)
             }
             Op::RemoveAt { array, index } => {

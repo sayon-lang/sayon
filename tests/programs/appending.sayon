@@ -1,0 +1,50 @@
+# Text added to a string where it is, and elements swapped between arrays.
+
+type Holder = [text: string]
+
+function main()
+    word = ""
+    word = word + "ab"
+    word += "cd"
+    word = word + word
+    print(word)
+    doubled = "x"
+    doubled += doubled
+    doubled += doubled
+    print(doubled)
+    built = "start"
+    for part in ["p", "q"]
+        built = built + part
+    print(built)
+    long = ""
+    for i in range(1000)
+        long += "{i % 10}"
+    print(length(long), bytelength(long))
+    holder = Holder(text = "h")
+    holder.text += "ello"
+    holder.text = holder.text + "!"
+    print(holder.text)
+    names = ["a", "b"]
+    names[1] += "c"
+    print(names)
+    kept = "constant"
+    copy = kept
+    copy += " changed"
+    print(copy)
+
+    first = ["one", "two", "three"]
+    second = ["uno", "dos"]
+    swap(first, 0, second, 1)
+    print(first, second)
+    numbers = [1, 2, 3]
+    others = [7]
+    swap(numbers, 2, others, 0)
+    print(numbers, others)
+    try
+        swap(numbers, 3, others, 0)
+    catch problem
+        print(problem.message)
+    try
+        swap(numbers, 0, others, -1)
+    catch problem
+        print(problem.message)

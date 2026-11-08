@@ -463,6 +463,11 @@ pub fn process_id(id: i64) -> Result<i64, HostError> {
     Ok(process(id)?.id())
 }
 
+/// What a finished program used.
+pub fn process_usage(id: i64) -> Result<crate::processes::Usage, HostError> {
+    process(id)?.usage()
+}
+
 /// Opens a file: `"r"` to read, `"w"` to write from the start (creating or
 /// emptying it), `"a"` to write at its end (creating it when needed).
 pub fn open(path: &str, mode: &str, encoding_name: &str) -> Result<i64, HostError> {

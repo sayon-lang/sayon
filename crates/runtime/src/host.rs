@@ -2,7 +2,8 @@
 //!
 //! Each primitive is implemented once here, over plain Rust values. The
 //! interpreter calls [`invoke`] directly; compiled programs reach the same
-//! code through `sayon_host_call`, so both execution modes behave the same.
+//! code through each primitive's entry in [`entries`], so both execution
+//! modes behave the same.
 //! Standard library modules call a primitive as `host_<name>(...)`; other
 //! modules cannot see them.
 
@@ -36,8 +37,7 @@ pub enum HostType {
 
 macro_rules! hosts {
     ($($variant:ident = $name:literal ($($param:ident),*) -> $result:ident;)*) => {
-        /// A host primitive. The discriminant is the code passed to
-        /// `sayon_host_call`.
+        /// A host primitive.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         #[repr(u32)]
         pub enum Host { $($variant),* }
@@ -57,6 +57,31 @@ macro_rules! hosts {
             pub fn result(self) -> HostType {
                 match self { $(Host::$variant => HostType::$result),* }
             }
+        }
+
+        /// The entry of each primitive for compiled code, `sayon_host_` and
+        /// the primitive's name. It takes the error slot, a pointer to one
+        /// pointer per argument, where the result goes, where whether an
+        /// optional string is present goes, and the place in the source.
+        pub mod entries {
+            #![allow(non_snake_case, clippy::missing_safety_doc)]
+            use super::Host;
+            use crate::ffi::SayonError;
+            use std::ffi::c_char;
+            $(
+                #[unsafe(export_name = concat!("sayon_host_", $name))]
+                pub unsafe extern "C" fn $variant(
+                    err: *mut *mut SayonError,
+                    args: *const *const u8,
+                    out: *mut u8,
+                    present: *mut bool,
+                    location: *const c_char,
+                ) -> i32 {
+                    // SAFETY: the generated code passes what `host_entry`
+                    // needs for this primitive.
+                    unsafe { crate::ffi::host_entry(Host::$variant, err, args, out, present, location) }
+                }
+            )*
         }
     };
 }
@@ -225,6 +250,8 @@ hosts! {
     Pbkdf2Sha256 = "pbkdf2_sha256"(Bytes, Bytes, Integer, Integer) -> Bytes;
     ImageSize = "image_size"(Bytes, Integer) -> Integer;
     CanvasDrawScaled = "canvas_draw_scaled"(Stream, Stream, Integers) -> Nothing;
+    ProcessPeakMemory = "process_peak_memory"(Stream) -> Integer;
+    ProcessProcessorTime = "process_processor_time"(Stream) -> Integer;
 }
 
 impl Host {
@@ -517,6 +544,16 @@ fn json_integer(digits: &str, path: &str, code: i64) -> Result<i128, HostError> 
 /// streams; the interpreter routes `Write` through its own output instead so
 /// it stays ordered with `print`.
 pub fn invoke(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> {
+    run(host, args)
+}
+
+/// What [`invoke`] does. In a release build of the runtime, which is what
+/// installations ship, each primitive's entry for compiled code (see
+/// [`entries`]) has a copy, in which the primitive is known: the optimizer
+/// keeps only its own code there, so a program links only the primitives it
+/// calls. Development builds share one copy, which builds in half the time.
+#[cfg_attr(not(debug_assertions), inline(always))]
+pub(crate) fn run(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> {
     use HostValue as V;
     let unary = |f: fn(f64) -> f64| Ok(V::Float(f(float(args, 0))));
     match host {
@@ -660,8 +697,8 @@ pub fn invoke(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> {
         Host::FinishSending => crate::streams::finish_sending(stream(args, 0)).map(|()| V::Nothing),
         Host::Resolve => crate::network::resolve(string(args, 0)).map(V::Strings),
         Host::HttpFail => Err(("HttpError", string(args, 0).to_string())),
-        // Only a page's code calls it, through `sayon_host_call`, which
-        // lets the task wait for the browser.
+        // Only a page's code calls it, through its entry, which lets the
+        // task wait for the browser.
         Host::Fetch => Err(("HttpError", "only web pages fetch".to_string())),
         Host::FetchHead => crate::streams::fetched_head(stream(args, 0)).map(V::Strings),
         Host::FetchBody => crate::streams::fetched_body(stream(args, 0)).map(V::Bytes),
@@ -843,6 +880,10 @@ pub fn invoke(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> {
         Host::ProcessWait => crate::streams::process_wait(stream(args, 0)).map(V::Integer),
         Host::ProcessKill => crate::streams::process_kill(stream(args, 0)).map(|()| V::Nothing),
         Host::ProcessId => crate::streams::process_id(stream(args, 0)).map(V::Integer),
+        Host::ProcessPeakMemory => crate::streams::process_usage(stream(args, 0))
+            .map(|usage| V::Integer(usage.peak_memory)),
+        Host::ProcessProcessorTime => crate::streams::process_usage(stream(args, 0))
+            .map(|usage| V::Integer(usage.processor_time)),
         Host::JsonInteger => json_integer(string(args, 0), string(args, 1), integer(args, 2))
             .map(|value| V::Integer(value as i64)),
         Host::JsonUnsigned => json_integer(string(args, 0), string(args, 1), integer(args, 2))

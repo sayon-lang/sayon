@@ -436,6 +436,13 @@ pub enum Inst {
         array: Place,
         value: Operand,
     },
+    /// Adds a string's text to the end of the string at `string`, in its
+    /// own buffer where there is room: `text = text + more`, or
+    /// `text += more`.
+    Append {
+        string: Place,
+        value: Operand,
+    },
     /// Inserts or replaces a dictionary entry.
     DictSet {
         dict: Place,
@@ -562,6 +569,15 @@ pub enum Op {
     Swap {
         array: Place,
         first: Operand,
+        second: Operand,
+    },
+    /// Exchanges an element of one array with an element of another; fails
+    /// outside either. The arrays are two: the checker lets no array be
+    /// borrowed twice for changes in one call.
+    Exchange {
+        first_array: Place,
+        first: Operand,
+        second_array: Place,
         second: Operand,
     },
     /// Removes and produces the element at a position of an array, moving

@@ -338,9 +338,10 @@ mod tests {
 
     #[test]
     fn what_is_allocated_is_counted() {
-        let before = ALLOCATED.load(Ordering::Relaxed);
+        // Other tests allocate and free on their own threads meanwhile, so
+        // only what this one holds is certain: its block, while it lives.
         let block = std::hint::black_box(vec![0u8; 1 << 20]);
-        assert!(ALLOCATED.load(Ordering::Relaxed) >= before + (1 << 20));
+        assert!(ALLOCATED.load(Ordering::Relaxed) >= 1 << 20);
         drop(block);
     }
 }

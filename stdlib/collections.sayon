@@ -19,22 +19,27 @@ private constant NONE = -1
 
 # Sorts an array in place, smallest first. Elements are numbers or strings.
 # Sorting is stable: equal elements keep their order. It takes time
-# proportional to n log n for n elements.
+# proportional to n log n for n elements, and room for half of them: the
+# sort works with copies of the first half, so sorting strings copies half
+# their text for a while.
 function sort(update items)
-    sort_by(items, function(a, b) return a < b)
+    count = length(items)
+    if count < 2
+        return
+    spare = first_half(items)
+    sort_part(items, spare, 0, count)
 
 # Sorts an array in place by a comparison: `before(a, b)` is true when `a`
 # must come before `b`. Sorting is stable, so elements for which neither
-# comes before the other keep their order. An error in `before` stops the
-# sort; the elements are then all still in the array, in some order.
+# comes before the other keep their order. It needs the same room as
+# `sort`. An error in `before` stops the sort; the elements are then all
+# still in the array, in some order.
 function sort_by(update items, update before)
     count = length(items)
-    order: Array<integer> = []
-    for position in range(count)
-        push(order, position)
-    scratch = clone(order)
-    merge_sort(items, before, order, scratch, 0, count)
-    arrange(items, order)
+    if count < 2
+        return
+    spare = first_half(items)
+    sort_part_by(items, before, spare, 0, count)
 
 # Reverses an array in place.
 function reverse(update items)
@@ -45,38 +50,99 @@ function reverse(update items)
         low += 1
         high -= 1
 
-# Sorts the positions in `order[start..end]` by the elements they name.
-private function merge_sort(items, update before, update order: Array<integer>, update scratch: Array<integer>, start: integer, end: integer)
-    if end - start < 2
-        return
-    middle = (start + end) / 2
-    merge_sort(items, before, order, scratch, start, middle)
-    merge_sort(items, before, order, scratch, middle, end)
-    variable left = start
-    variable right = middle
-    for slot in range(start, end)
-        take_left = left < middle and (right >= end or not before(items[order[right]], items[order[left]]))
-        if take_left
-            scratch[slot] = order[left]
-            left += 1
-        else
-            scratch[slot] = order[right]
-            right += 1
-    for slot in range(start, end)
-        order[slot] = scratch[slot]
+# How the sorts work: a part of the array up to SHORT elements long is
+# sorted by insertion. A longer part is split in two halves, which are
+# sorted, then merged. To merge, the first half moves out to the spare
+# array, and the elements go back in order, from the spare array or the
+# second half, whichever is smaller. Elements are only ever swapped, so
+# none is copied while sorting, and the spare array's own elements end up
+# back in it.
+private constant SHORT = 16
 
-# Moves each element to its sorted place: the element at `order[i]` goes to
-# position `i`. Each cycle of the arrangement is walked once, with swaps.
-private function arrange(update items, update order: Array<integer>)
-    for start in range(length(order))
-        variable current = start
-        while order[current] != current
-            source = order[current]
-            order[current] = current
-            if source == start
-                break
-            swap(items, current, source)
-            current = source
+# Copies of the first half of the elements: room for the sorts to work in.
+private function first_half(items)
+    spare = []
+    for position in range(length(items) / 2)
+        push(spare, clone(items[position]))
+    return spare
+
+private function sort_part(update items, update spare, start: integer, end: integer)
+    if end - start <= SHORT
+        variable next = start + 1
+        while next < end
+            variable position = next
+            while position > start and items[position] < items[position - 1]
+                swap(items, position, position - 1)
+                position -= 1
+            next += 1
+        return
+    middle = start + (end - start) / 2
+    sort_part(items, spare, start, middle)
+    sort_part(items, spare, middle, end)
+    if not (items[middle] < items[middle - 1])
+        return
+    count = middle - start
+    for offset in range(count)
+        swap(items, start + offset, spare, offset)
+    variable taken = 0
+    variable right = middle
+    variable slot = start
+    while taken < count and right < end
+        if items[right] < spare[taken]
+            swap(items, slot, right)
+            right += 1
+        else
+            swap(items, slot, spare, taken)
+            taken += 1
+        slot += 1
+    while taken < count
+        swap(items, slot, spare, taken)
+        taken += 1
+        slot += 1
+
+# As sort_part, by `before`.
+private function sort_part_by(update items, update before, update spare, start: integer, end: integer)
+    if end - start <= SHORT
+        variable next = start + 1
+        while next < end
+            variable position = next
+            while position > start and before(items[position], items[position - 1])
+                swap(items, position, position - 1)
+                position -= 1
+            next += 1
+        return
+    middle = start + (end - start) / 2
+    sort_part_by(items, before, spare, start, middle)
+    sort_part_by(items, before, spare, middle, end)
+    if not before(items[middle], items[middle - 1])
+        return
+    count = middle - start
+    for offset in range(count)
+        swap(items, start + offset, spare, offset)
+    variable taken = 0
+    variable right = middle
+    variable slot = start
+    try
+        while taken < count and right < end
+            if before(items[right], spare[taken])
+                swap(items, slot, right)
+                right += 1
+            else
+                swap(items, slot, spare, taken)
+                taken += 1
+            slot += 1
+    catch problem
+        # The elements still in the spare array go back to the free places,
+        # so that all of them are in the array again.
+        while taken < count
+            swap(items, slot, spare, taken)
+            taken += 1
+            slot += 1
+        raise(problem)
+    while taken < count
+        swap(items, slot, spare, taken)
+        taken += 1
+        slot += 1
 
 # ----- sets ---------------------------------------------------------------------
 

@@ -1,0 +1,11 @@
+error[E_BORROW_CONFLICT]: `letters` is used twice in one call to `swap`
+  --> swap_twice.sayon:3:22
+   |
+ 3 |     swap(letters, 0, letters, 1)
+   |          ------- borrowed for changes here
+   |                      ^^^^^^^ and borrowed for changes here
+   |
+   = help: `swap` needs exclusive access; pass a clone or split the call
+
+1 error found; nothing was run
+run `sayon explain E_BORROW_CONFLICT` to learn more about an error

@@ -333,6 +333,18 @@ pub fn link(
     if target.platform == "windows" {
         command.arg("-fuse-ld=lld");
     }
+    // What nothing in the program reaches is left out, such as the
+    // runtime's primitives it never calls. LLVM's linker does so already
+    // for Windows and WebAssembly; the others are asked to.
+    match target.platform {
+        "linux" | "android" => {
+            command.arg("-Wl,--gc-sections");
+        }
+        "macos" => {
+            command.arg("-Wl,-dead_strip");
+        }
+        _ => {}
+    }
     for library in system_libraries(target) {
         command.arg(format!("-l{library}"));
     }

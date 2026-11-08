@@ -1,0 +1,62 @@
+# Sorting: the library's sorts checked against a simple one, on arrays of
+# many sizes, especially around the length sorted by insertion. Also
+# stability, strings, floats, and a comparison that fails in the middle of a
+# merge, after which every element must still be in the array.
+
+collections = import("standard/collections.sayon")
+
+type Pair = [key: integer, order: integer]
+
+function slow_sort(update items: Array<integer>)
+    for i in range(length(items))
+        for j in range(length(items) - 1 - i)
+            if items[j + 1] < items[j]
+                swap(items, j, j + 1)
+
+function main()
+    state = 7
+    for size in [0, 1, 2, 3, 15, 16, 17, 31, 32, 33, 100, 257, 1000]
+        numbers: Array<integer> = []
+        for _i in range(size)
+            state = (state * 1103515245 + 12345) % 2147483648
+            push(numbers, state / 65536 % 50)
+        expected = clone(numbers)
+        slow_sort(expected)
+        collections.sort(numbers)
+        assert(numbers == expected, "sort of {size}")
+        pairs: Array<Pair> = []
+        for i in range(size)
+            state = (state * 1103515245 + 12345) % 2147483648
+            push(pairs, Pair(key = state / 65536 % 10, order = i))
+        collections.sort_by(pairs, function(a: Pair, b: Pair) return a.key < b.key)
+        for i in range(size - 1)
+            assert(pairs[i].key < pairs[i + 1].key or pairs[i].key == pairs[i + 1].key and pairs[i].order < pairs[i + 1].order, "stable at {i} of {size}")
+    words = ["pear", "apple", "fig", "banana", "apple", "cherry", "date", "elderberry", "fig", "grape", "kiwi", "lemon", "mango", "nectarine", "orange", "papaya", "quince", "raspberry", "apple"]
+    collections.sort(words)
+    print(words)
+    descending = [3, 1, 2, 5, 4]
+    collections.sort_by(descending, function(a: integer, b: integer) return a > b)
+    print(descending)
+    many: Array<integer> = []
+    for i in range(40)
+        push(many, 40 - i)
+    try
+        collections.sort_by(many, picky)
+    catch problem
+        print("stopped: {problem.message}")
+    check = clone(many)
+    slow_sort(check)
+    expected: Array<integer> = []
+    for i in range(40)
+        push(expected, i + 1)
+    assert(check == expected, "all elements still there after an error")
+    print("all there:", length(many))
+    floats = [2.5, -1.0, 3.25, 0.0, -7.5]
+    collections.sort(floats)
+    print(floats)
+
+# Fails in the middle of a merge: 1 and 11 first meet there.
+function picky(a: integer, b: integer) -> boolean
+    if a == 1 and b == 11
+        raise(error("enough"))
+    return a < b

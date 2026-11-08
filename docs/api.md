@@ -1,6 +1,6 @@
 # The standard library's API
 
-Every export of the standard library, read from its declarations in `stdlib/`, with the first paragraph of the comment above each. `sayon run scripts/api_inventory.sayon` writes this page, and `cargo test` checks that it is current, so it always says what the library has. 13 modules hold 380 exports, 380 of them with a description.
+Every export of the standard library, read from its declarations in `stdlib/`, with the first paragraph of the comment above each. `sayon run scripts/api_inventory.sayon` writes this page, and `cargo test` checks that it is current, so it always says what the library has. 13 modules hold 382 exports, 382 of them with a description.
 
 A method is a function whose name starts with its type's, called on a value of the type: `set_add(set, value)` is written `set.add(value)`.
 
@@ -15,7 +15,7 @@ A method is a function whose name starts with its type's, called on a value of t
 | [`standard/math.sayon`](#standardmathsayon) | 30 | Mathematical functions and constants. |
 | [`standard/memory.sayon`](#standardmemorysayon) | 8 | Reading and writing the memory that C code shares with a program. |
 | [`standard/network.sayon`](#standardnetworksayon) | 42 | TCP connections and listeners, UDP datagrams, TLS, and an HTTP client. |
-| [`standard/os.sayon`](#standardossayon) | 13 | The program's environment. |
+| [`standard/os.sayon`](#standardossayon) | 15 | The program's environment. |
 | [`standard/strings.sayon`](#standardstringssayon) | 31 | Operations on text. Positions and lengths count Unicode characters (code points); `graphemes` works with what readers see as characters, and `bytes` with the UTF-8 encoding. |
 | [`standard/threads.sayon`](#standardthreadssayon) | 16 | Tasks that run together, and channels between them. |
 | [`standard/time.sayon`](#standardtimesayon) | 48 | Clocks, durations, and dates. |
@@ -26,8 +26,8 @@ Sorting arrays, and the Set, Queue, Stack, List, and Map collections.
 
 | Export | Declaration | Description |
 |---|---|---|
-| `sort` | `function sort(update items)` | Sorts an array in place, smallest first. Elements are numbers or strings. Sorting is stable: equal elements keep their order. It takes time proportional to n log n for n elements. |
-| `sort_by` | `function sort_by(update items, update before)` | Sorts an array in place by a comparison: `before(a, b)` is true when `a` must come before `b`. Sorting is stable, so elements for which neither comes before the other keep their order. An error in `before` stops the sort; the elements are then all still in the array, in some order. |
+| `sort` | `function sort(update items)` | Sorts an array in place, smallest first. Elements are numbers or strings. Sorting is stable: equal elements keep their order. It takes time proportional to n log n for n elements, and room for half of them: the sort works with copies of the first half, so sorting strings copies half their text for a while. |
+| `sort_by` | `function sort_by(update items, update before)` | Sorts an array in place by a comparison: `before(a, b)` is true when `a` must come before `b`. Sorting is stable, so elements for which neither comes before the other keep their order. It needs the same room as `sort`. An error in `before` stops the sort; the elements are then all still in the array, in some order. |
 | `reverse` | `function reverse(update items)` | Reverses an array in place. |
 | `Set` | `type Set<T> = [members: Dict<T, boolean>]` | Values without duplicates, in the order they were first added. Values are compared like dictionary keys, so they must be valid keys. Adding a value and looking one up take constant time on average; removing one takes time proportional to the set's size, since the values after it keep their order. Sets are equal (`==`) when they have the same values, in any order. |
 | `new_set` | `function new_set<T>() -> Set<T>` | A new, empty set. |
@@ -365,12 +365,14 @@ The program's environment.
 | `environment` | `function environment(name: string) -> string or nothing` | The value of an environment variable, or nothing when it is not set. |
 | `platform` | `function platform() -> string` | The operating system: "windows", "linux", "macos", or "android". |
 | `current_directory` | `function current_directory() -> string` | The directory the program is running in. |
-| `Completed` | `type Completed = [status: integer, output: string, errors: string]` | What a program run by `run` did: its exit status (-1 when it was stopped without one), and what it wrote to its standard output and error. |
+| `Usage` | `type Usage = [peak_memory: integer, processor_time: time.Duration]` | What a finished program used: the most memory it held at once, in bytes, and the processor time it took, its own and the system's on its behalf, added up over its threads. Both are 0 where the system does not say. |
+| `Completed` | `type Completed = [status: integer, output: string, errors: string, usage: Usage]` | What a program run by `run` did: its exit status (-1 when it was stopped without one), what it wrote to its standard output and error, and what it used. |
 | `run` | `function run(program: string, arguments: Array<string>, directory = "", input = "", environment: Dict<string, string> = [], inherit_environment = true) -> Completed` | Runs a program and waits for it to finish, letting other tasks run. `program` is a path, or a name found on the system's search path; the arguments are passed exactly as they are, without a shell, so no character in them has a special meaning. The program reads `input`, and runs in `directory`, or in the current directory when it is "". It has this program's environment variables and those of `environment`, or with `inherit_environment = false` only those. Fails with IOError when it cannot be started, and with EncodingError when its output is not UTF-8. |
 | `Process` | `type Process = [handle: HostStream, input: io.File, output: io.File, errors: io.File]` | A program started with `start`: what it reads from `input`, and what it writes to `output` and `errors`, are files of standard/io, which can be read and written while it runs. Reading them, and waiting for the program, let other tasks run. |
 | `start` | `function start(program: string, arguments: Array<string>, directory = "", environment: Dict<string, string> = [], inherit_environment = true) -> Process` | Starts a program, as `run` does, without waiting for it to finish. |
 | `process_finish_input` | `function process_finish_input(update process: Process)` | Method `finish_input` of `Process`. Ends the program's input once what was written to it has gone: the program then reads to its end. |
 | `process_wait` | `function process_wait(update process: Process) -> integer` | Method `wait` of `Process`. Waits for the program to finish, and gives its exit status: -1 when it was stopped without one. |
+| `process_usage` | `function process_usage(process: Process) -> Usage` | Method `usage` of `Process`. What the program used, once it has finished. Fails with ValueError while it is still running. |
 | `process_stop` | `function process_stop(update process: Process)` | Method `stop` of `Process`. Stops the program at once, unless it has finished. |
 | `process_id` | `function process_id(process: Process) -> integer` | Method `id` of `Process`. The number the system knows the program by. |
 | `exit` | `function exit(code = 0)` | Ends the program with an exit status from 0 (success) to 255. The program ends in order: `finally` blocks run and values are cleaned up on the way out, though `catch` and `try` do not stop it. Fails with ValueError for a status outside 0 to 255. |

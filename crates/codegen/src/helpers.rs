@@ -528,7 +528,7 @@ impl<'m> Codegen<'m> {
                 body.line("store %sayon.array zeroinitializer, ptr %dst");
                 let length = load_length(body, "%src");
                 body.line(format!(
-                    "call void @sayon_array_reserve(ptr %dst, i64 {length}, i64 {size})"
+                    "call void @sayon_array_exact(ptr %dst, i64 {length}, i64 {size})"
                 ));
                 let source = body.tmp();
                 body.line(format!("{source} = load ptr, ptr %src"));

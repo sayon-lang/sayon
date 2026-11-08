@@ -5,6 +5,7 @@
 #         print(argument)
 
 io = import("standard/io.sayon")
+time = import("standard/time.sayon")
 
 # The arguments given to the program, without the program's own name. With
 # `sayon run`, these are the words after `--`.
@@ -23,9 +24,15 @@ function platform() -> string
 function current_directory() -> string
     return host_current_directory()
 
+# What a finished program used: the most memory it held at once, in bytes,
+# and the processor time it took, its own and the system's on its behalf,
+# added up over its threads. Both are 0 where the system does not say.
+type Usage = [peak_memory: integer, processor_time: time.Duration]
+
 # What a program run by `run` did: its exit status (-1 when it was stopped
-# without one), and what it wrote to its standard output and error.
-type Completed = [status: integer, output: string, errors: string]
+# without one), what it wrote to its standard output and error, and what
+# it used.
+type Completed = [status: integer, output: string, errors: string, usage: Usage]
 
 # Runs a program and waits for it to finish, letting other tasks run.
 # `program` is a path, or a name found on the system's search path; the
@@ -42,7 +49,7 @@ function run(program: string, arguments: Array<string>, directory = "", input = 
     output = process.output.read()
     errors = process.errors.read()
     status = process.wait()
-    return Completed(status = status, output = output, errors = errors)
+    return Completed(status = status, output = output, errors = errors, usage = process.usage())
 
 # A program started with `start`: what it reads from `input`, and what it
 # writes to `output` and `errors`, are files of standard/io, which can be
@@ -72,6 +79,13 @@ function process_finish_input(update process: Process)
 # was stopped without one.
 function process_wait(update process: Process) -> integer
     return host_process_wait(process.handle)
+
+# What the program used, once it has finished. Fails with ValueError while
+# it is still running.
+function process_usage(process: Process) -> Usage
+    memory = host_process_peak_memory(process.handle)
+    nanoseconds = host_process_processor_time(process.handle)
+    return Usage(peak_memory = memory, processor_time = time.Duration(nanoseconds = nanoseconds))
 
 # Stops the program at once, unless it has finished.
 function process_stop(update process: Process)

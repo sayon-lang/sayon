@@ -29,6 +29,7 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | Functions, recursion, defaults, parameter modes | experimental | M1 |
 | Inferred and explicit generic functions | experimental | M2 |
 | Values of explicit type parameters compared with `<` and `==`, each call checked against the type it gives | experimental | M5 |
+| `swap(a, i, b, j)`: an element of one array for an element of another of the same type, both borrowed for changes, so never one array twice (`E_BORROW_CONFLICT`) | experimental | M5 |
 | Unions with `nothing`/`typeof` narrowing | experimental | M2 |
 | `error`/`raise`, `try`/`catch`/`finally` | experimental | M1 |
 | Ownership: moves, clones, borrows, loop borrows, mode inference | experimental | M1 |
@@ -77,6 +78,8 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | `sayon run --sandbox`: one file from anyone, kept from the computer: checked for this computer with only the console, tasks, clocks, random numbers, and the library's pure parts (`E_CAPABILITY` otherwise, and `supports` false), refused them again while it runs (`SandboxError`), importing only the standard library (`E_SANDBOX_IMPORT`), outside any project; stopped after 5 seconds of processor time or 10 in all, past 256 MiB of memory, or past 64 KiB of output, with the operating system's limits behind these (a job object on Windows, a processor-time limit on Linux) | experimental | M5 |
 | `sayon check` | experimental | M1 |
 | `sayon build`, `sayon run --native` on Windows x64 (M1) and Linux x86-64 (M3) | experimental | M1, M3 |
+| Faster native code: positions, views, ranges, and pushes checked in the function itself, with one call per function to report each kind of failure; `update` parameters marked as aliasing nothing; math functions called directly; text built on the stack and added to in place; arrays written out made at their exact size; each host primitive linked only into the programs that call it | experimental | M5 |
+| Benchmarks against C++ and Rust (`benchmarks/`): eight programs written in all three, and a runner in Sayon that builds them, checks their output, and reports the median processor time and peak memory of each | experimental | M5 |
 | Targets: `--target` for `check`, `lint`, and `build` (repeatable, `all`, `native`, short names, triples); `sayon target list` and `setup`; `[compiler]` `targets` and `required_capabilities` in `sayon.toml` | experimental | M4 |
 | The capability manifest, version 1: the capabilities and each target's, printed by `sayon target manifest`, named by `capability_manifest` in `sayon.toml` | experimental | M4 |
 | `examples/sketch`: one program run as a window on Windows and Linux, as a web page in Edge, Chrome, and Firefox, and as an Android app, by the checks | experimental | M4 |
@@ -144,6 +147,7 @@ Nothing is beta or stable yet. Milestones: M1 first usable release, M2 expressiv
 | `os.exit` (in order: `finally` blocks and cleanup run), `filesystem.walk`, `filesystem.is_link` | experimental | M2 |
 | Standard input as a file (`io.input`), running programs and capturing their output (`os.run`) | experimental | M2 |
 | Standard output and error as files (`io.output`, `io.errors`); programs started without waiting (`os.start`), streaming their input and output while other tasks run; input and environments for programs | experimental | M3 |
+| What a finished program used (`os.run`'s `usage`, a started program's `usage()`): the most memory it held and its processor time, from the system (`K32GetProcessMemoryInfo` and `GetProcessTimes` on Windows, `wait4` on Linux and Android) | experimental | M5 |
 | Text encodings other than UTF-8: `strings.encode` and `decode` for UTF-16, Latin-1, ASCII, and Windows-1252, and files opened with an encoding | experimental | M3 |
 | `standard/json`: `Json` values, parse with positions in errors, compact and pretty encoding, exact number text, duplicate-field and depth limits | experimental | M2 |
 | `standard/json` typed values: `decode`, `encode_value`, `from_json`, `to_json` for numbers, text, arrays, dictionaries, structures, enums, and unions, with paths in errors | experimental | M2 |

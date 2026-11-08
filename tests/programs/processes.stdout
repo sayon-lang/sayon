@@ -3,6 +3,7 @@
 true
 IOError
 ["apple", "fig", "pear"]
+true true
 hi there
 ["one", "three", "two"] 0 true
 true

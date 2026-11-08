@@ -50,7 +50,9 @@ pub fn host_capability(host: Host) -> Option<Capability> {
         | Host::ProcessErrors
         | Host::ProcessWait
         | Host::ProcessKill
-        | Host::ProcessId => Processes,
+        | Host::ProcessId
+        | Host::ProcessPeakMemory
+        | Host::ProcessProcessorTime => Processes,
         Host::CString
         | Host::CStringAddress
         | Host::ReadCString

@@ -1840,7 +1840,7 @@ impl<'a> Checker<'a> {
             Builtin::Print => (0, usize::MAX),
             Builtin::Assert => (1, 2),
             Builtin::Range => (1, 3),
-            Builtin::Swap => (3, 3),
+            Builtin::Swap => (3, 4),
             Builtin::View | Builtin::MutableView => (1, 3),
             Builtin::Push
             | Builtin::HasKey
@@ -2245,6 +2245,50 @@ impl<'a> Checker<'a> {
                     mode: ParamMode::Update,
                 };
                 (vec![rest, read(count)], ty)
+            }
+            Builtin::Swap if args.len() == 4 => {
+                // `swap(a, i, b, j)`: an element of one array for an element
+                // of another of the same type.
+                let element = self.fresh_var(span);
+                let one = self.check_expr_as(
+                    cx,
+                    &args[0],
+                    &Type::array(element.clone()),
+                    "`swap` exchanges elements of arrays",
+                );
+                let first = self.check_expr_as(
+                    cx,
+                    &args[1],
+                    &Type::INTEGER,
+                    "array positions are integers",
+                );
+                let other = self.check_expr_as(
+                    cx,
+                    &args[2],
+                    &Type::array(element),
+                    "both arrays of `swap` hold the same type",
+                );
+                let second = self.check_expr_as(
+                    cx,
+                    &args[3],
+                    &Type::INTEGER,
+                    "array positions are integers",
+                );
+                (
+                    vec![
+                        Arg {
+                            expr: one,
+                            mode: ParamMode::Update,
+                        },
+                        read(first),
+                        Arg {
+                            expr: other,
+                            mode: ParamMode::Update,
+                        },
+                        read(second),
+                    ],
+                    Type::Nothing,
+                )
             }
             Builtin::Swap => {
                 let element = self.fresh_var(span);
