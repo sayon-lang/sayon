@@ -1,8 +1,8 @@
 # Runs the benchmarks. Each program is built in C++, Rust, and Sayon, the way
 # each language builds for release, and run with the same input. The first
 # run of each checks that all three print the same thing; then they take
-# turns, several runs each, and the median processor time and peak memory
-# of each go into results.md.
+# turns, several runs each. Each program's README gets a table of what its
+# three versions measured, and results.md a summary of them all.
 #
 #     sayon run run.sayon                    all of them, 5 runs each
 #     sayon run run.sayon -- nbody sort      only these
@@ -24,14 +24,19 @@ type Benchmark = [name: string, input: string]
 # One language's build of a benchmark.
 type Build = [language: string, program: string]
 
-# What a build's runs measured: processor time in nanoseconds, and peak
-# memory in bytes.
-type Measured = [times: Array<integer>, memory: Array<integer>]
+# What a build's runs measured: processor time in nanoseconds and peak
+# memory in bytes, for each run, and the size of its executable.
+type Measured = [times: Array<integer>, memory: Array<integer>, size: integer]
 
 # One row of the results.
 type Row = [benchmark: Benchmark, measured: Array<Measured>]
 
-constant LANGUAGES = ["C++", "Rust", "Sayon"]
+# The computer and the compilers the numbers come from.
+type Setting = [day: string, computer: string, cpp: string, rust: string, sayon: string]
+
+# Where a benchmark's README holds what this writes.
+constant START = "<!-- results: run.sayon writes this part -->"
+constant END = "<!-- end of results -->"
 
 function all_benchmarks() -> Array<Benchmark>
     return [
@@ -66,6 +71,24 @@ function first_line(program: string, arguments: Array<string>) -> string
         return clone(program)
     return strings.trim(lines[0])
 
+function setting(sayon: string) -> Setting
+    computer = "this computer"
+    if os.platform() == "windows"
+        computer = first_line("powershell", ["-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).Name"])
+    elseif filesystem.exists("/proc/cpuinfo")
+        for line in io.read_lines("/proc/cpuinfo")
+            if strings.starts_with(line, "model name")
+                parts = strings.split(line, ":")
+                computer = strings.trim(parts[1])
+                break
+    return Setting(
+        day = clone(strings.split(time.format(time.now()), "T")[0]),
+        computer = "{computer}, {os.platform()}",
+        cpp = "{first_line("clang++", ["--version"])} with `-O2`",
+        rust = "{first_line("rustc", ["--version"])} with `-C opt-level=3`",
+        sayon = "{first_line(sayon, ["version"])} with `--release`"
+    )
+
 function build(benchmark: Benchmark, sayon: string, folder: string) -> Array<Build>
     name = clone(benchmark.name)
     source = filesystem.join(name, name)
@@ -98,10 +121,10 @@ function check(benchmark: Benchmark, builds: Array<Build>)
 # time falls on all of them alike.
 function measure(benchmark: Benchmark, builds: Array<Build>, runs: integer) -> Array<Measured>
     results: Array<Measured> = []
-    for _build in builds
+    for build in builds
         times: Array<integer> = []
         memory: Array<integer> = []
-        push(results, Measured(times = times, memory = memory))
+        push(results, Measured(times = times, memory = memory, size = filesystem.size(build.program)))
     for _round in range(runs)
         for index in range(length(builds))
             done = os.run(builds[index].program, [clone(benchmark.input)])
@@ -111,10 +134,14 @@ function measure(benchmark: Benchmark, builds: Array<Build>, runs: integer) -> A
             push(results[index].memory, done.usage.peak_memory)
     return results
 
+function sorted(values: Array<integer>) -> Array<integer>
+    copy = clone(values)
+    collections.sort(copy)
+    return copy
+
 function median(values: Array<integer>) -> integer
-    sorted = clone(values)
-    collections.sort(sorted)
-    return sorted[length(sorted) / 2]
+    ordered = sorted(values)
+    return ordered[length(ordered) / 2]
 
 function seconds(nanoseconds: integer) -> string
     return "{strings.decimal(float(nanoseconds) / 1000000000.0, 2)} s"
@@ -122,51 +149,97 @@ function seconds(nanoseconds: integer) -> string
 function megabytes(bytes: integer) -> string
     return "{strings.decimal(float(bytes) / 1048576.0, 1)} MB"
 
-# Sayon's measure against the better of C++ and Rust: below 1 is better.
-function against(values: Array<integer>) -> string
+function kilobytes(bytes: integer) -> string
+    return "{(bytes + 512) / 1024} KB"
+
+# Sayon's value against the better of C++'s and Rust's, as a factor: below
+# 1 is better.
+function factor(values: Array<integer>) -> float
     best = values[0]
     if values[1] < best
         best = values[1]
-    return "{strings.decimal(float(values[2]) / float(best), 2)}×"
+    return float(values[2]) / float(best)
 
-# A table of the medians of what `pick` takes from each build's runs.
-function table(rows: Array<Row>, update pick, show) -> string
-    lines = ["| Benchmark | Input | C++ | Rust | Sayon | Sayon against the better |", "|---|---:|---:|---:|---:|---:|"]
-    for row in rows
-        values: Array<integer> = []
-        for measured in row.measured
-            push(values, median(pick(measured)))
-        push(lines, "| {row.benchmark.name} | {row.benchmark.input} | {show(values[0])} | {show(values[1])} | {show(values[2])} | {against(values)} |")
+function times_text(value: float) -> string
+    return "{strings.decimal(value, 2)}×"
+
+# The medians of what `pick` takes from each build's runs.
+function medians(measured: Array<Measured>, update pick) -> Array<integer>
+    values: Array<integer> = []
+    for each in measured
+        push(values, median(pick(each)))
+    return values
+
+# A program's own table: each version's numbers side by side.
+function program_table(row: Row, runs: integer, used: Setting) -> string
+    times = medians(row.measured, function(each: Measured) return clone(each.times))
+    memory = medians(row.measured, function(each: Measured) return clone(each.memory))
+    ranges: Array<string> = []
+    for each in row.measured
+        ordered = sorted(each.times)
+        push(ranges, "{strings.decimal(float(ordered[0]) / 1000000000.0, 2)} to {seconds(ordered[length(ordered) - 1])}")
+    speed = factor(times)
+    room = factor(memory)
+    verdict = "Sayon took {times_text(speed)} the time of the faster of the other two"
+    if speed < 1.0
+        verdict = "Sayon was the fastest, in {times_text(speed)} the time of the faster of the other two"
+    held = "held {times_text(room)} the memory of the leaner one"
+    if room < 1.0
+        held = "held the least memory, {times_text(room)} that of the leaner one"
+    lines = [
+        "| | C++ | Rust | Sayon |",
+        "|---|---:|---:|---:|",
+        "| Processor time, median | {seconds(times[0])} | {seconds(times[1])} | {seconds(times[2])} |",
+        "| Fastest and slowest run | {ranges[0]} | {ranges[1]} | {ranges[2]} |",
+        "| Peak memory, median | {megabytes(memory[0])} | {megabytes(memory[1])} | {megabytes(memory[2])} |",
+        "| Executable | {kilobytes(row.measured[0].size)} | {kilobytes(row.measured[1].size)} | {kilobytes(row.measured[2].size)} |",
+        "",
+        "{verdict}, and {held}.",
+        "",
+        "Input {row.benchmark.input}, {runs} runs of each, measured on {used.day} on {used.computer}. C++: {used.cpp}. Rust: {used.rust}. Sayon: {used.sayon}."
+    ]
     return strings.join(lines, "\n")
 
-function report(rows: Array<Row>, runs: integer, sayon: string) -> string
-    processor = "this computer"
-    if os.platform() == "windows"
-        processor = first_line("powershell", ["-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).Name"])
-    elseif filesystem.exists("/proc/cpuinfo")
-        for line in io.read_lines("/proc/cpuinfo")
-            if strings.starts_with(line, "model name")
-                parts = strings.split(line, ":")
-                processor = strings.trim(parts[1])
-                break
+# Puts a program's table into its README, between the markers.
+function write_table(name: string, table: string)
+    path = filesystem.join(name, "README.md")
+    readme = io.read_file(path)
+    head = strings.split(readme, START)
+    if length(head) != 2
+        error("{path} has no `{START}` line for the results")
+    tail = strings.split(head[1], END)
+    if length(tail) != 2
+        error("{path} has no `{END}` line after the results")
+    io.write_file(path, "{head[0]}{START}\n\n{table}\n\n{END}{tail[1]}")
+
+# A summary table of the medians of what `pick` takes from each build.
+function summary(rows: Array<Row>, update pick, show) -> string
+    lines = ["| Benchmark | Input | C++ | Rust | Sayon | Sayon against the better |", "|---|---:|---:|---:|---:|---:|"]
+    for row in rows
+        values = medians(row.measured, pick)
+        name = clone(row.benchmark.name)
+        push(lines, "| [{name}]({name}/README.md) | {row.benchmark.input} | {show(values[0])} | {show(values[1])} | {show(values[2])} | {times_text(factor(values))} |")
+    return strings.join(lines, "\n")
+
+function report(rows: Array<Row>, runs: integer, used: Setting) -> string
     lines = [
         "# Benchmark results",
         "",
-        "Measured on {strings.split(time.format(time.now()), "T")[0]}, on {processor}, {os.platform()}.",
+        "Measured on {used.day} on {used.computer}.",
         "",
-        "- C++: {first_line("clang++", ["--version"])}, with `-O2`",
-        "- Rust: {first_line("rustc", ["--version"])}, with `-C opt-level=3`",
-        "- Sayon: {first_line(sayon, ["version"])}, with `sayon build --release`",
+        "- C++: {used.cpp}",
+        "- Rust: {used.rust}",
+        "- Sayon: {used.sayon}",
         "",
-        "Each number is the median of {runs} runs. Processor time adds up the time the program's threads ran, and the system's time on its behalf, so it barely changes with what else the computer is doing. Peak memory is the most the program held in memory at once.",
+        "Each number is the median of {runs} runs. Processor time adds up the time the program's threads ran, and the system's time on its behalf, so it barely changes with what else the computer is doing. Peak memory is the most the program held in memory at once. Each program's README has its own table, with the fastest and slowest runs and the size of each executable.",
         "",
         "## Processor time",
         "",
-        table(rows, function(measured: Measured) return clone(measured.times), seconds),
+        summary(rows, function(each: Measured) return clone(each.times), seconds),
         "",
         "## Peak memory",
         "",
-        table(rows, function(measured: Measured) return clone(measured.memory), megabytes),
+        summary(rows, function(each: Measured) return clone(each.memory), megabytes),
         ""
     ]
     return strings.join(lines, "\n")
@@ -187,6 +260,7 @@ function main()
     named = os.environment("SAYON")
     if typeof(named) == "string"
         sayon = named
+    used = setting(sayon)
     folder = "build"
     if not filesystem.exists(folder)
         filesystem.create_directory(folder)
@@ -200,11 +274,14 @@ function main()
         measured = measure(benchmark, builds, runs)
         for index in range(length(builds))
             print("  {builds[index].language}: {seconds(median(measured[index].times))}, {megabytes(median(measured[index].memory))}")
-        push(rows, Row(benchmark = clone(benchmark), measured = measured))
-    text = report(rows, runs, sayon)
-    io.write_file("results.md", text)
-    print("")
-    print(text)
+        finished = Row(benchmark = clone(benchmark), measured = measured)
+        write_table(benchmark.name, program_table(finished, runs, used))
+        push(rows, finished)
+    if length(chosen) == 0
+        text = report(rows, runs, used)
+        io.write_file("results.md", text)
+        print("")
+        print(text)
 
 function contains(names: Array<string>, name: string) -> boolean
     for each in names
