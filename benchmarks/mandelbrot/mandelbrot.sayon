@@ -1,0 +1,31 @@
+# Mandelbrot: count the points of a size by size grid over the plane that
+# stay in the Mandelbrot set for 50 steps. Floating point math in a hot
+# loop with an early way out.
+
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+function inside(cr: float, ci: float) -> boolean
+    zr = 0.0
+    zi = 0.0
+    for _step in range(50)
+        next_r = zr * zr - zi * zi + cr
+        zi = 2.0 * zr * zi + ci
+        zr = next_r
+        if zr * zr + zi * zi > 4.0
+            return false
+    return true
+
+function main()
+    size = 200
+    arguments = os.arguments()
+    if length(arguments) > 0
+        size = strings.parse_integer(arguments[0])
+    count = 0
+    for y in range(size)
+        ci = 2.0 * float(y) / float(size) - 1.0
+        for x in range(size)
+            cr = 2.0 * float(x) / float(size) - 1.5
+            if inside(cr, ci)
+                count += 1
+    print("{count} of {size * size} points are in the set")

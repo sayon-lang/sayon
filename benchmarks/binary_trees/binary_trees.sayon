@@ -1,0 +1,43 @@
+# Binary trees: build many complete binary trees, walk each one, and let
+# it go, while one long-lived tree stays. Lots of small allocations that
+# are freed as soon as their owner goes away.
+
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+# A node holds its two children, or none at a leaf. A structure cannot
+# contain itself directly, so the children live in an array.
+type Tree = [children: Array<Tree>]
+
+function make(depth: integer) -> Tree
+    if depth == 0
+        return Tree(children = [])
+    return Tree(children = [make(depth - 1), make(depth - 1)])
+
+function check(tree: Tree) -> integer
+    count = 1
+    for child in tree.children
+        count += check(child)
+    return count
+
+function main()
+    most = 10
+    arguments = os.arguments()
+    if length(arguments) > 0
+        most = strings.parse_integer(arguments[0])
+    if most < 6
+        most = 6
+    stretch = most + 1
+    print("stretch tree of depth {stretch}\t check: {check(make(stretch))}")
+    long_lived = make(most)
+    depth = 4
+    while depth <= most
+        iterations = 1
+        for _shift in range(most - depth + 4)
+            iterations *= 2
+        total = 0
+        for _round in range(iterations)
+            total += check(make(depth))
+        print("{iterations}\t trees of depth {depth}\t check: {total}")
+        depth += 2
+    print("long lived tree of depth {most}\t check: {check(long_lived)}")

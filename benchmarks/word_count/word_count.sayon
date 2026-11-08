@@ -1,0 +1,38 @@
+# Word count: make up a long text from a small set of syllables, count how
+# often each word comes up, and list the most common. Short strings built
+# one at a time, and a dictionary keyed by them.
+
+collections = import("standard/collections.sayon")
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+type Counted = [word: string, count: integer]
+
+function syllables() -> Array<string>
+    return ["ka", "lo", "mi", "ne", "ru", "sa", "ti", "vo", "ze", "pa"]
+
+function main()
+    total = 100000
+    arguments = os.arguments()
+    if length(arguments) > 0
+        total = strings.parse_integer(arguments[0])
+    parts = syllables()
+    counts: Dict<string, integer> = []
+    state = 42
+    for _word in range(total)
+        state = (state * 1103515245 + 12345) % 2147483648
+        word = ""
+        for _part in range(1 + state / 65536 % 3)
+            state = (state * 1103515245 + 12345) % 2147483648
+            word = word + parts[state / 65536 % 10]
+        if haskey(counts, word)
+            counts[word] += 1
+        else
+            counts[word] = 1
+    found: Array<Counted> = []
+    for word, count in counts
+        push(found, Counted(word = clone(word), count = count))
+    collections.sort_by(found, function(a: Counted, b: Counted) return a.count > b.count or a.count == b.count and a.word < b.word)
+    print("{length(counts)} different words")
+    for index in range(5)
+        print("{found[index].word} {found[index].count}")

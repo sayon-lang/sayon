@@ -1,0 +1,66 @@
+# Fannkuch-redux: flip a stack of pancakes, numbered 1 to n, for every
+# order they can start in, and count the most flips any order needs.
+# Integer arrays and tight loops.
+
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+type Result = [checksum: integer, most: integer]
+
+function fannkuch(n: integer) -> Result
+    perm: Array<integer> = []
+    perm1: Array<integer> = []
+    count: Array<integer> = []
+    for i in range(n)
+        push(perm, 0)
+        push(perm1, i)
+        push(count, 0)
+    most = 0
+    checksum = 0
+    index = 0
+    r = n
+    while true
+        while r != 1
+            count[r - 1] = r
+            r -= 1
+        for i in range(n)
+            perm[i] = perm1[i]
+        flips = 0
+        k = perm[0]
+        while k != 0
+            low = 0
+            high = k
+            while low < high
+                swap(perm, low, high)
+                low += 1
+                high -= 1
+            flips += 1
+            k = perm[0]
+        if flips > most
+            most = flips
+        if index % 2 == 0
+            checksum += flips
+        else
+            checksum -= flips
+        # On to the next order.
+        while true
+            if r == n
+                return Result(checksum = checksum, most = most)
+            first = perm1[0]
+            for i in range(r)
+                perm1[i] = perm1[i + 1]
+            perm1[r] = first
+            count[r] -= 1
+            if count[r] > 0
+                break
+            r += 1
+        index += 1
+
+function main()
+    n = 10
+    arguments = os.arguments()
+    if length(arguments) > 0
+        n = strings.parse_integer(arguments[0])
+    result = fannkuch(n)
+    print(result.checksum)
+    print("Pfannkuchen({n}) = {result.most}")

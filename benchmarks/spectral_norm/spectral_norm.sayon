@@ -1,0 +1,52 @@
+# Spectral norm: the largest singular value of an infinite matrix, worked
+# out with the power method on an n by n corner of it. Floating point math
+# and many small function calls.
+
+math = import("standard/math.sayon")
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+function entry(i: integer, j: integer) -> float
+    return 1.0 / float((i + j) * (i + j + 1) / 2 + i + 1)
+
+function times(v: Array<float>, update out: Array<float>)
+    n = length(v)
+    for i in range(n)
+        sum = 0.0
+        for j in range(n)
+            sum += entry(i, j) * v[j]
+        out[i] = sum
+
+function times_transposed(v: Array<float>, update out: Array<float>)
+    n = length(v)
+    for i in range(n)
+        sum = 0.0
+        for j in range(n)
+            sum += entry(j, i) * v[j]
+        out[i] = sum
+
+function times_both(v: Array<float>, update out: Array<float>, update between: Array<float>)
+    times(v, between)
+    times_transposed(between, out)
+
+function main()
+    n = 100
+    arguments = os.arguments()
+    if length(arguments) > 0
+        n = strings.parse_integer(arguments[0])
+    u: Array<float> = []
+    v: Array<float> = []
+    between: Array<float> = []
+    for _i in range(n)
+        push(u, 1.0)
+        push(v, 0.0)
+        push(between, 0.0)
+    for _round in range(10)
+        times_both(u, v, between)
+        times_both(v, u, between)
+    vbv = 0.0
+    vv = 0.0
+    for i in range(n)
+        vbv += u[i] * v[i]
+        vv += v[i] * v[i]
+    print(strings.decimal(math.sqrt(vbv / vv), 9))

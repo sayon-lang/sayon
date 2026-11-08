@@ -1,0 +1,24 @@
+# Sort: fill an array with pseudo-random integers and sort it with the
+# standard library's sort. Mostly comparing and moving integers in memory.
+
+collections = import("standard/collections.sayon")
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+function main()
+    total = 100000
+    arguments = os.arguments()
+    if length(arguments) > 0
+        total = strings.parse_integer(arguments[0])
+    numbers: Array<integer> = []
+    state = 42
+    for _i in range(total)
+        state = (state * 1103515245 + 12345) % 2147483648
+        push(numbers, state)
+    collections.sort(numbers)
+    checksum = 0
+    position = 0
+    while position < total
+        checksum += numbers[position]
+        position += 1000
+    print("{numbers[0]} {numbers[total / 2]} {numbers[total - 1]} {checksum}")
