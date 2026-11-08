@@ -6,79 +6,104 @@
 
 <p align="center">Programming made easy. Safety made automatic.</p>
 
-Sayon means "easy". Ordinary programs should need fewer decisions, less boilerplate, and less setup, while advanced users can still see and control the work their programs do.
+Sayon is a programming language that reads like a script and runs like a compiled program. You write short, indented code, mostly without type annotations, and the compiler works out the types, who owns each value, and when it's freed. There's no garbage collector, and nothing is copied behind your back.
+
+The name is Cebuano for "easy", which is the whole idea: ordinary programs shouldn't need much ceremony, and when you do care about what your program costs, you can see it.
 
 ```sayon
 function total(values: Array<integer>) -> integer
     result = 0
     for value in values
-        result = result + value
+        result += value
     return result
 
 numbers = [1, 2, 3]
 print("Sum: {total(numbers)}")
-print(length(numbers))  # numbers is still owned here
+print(length(numbers))  # still usable: total only borrowed it
 ```
 
-- Indentation-based blocks, whole-word keywords, and string interpolation
-- Type inference with optional annotations, unions such as `integer or nothing`, and flow-sensitive narrowing
-- Compiler-checked ownership with inferred borrowing and deterministic cleanup, with no garbage collector and no hidden copies
-- Diagnostics with stable codes that explain the problem and a concrete fix
-
-## Status
-
-Sayon is in early development and not ready for real programs. What works today:
-
-- A front end for the current language subset: lexer, parser, type inference, union narrowing, and ownership checking
-- Structures and enums, including generic ones, and `match` with nested and structure patterns, alternatives, guards, and exhaustiveness checking
-- Errors captured as values with `try` expressions, `Outcome<T>`, and `is error` narrowing
-- Functions as values and closures that own what they capture
-- An interpreter that runs checked programs, with checked integer arithmetic and cleanup on every exit path
-- A native backend: programs compile through LLVM to standalone Windows executables that need no runtime DLLs, and on any computer to WebAssembly programs for WASI and for web pages, which come with the JavaScript that runs them and a page that shows their output, and to Android apps
-- Checking a program for any target, with compile-time platform branches and the capabilities each target provides
-- Modules: programs can be split across files with `import`, and projects can depend on other packages from local folders or pinned Git commits, locked by `sayon install`
-- Borrowed views of arrays and strings, shared values with weak handles and cells, and finally functions that release what a structure owns when it is destroyed
-- Tasks that take turns on a thread, channels and `select`, timers, and tasks on threads of their own that share data through channels and mutexes
-- TCP and UDP sockets, TLS from the system, and an HTTP client for `http://` and `https://`, other programs started with pipes to their streams, and C functions: calls, C structures by value, and Sayon functions that C calls back
-- Standard library modules for files, directories, streams and text encodings, JSON (typed values and streams), collections, time with time zones, processes, the network, threads, memory, text, math, and hashing and secure random bytes, and graphics: drawing on canvases, smooth or not, the same pixels everywhere, text in TrueType fonts and the system's, PNG images, shown in windows on Windows and Linux, in web pages, and in Android apps
-- `test` blocks and the `sayon test` runner, and the `sayon fmt` formatter
-- A language server, `sayon lsp`, and a VS Code extension that starts it: diagnostics as you type, hover with signatures and doc comments, going to definitions, references, renaming, completion, and formatting
-- Projects with a `sayon.toml` manifest, and the `run`, `build`, `check`, `test`, `fmt`, `init`, `clean`, `doctor`, `lint`, `lsp`, and `explain` commands
-
-`examples/sketch` is a sketch pad, one program that runs as a window on Windows and Linux, as a web page, and as an Android app:
+`total` borrows the array, so `numbers` is still there afterwards. A function that changes its argument says `update`, and one that keeps it says `own`. When you get it wrong, the compiler points at both places and suggests a fix:
 
 ```text
-cd examples/sketch
-sayon run                         # a window on this computer
-sayon build --target web          # a page: serve build/debug/web and open sketch.html
-sayon build --target android-x64  # an app for the emulator: adb install build/debug/android-x64/sketch.apk
+error[E_MOVED_VALUE]: `names` was transferred to `team`
+  --> moved.sayon:3:7
+   |
+ 2 | team = names
+   |        ----- ownership transferred here
+ 3 | print(names)
+   |       ^^^^^ `names` no longer owns the array
+   |
+   = help: use `team` here, or write `team = clone(names)` when you need two independent copies
 ```
 
-Every example program is checked to behave identically in the interpreter and as a native executable, and to release every allocation it makes. Linux x86-64 now passes every test in both modes, as Windows does, and each example that WASI, a web page, or Android can run behaves the same as a WebAssembly program under wasmtime, and in Edge, Chrome, Firefox, and Node, and on Android's emulator; macOS and ARM64 desktops come next. Features planned for later milestones are rejected with a message that names the milestone, rather than half-working.
+Every error has a code like that one, and `sayon explain E_MOVED_VALUE` says more about it.
+
+## What it's like
+
+- Blocks are indentation, keywords are plain words, and strings fill in `{expressions}`.
+- Types are inferred, and you can write them out where you like. A union such as `integer or nothing` narrows by itself once you've checked it.
+- Ownership is checked when the program compiles, borrowing is worked out for you, and values are freed the moment their owner goes away.
+- Integer overflow and array bounds are checked, always.
+- One command covers the whole workflow: `sayon run`, `build`, `check`, `test`, `fmt`, `lint`, `init`, `install`, and `publish`.
+
+## Where it stands
+
+Sayon is young. It runs real programs, but the language can still change, and nothing has been released yet. Today there is:
+
+- An interpreter and a native compiler that give the same results. Every example runs both ways, and the tests check that it frees everything it allocated.
+- Native executables for Windows and Linux, on x64 and ARM64, WebAssembly for WASI and for web pages, and Android apps. macOS comes later. `examples/sketch` is one program that runs as a window, a web page, and an app.
+- Structures, enums, generics, closures, `match` with exhaustiveness checks, and errors as values you can `try`.
+- Tasks and channels, threads with mutexes, sockets, TLS, an HTTP client, other programs with pipes, and calls into C.
+- A standard library written in Sayon: files, JSON, collections, time with time zones, text, math, hashing, and graphics with canvases, fonts, PNG and JPEG images, and windows.
+- Tests, a formatter, a linter, a language server with a VS Code extension, packages with a lock file, and a package registry, which so far runs only locally.
+- A sandbox, `sayon run --sandbox`, for running code from people you don't know. The website's playground runs on it.
+
+Features planned for later are refused with a message that says when they're coming, instead of half working.
+
+## Speed
+
+Programs compile to native code through LLVM, with the overflow and bounds checks left in. [benchmarks](benchmarks) holds eight small programs written in Sayon, C++, and Rust, doing the same work in each, and a runner that builds and measures all of them. Processor time on an Intel Core i3-7100U laptop with Windows 10, median of five runs:
+
+| Benchmark | C++ | Rust | Sayon |
+|---|---:|---:|---:|
+| binary_trees | 1.53 s | 1.58 s | 1.11 s |
+| mandelbrot | 0.89 s | 0.69 s | 0.73 s |
+| fannkuch | 0.48 s | 0.52 s | 0.66 s |
+| nbody | 0.42 s | 0.22 s | 0.45 s |
+| spectral_norm | 0.36 s | 0.34 s | 0.56 s |
+| text | 0.83 s | 0.98 s | 1.20 s |
+| sort | 0.56 s | 0.28 s | 0.86 s |
+| word_count | 0.20 s | 0.58 s | 0.66 s |
+
+Sayon is the fastest of the three at building and dropping trees, ahead of C++ on mandelbrot, and level with C++ on nbody, where Rust is twice as fast as both. It's slower on the rest, partly because of the checks C++ and Rust leave out of release builds, and on word_count because C++ keeps short strings inside the string itself. Memory use is close to theirs: about half a megabyte more for the small programs, a few megabytes more on sort, and less than C++ on text. The [benchmarks README](benchmarks/README.md) explains each program and how to run them yourself, and [results.md](benchmarks/results.md) has the memory numbers too.
 
 ## Installing
 
-Download the installer for your device from the [releases page](https://github.com/sayon-lang/sayon/releases) and run it. On Windows with an x64 processor (most PCs) that is `sayon-<version>-windows-x64-setup.exe`. It installs Sayon for your user account without administrator rights, makes `sayon` available in new terminals, and can be removed from Settings > Apps. On Linux with an x64 processor it is `sayon-<version>-linux-x64-setup`, which installs into `~/.local/share/sayon` and links `~/.local/bin/sayon`. Installers for other devices arrive as Sayon is validated on them; [Installing](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/get-started/installing.md) lists them and describes every option. No release has been published yet; until then, build the installer from source as described below.
+There's no release yet, so for now you build the installer yourself (see below). Once there is one, you'll download the installer for your system from the [releases page](https://github.com/sayon-lang/sayon/releases):
+
+- On Windows, `sayon-<version>-windows-x64-setup.exe` installs Sayon for your account, without administrator rights. Uninstall it from Settings > Apps.
+- On Linux, `sayon-<version>-linux-x64-setup` installs into `~/.local/share/sayon` and links `~/.local/bin/sayon`.
+
+[Installing](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/get-started/installing.md) covers the other systems and every option.
 
 ## Documentation
 
-The guides are part of Sayon's website, in [www.sayon-lang.org](https://github.com/sayon-lang/www.sayon-lang.org/tree/main/docs):
+The guides live with the website, in [www.sayon-lang.org](https://github.com/sayon-lang/www.sayon-lang.org/tree/main/docs). Good places to start:
 
-- [Installing](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/get-started/installing.md): installers for each device, what they change, and uninstalling
-- [Your first program](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/get-started/first-program.md): a script, a project, checking, testing, and formatting, step by step
-- [Every guide](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/README.md), by category: the language as implemented so far, its standard library, its tools, and references to look things up
+- [Your first program](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/get-started/first-program.md) walks through a script, a project, tests, and formatting.
+- [All the guides](https://github.com/sayon-lang/www.sayon-lang.org/blob/main/docs/README.md), sorted into the language, the standard library, the tools, and references.
 
-The references that change with the compiler are here, in `docs`:
+The references that change along with the compiler stay here, in `docs`:
 
-- [Feature ledger](docs/features.md): what exists, what is planned, and for which milestone
-- [Error codes](docs/errors.md): what each diagnostic and runtime error code means, also shown by `sayon explain CODE`
-- [Standard library API](docs/api.md): every export of the standard library, its declaration and what it does, written from `stdlib/` by `scripts/api_inventory.sayon`
-- [Implementation records](docs/implementation.md): grammar, ownership rules, cleanup order, data layouts, and the error ABI
-- [Licenses](docs/licenses.md): what is not Sayon's own in its files and in the programs it builds, and under which licenses
+- [Features](docs/features.md): what's done, what's planned, and when.
+- [Error codes](docs/errors.md): what every error means. `sayon explain` prints the same text.
+- [Standard library API](docs/api.md): everything the standard library exports, generated from `stdlib/` by `scripts/api_inventory.sayon`.
+- [Implementation notes](docs/implementation.md): the grammar, ownership rules, cleanup order, data layouts, and how errors cross function calls.
+- [Licenses](docs/licenses.md): what in Sayon, and in the programs it builds, comes from others, and under which licenses.
 
 ## Building from source
 
-The compiler is written in Rust. The toolchain version is pinned in `rust-toolchain.toml`, and `rustup` installs it automatically.
+The compiler is written in Rust. `rust-toolchain.toml` pins the version, and `rustup` fetches it for you.
 
 ```sh
 cargo build
@@ -87,9 +112,11 @@ cargo run -p sayon-cli -- build tests/programs/functions.sayon -o functions.exe
 cargo test
 ```
 
-`scripts/package.ps1` builds the downloads for the device it runs on: the installer `dist/sayon-<version>-windows-x64-setup.exe`, the same files as `dist/sayon-<version>-windows-x64.zip`, and `dist/SHA256SUMS.txt`. On Linux, `scripts/package.sh` builds `dist/sayon-<version>-linux-x64-setup` and `dist/sayon-<version>-linux-x64.tar.gz` the same way.
+Native builds need [LLVM](https://releases.llvm.org)'s clang when you compile. Sayon looks for it on `PATH`, in LLVM's usual install folder, or wherever `SAYON_CLANG` points. The programs it builds don't need it.
 
-With `sayon` on your `PATH`, a project looks like this:
+`scripts/package.ps1` builds the installer for Windows, `dist/sayon-<version>-windows-x64-setup.exe`, along with a zip of the same files and `dist/SHA256SUMS.txt`. On Linux, `scripts/package.sh` builds `dist/sayon-<version>-linux-x64-setup` and a tarball.
+
+With `sayon` on your `PATH`, a new project goes like this:
 
 ```sh
 sayon init hello
@@ -99,42 +126,41 @@ sayon test
 sayon build     # build/debug/hello
 ```
 
-Native builds need [LLVM](https://releases.llvm.org)'s clang at build time (found on `PATH`, in the default install location, or through `SAYON_CLANG`). The resulting executables have no such dependency.
-
-`examples` holds programs written in Sayon: a word counter that reads standard input, a directory inventory, an HTTP file server with a task for each connection, a word counter that spreads files over threads, and a list of numbers kept in C memory, which C sorts and which frees itself. `tests/programs` holds runnable programs with their expected output, and `tests/errors` holds invalid programs with the diagnostics they produce.
+[examples](examples) has a few programs to read: a word counter, a directory inventory, an HTTP file server that runs a task per connection, a word counter that spreads files over threads, and a list kept in C memory that C sorts. `tests/programs` holds programs with their expected output, and `tests/errors` holds broken programs with the errors they should produce.
 
 ## Repository layout
 
-| Path | Contents |
+| Path | What's there |
 |---|---|
-| `crates/target` | The targets programs are checked and built for, and their capabilities |
-| `crates/syntax` | Source files, diagnostics, lexer, and parser |
+| `crates/target` | The systems Sayon builds for, and what each one can do |
+| `crates/syntax` | Source files, diagnostics, the lexer, and the parser |
 | `crates/check` | Name resolution, type inference, and ownership checking |
-| `crates/ir` | Control-flow IR with explicit moves, drops, and error edges |
+| `crates/ir` | The intermediate form, with moves, drops, and error paths spelled out |
 | `crates/interp` | The interpreter |
-| `crates/driver` | Loads a program's modules from disk and runs the compiler phases |
-| `crates/codegen` | Native code generation through LLVM IR |
-| `crates/runtime` | Runtime library linked into compiled programs |
-| `crates/lsp` | The language server `sayon lsp` runs |
+| `crates/driver` | Loads a program's modules and runs the compiler's phases |
+| `crates/codegen` | Native code, by way of LLVM IR |
+| `crates/runtime` | The runtime library compiled programs link with |
+| `crates/lsp` | The language server behind `sayon lsp` |
 | `crates/cli` | The `sayon` command |
-| `crates/installer` | The installer (`sayon-setup`) |
+| `crates/installer` | The installer, `sayon-setup` |
 | `stdlib` | The standard library, written in Sayon |
-| `examples` | Small programs written in Sayon, and `sketch`, a project that runs on every primary platform |
-| `tests` | Example programs and diagnostic snapshots |
-| `docs` | Feature ledger, error codes, implementation records, and licenses |
-| `scripts` | Release packaging: the installer and archive for each device |
-| `assets` | Logo and icons |
+| `benchmarks` | Programs in Sayon, C++, and Rust, and the runner that compares them |
+| `examples` | Programs to read, and `sketch`, which runs everywhere Sayon does |
+| `tests` | Programs with expected output, and expected errors |
+| `docs` | Features, error codes, implementation notes, and licenses |
+| `scripts` | Packaging for each system |
+| `assets` | The logo and icons |
 
-Sayon's other parts have repositories of their own, beside this one:
+A few other repositories sit beside this one:
 
 | Repository | What it holds |
 | --- | --- |
-| [packages-index](https://github.com/sayon-lang/packages-index) | The registry's index: every published version, which `sayon install` reads |
-| [sayon-vscode](https://github.com/sayon-lang/sayon-vscode) | The VS Code extension: highlighting, the `.sayon` file icon, and the language server's client |
-| [www.sayon-lang.org](https://github.com/sayon-lang/www.sayon-lang.org) | Sayon's website, written in Sayon: the guides, the package registry with its API and protocol, and accounts |
+| [www.sayon-lang.org](https://github.com/sayon-lang/www.sayon-lang.org) | The website, written in Sayon: the guides, the playground, the package registry, and accounts |
+| [packages-index](https://github.com/sayon-lang/packages-index) | The registry's index, which `sayon install` reads |
+| [sayon-vscode](https://github.com/sayon-lang/sayon-vscode) | The VS Code extension |
 
-Checked out beside this repository, as `../www.sayon-lang.org` and `../sayon-vscode`, the registry and the extension are tested with the `sayon` built here: `cargo test` runs them, and says it skipped them otherwise. `SAYON_REPOSITORIES` names another folder that holds them.
+If you check out the website and the extension next to this repository, as `../www.sayon-lang.org` and `../sayon-vscode`, `cargo test` tests them with the `sayon` built here, and says it skipped them otherwise. `SAYON_REPOSITORIES` can name another folder that holds them.
 
 ## License
 
-Sayon is licensed under the [Apache License, Version 2.0, with LLVM's exception](LICENSE) (`Apache-2.0 WITH LLVM-exception`): the parts of Sayon that a program built with it holds, such as its runtime, can go with that program without its license or notices. [docs/licenses.md](docs/licenses.md) lists what its files and the programs it builds hold from others, and under which licenses.
+Sayon uses the [Apache License 2.0 with LLVM's exception](LICENSE) (`Apache-2.0 WITH LLVM-exception`). The exception means the parts of Sayon that end up inside your program, such as the runtime, can ship with it without carrying Sayon's license or notices. [docs/licenses.md](docs/licenses.md) lists what comes from others and under which licenses.

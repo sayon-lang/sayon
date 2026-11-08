@@ -1,8 +1,10 @@
-# Licenses and what Sayon's files hold
+# Licenses
 
-Sayon is licensed under the Apache License, Version 2.0, with LLVM's exception to it (`LICENSE`; `Apache-2.0 WITH LLVM-exception`): its code, runtime, standard library, documentation, examples, templates, and images. The exception is LLVM's, word for word: what of Sayon a program holds because it was compiled with Sayon, such as the runtime, the standard library's code, and the glue, page, and manifest its builds write, can be passed on in that program without the conditions of the license's sections 4(a), 4(b), and 4(d), so without a copy of the license, notices of changes, or a `NOTICE`. And should a court find a section of the license, such as its patent or indemnity terms, in conflict with the GPLv2 for compiled Sayon code combined with GPLv2 software, the exception lets that section be set aside, whole, for that combination. This is the inventory of the material that is not Sayon's own: what a Sayon installation ships, what the programs Sayon builds carry into the world, and what Sayon uses without shipping it.
+Sayon is licensed under the Apache License 2.0 with LLVM's exception (`LICENSE`, `Apache-2.0 WITH LLVM-exception`). That covers its code, runtime, standard library, documentation, examples, templates, and images.
 
-Sayon depends on no Rust packages but its own crates (`Cargo.lock` lists only `sayon-*`), so the material below is the whole of it.
+The exception is LLVM's, word for word, and it does two things. First, the parts of Sayon that end up inside a program because Sayon compiled it (the runtime, the standard library's code, and the glue, page, and manifest a build writes) can be passed on with that program without the conditions in sections 4(a), 4(b), and 4(d) of the license. So a program you build doesn't need a copy of the license, notices of changes, or a `NOTICE` file. Second, should a court ever find a section of the license, such as its patent or indemnity terms, in conflict with the GPLv2 where compiled Sayon code is combined with GPLv2 software, the exception lets that whole section be set aside for that combination.
+
+This page lists everything that isn't Sayon's own: what an installation ships, what the programs Sayon builds carry with them, and what Sayon uses without shipping it. Sayon depends on no Rust packages other than its own crates (`Cargo.lock` lists only `sayon-*`), so the list is complete.
 
 ## What an installation holds
 
