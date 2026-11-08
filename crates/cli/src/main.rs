@@ -29,7 +29,8 @@ pub mod status {
 }
 
 const HELP: &str = "\
-Sayon: Programming made easy. Safety made automatic.
+sayon runs, builds, checks, tests, and formats Sayon programs, and manages
+projects and packages.
 
 Usage:
     sayon run [file] [-- args]       Check and run a program with the interpreter

@@ -1,12 +1,10 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="Sayon logo" width="200">
+  <img src="assets/logo-animated.svg" alt="Sayon logo" width="200">
 </p>
 
 <h1 align="center">Sayon</h1>
 
-<p align="center">Programming made easy. Safety made automatic.</p>
-
-Sayon is a programming language that reads like a script and runs like a compiled program. You write short, indented code, mostly without type annotations, and the compiler works out the types, who owns each value, and when it's freed. There's no garbage collector, and nothing is copied behind your back.
+Sayon is a programming language. You write short, indented code, mostly without type annotations, and the compiler works out the types, who owns each value, and when it's freed. There's no garbage collector, and nothing is copied behind your back. A program runs in the interpreter while you work on it, or compiles to a native executable through LLVM.
 
 The name is Cebuano for "easy", which is the whole idea: ordinary programs shouldn't need much ceremony, and when you do care about what your program costs, you can see it.
 
@@ -38,52 +36,17 @@ error[E_MOVED_VALUE]: `names` was transferred to `team`
 
 Every error has a code like that one, and `sayon explain E_MOVED_VALUE` says more about it.
 
-## What it's like
+## Why use Sayon
 
-- Blocks are indentation, keywords are plain words, and strings fill in `{expressions}`.
-- Types are inferred, and you can write them out where you like. A union such as `integer or nothing` narrows by itself once you've checked it.
-- Ownership is checked when the program compiles, borrowing is worked out for you, and values are freed the moment their owner goes away.
-- Integer overflow and array bounds are checked, always.
-- One command covers the whole workflow: `sayon run`, `build`, `check`, `test`, `fmt`, `lint`, `init`, `install`, and `publish`.
+- **It's easy to read.** Blocks are indentation, and where other languages use symbols, Sayon mostly uses words: `and`, `or`, and `not`, and `update` and `own` to say what a function does with its arguments. Strings fill in `{expressions}` where you write them. Types are inferred, and you can write them out where it helps.
+- **Memory is safe without a garbage collector.** Ownership is checked when the program compiles, borrowing is worked out for you, and there are no lifetimes to write. Every value is freed once, the moment its owner goes away.
+- **The checks stay on.** Integer overflow, array bounds, and conversions between number types are checked in every build, release builds too. A failed check is an error your program can catch with `try`, like any other.
+- **Errors help you fix them.** Every error has a stable code, points at the problem, and suggests a fix.
+- **One tool does the whole job.** `sayon` runs, builds, checks, tests, formats, and lints programs, starts projects, installs and publishes packages, and talks to your editor.
+- **One program runs in many places.** The same code runs on Windows and Linux, on x64 and ARM64, as WebAssembly for WASI and for web pages, and as an Android app.
+- **Code from strangers can run safely.** `sayon run --sandbox` runs a file with only the console, clocks, and random numbers, and stops it past set limits of time, memory, and output. The website's playground runs on it.
 
-## Where it stands
-
-Sayon is young. It runs real programs, but the language can still change, and nothing has been released yet. Today there is:
-
-- An interpreter and a native compiler that give the same results. Every example runs both ways, and the tests check that it frees everything it allocated.
-- Native executables for Windows and Linux, on x64 and ARM64, WebAssembly for WASI and for web pages, and Android apps. macOS comes later. `examples/sketch` is one program that runs as a window, a web page, and an app.
-- Structures, enums, generics, closures, `match` with exhaustiveness checks, and errors as values you can `try`.
-- Tasks and channels, threads with mutexes, sockets, TLS, an HTTP client, other programs with pipes, and calls into C.
-- A standard library written in Sayon: files, JSON, collections, time with time zones, text, math, hashing, and graphics with canvases, fonts, PNG and JPEG images, and windows.
-- Tests, a formatter, a linter, a language server with a VS Code extension, packages with a lock file, and a package registry, which so far runs only locally.
-- A sandbox, `sayon run --sandbox`, for running code from people you don't know. The website's playground runs on it.
-
-Features planned for later are refused with a message that says when they're coming, instead of half working.
-
-## Speed
-
-Programs compile to native code through LLVM, with the overflow and bounds checks left in. [benchmarks](benchmarks) holds eight small programs written in Sayon, C++, and Rust, doing the same work in each, and a runner that builds and measures all of them. Each program has its own README with a full table. Here's processor time and peak memory on an Intel Core i3-7100U laptop with Windows 10, median of seven runs:
-
-| Benchmark | C++ | Rust | Sayon | Memory: C++, Rust, Sayon |
-|---|---:|---:|---:|---:|
-| [binary_trees](benchmarks/binary_trees/README.md) | 0.80 s | 0.81 s | 0.27 s | 6.7, 7.0, 6.2 MB |
-| [text](benchmarks/text/README.md) | 0.56 s | 0.66 s | 0.33 s | 172.9, 143.4, 67.8 MB |
-| [fannkuch](benchmarks/fannkuch/README.md) | 0.28 s | 0.30 s | 0.30 s | 3.1, 3.4, 3.2 MB |
-| [mandelbrot](benchmarks/mandelbrot/README.md) | 0.62 s | 0.44 s | 0.50 s | 3.1, 3.3, 3.2 MB |
-| [spectral_norm](benchmarks/spectral_norm/README.md) | 0.22 s | 0.17 s | 0.27 s | 3.1, 3.4, 3.3 MB |
-| [nbody](benchmarks/nbody/README.md) | 0.23 s | 0.11 s | 0.25 s | 3.1, 3.4, 3.2 MB |
-| [word_count](benchmarks/word_count/README.md) | 0.12 s | 0.42 s | 0.31 s | 3.1, 3.5, 3.3 MB |
-| [sort](benchmarks/sort/README.md) | 0.41 s | 0.20 s | 0.58 s | 40.2, 38.2, 38.1 MB |
-
-Sayon is the fastest of the three on binary_trees and text, by a wide margin, and holds the least memory on both. On binary_trees that's mostly its allocator, since the C++ and Rust versions get their memory from the system's. On text it's short strings: Sayon keeps up to 23 bytes inside the string itself, so none of the million lines needs memory of its own. It also beats Rust on word_count, and all three come out about even on fannkuch.
-
-It's slower on the rest. On spectral_norm, part of that is the overflow checks, which C++ and Rust leave out of release builds. Rust's sort is a carefully tuned driftsort, and in nbody Rust knows that two references can't point at the same body, which neither C++ nor Sayon can tell. C++ is faster still on word_count. Each program's README says what differs.
-
-Sayon holds less memory than Rust on all eight, and less than C++ on binary_trees, text, and sort. On the small ones it's 0.1 to 0.2 MB more than C++, which is its runtime at startup. Its executables are about twice the size of theirs, around 300 KB.
-
-The laptop was busy while these ran, as it usually is, so a number can move by a fifth or so from one run to the next. The three versions take turns, though, so they share the same load, and the per-program READMEs show the fastest and slowest runs. [results.md](benchmarks/results.md) has everything side by side, and the [benchmarks README](benchmarks/README.md) explains how they're kept fair and how to run them yourself.
-
-## Safety
+### How its safety compares with Rust's
 
 Sayon and Rust stop the same memory bugs before a program runs: using a value after it's freed, freeing it twice, a reference that outlives what it points to, and two threads changing the same data at once. Neither has null references. Both let you step outside the rules with `unsafe`, to call C or handle raw memory, and in both, shared handles that point at each other in a circle keep each other alive, which is what weak handles are for.
 
@@ -97,7 +60,63 @@ Where they differ:
 | What a program can reach | Anything the process can | The same in a normal build. But the compiler works out which capabilities a program needs, such as files or sockets, and refuses code its target can't support, and `sayon run --sandbox` runs a stranger's file with only the console, clocks, random numbers, and code that touches nothing outside |
 | Code that runs when you build | Build scripts and procedural macros | None. Sayon has no build scripts or macros, so building a package never runs its code |
 
-So Sayon checks more by default. The thing it can't match yet is time: Rust's compiler has been used and tested by a great many people for years, and Sayon's is young, so a bug in it could still let through something the rules forbid.
+So Sayon checks more by default. What it can't match yet is time: Rust's compiler has been used and tested by a great many people for years, and Sayon's is young, so a bug in it could still let through something the rules forbid.
+
+## Features
+
+**The language**
+
+- Indented blocks, plain-word keywords, and strings that fill in `{expressions}`.
+- Types worked out by the compiler, which you can write out anywhere. A union such as `integer or nothing` narrows by itself once you've checked it.
+- Structures, enums, generics, closures, and methods, and `match`, which checks that every case is covered.
+- Ownership: a parameter borrows by default, `update` lends a value to be changed, and `own` hands it over. Views borrow part of an array without copying it.
+- Shared values, cells, and weak handles, for data with several owners.
+- Errors as values: `try` and `catch` handle them as blocks, and `try` before an expression turns an error into an `Outcome` to check.
+- `finally` functions, which run when a value is destroyed, for files, locks, and the like.
+- Calls into C, with `unsafe` around what the compiler can't check.
+
+**Running programs**
+
+- An interpreter and a native compiler that give the same results. Every test program runs both ways, and the compiled ones must free everything they allocate.
+- Native executables for Windows and Linux, on x64 and ARM64, WebAssembly for WASI and for web pages, and Android apps. `examples/sketch` is one program that runs as a window, a web page, and an app.
+- Tasks and channels, threads with mutexes, sockets, TLS, an HTTP client, and other programs run through pipes.
+- Text of up to 23 bytes kept inside the string itself on 64-bit systems, and an allocator of Sayon's own, so short strings and small objects cost little.
+
+**The standard library**, written in Sayon, in 13 modules: files and paths, input and output, the operating system, JSON, collections (stacks, queues, lists, ordered maps), text and Unicode, math with seeded random numbers, time with time zones, tasks and threads, networking, hashing, raw memory for C, and graphics with canvases, fonts, PNG and JPEG images, and windows. [The API](docs/api.md) lists every function.
+
+**The tools**
+
+- `sayon run`, `build`, `check`, `test`, `fmt`, `lint`, `init`, `install`, `publish`, `explain`, and `target`.
+- A language server with a [VS Code extension](https://github.com/sayon-lang/sayon-vscode): errors as you type, hover, completion, signature help, going to definitions, references, and renaming.
+- Packages with versions, a lock file, and a registry.
+- A sandbox for running code from people you don't know.
+
+## Limitations
+
+- **It's young.** The language can still change, nothing has been released, and every feature is still marked experimental. The compiler hasn't had years of use behind it.
+- **Not every platform yet.** There's no macOS or iOS. Compiled programs on desktop ARM64 can't run tasks yet, and you can't build on one desktop system for another.
+- **Slower than C++ and Rust on most programs.** In the latest benchmarks, Sayon took the least time of the three on 2 of the 13 programs long enough to time, about the same as the faster of the others on 1, and more on the other 10. Rust's sort is about three times as fast as Sayon's. Function calls cost more, since every Sayon call also hands back whether an error was raised, so the fib benchmark takes three times as long. Loops over arrays keep their bounds and overflow checks, which stops them using the vector instructions Rust's use, and Rust's borrowing tells its compiler that two references can't overlap, which Sayon's doesn't yet. [RESULTS.md](benchmarks/RESULTS.md) has the numbers.
+- **No way yet to make an array of a given size in one step.** A program pushes each element instead, which costs time, and memory while the array grows: the sieve benchmark holds a third more memory than C++ and Rust.
+- **Bigger executables.** A small program compiles to about 300 KB, about twice what C++ and Rust make.
+- **The interpreter is slow.** `sayon run` interprets the program, at a couple of microseconds a loop step on an ordinary laptop. Use `sayon run --native` or `sayon build` when speed matters.
+- **No public package registry yet.** The registry runs on your own computer until the website goes live.
+- **Not there yet:** `async` and `await`, macros, a debugger, a REPL, text input and a GPU backend for graphics, TLS servers, and signed Android releases. The [feature ledger](docs/features.md) has each with the milestone it's planned for, and a language feature among them gives an error saying when it's coming, instead of half working.
+
+## Status
+
+Sayon is at version 0.0.1, and nothing has been released yet. The version stays there until the first stable release.
+
+The work is planned in nine milestones: a first usable release, an expressive core, systems and concurrency, portable applications, an ecosystem, a production release, Apple's platforms, advanced tooling, and last, a compiler written in Sayon itself. It's in the fifth now: packages and the registry, the standard library, the language server, and running on desktop ARM64. The [feature ledger](docs/features.md) lists what's done, what's planned, and for which milestone.
+
+## AI assistance
+
+I build Sayon with help from Claude Opus 5.5, an AI model made by Anthropic. It has helped me research, design, write, debug, and test it: the compiler, the runtime, the standard library, the tools, the website, and these docs.
+
+The idea didn't come from the AI. It came from deep research into programming languages, and from being tired of looking at weird symbols and complex, tangled syntax. I wanted a language I'd enjoy reading, so I decided to make one.
+
+## License
+
+Sayon uses the [Apache License 2.0 with LLVM's exception](LICENSE) (`Apache-2.0 WITH LLVM-exception`). The exception means the parts of Sayon that end up inside your program, such as the runtime, can ship with it without carrying Sayon's license or notices. [docs/licenses.md](docs/licenses.md) lists what comes from others and under which licenses.
 
 ## Installing
 
@@ -122,6 +141,10 @@ The references that change along with the compiler stay here, in `docs`:
 - [Standard library API](docs/api.md): everything the standard library exports, generated from `stdlib/` by `scripts/api_inventory.sayon`.
 - [Implementation notes](docs/implementation.md): the grammar, ownership rules, cleanup order, data layouts, and how errors cross function calls.
 - [Licenses](docs/licenses.md): what in Sayon, and in the programs it builds, comes from others, and under which licenses.
+
+## Benchmarks
+
+[benchmarks](benchmarks) holds fourteen programs written in Sayon, C++, and Rust that do the same work, from printing one line to sorting ten million numbers, and a runner, written in Sayon, that builds them all, checks that they print the same thing, and measures them at two or three input sizes each. Every Rust program is also built with its overflow checks on, to show what checking costs. Each program's README says what differs between its versions and why, [RESULTS.md](benchmarks/RESULTS.md) has the latest numbers side by side, and `measurements.json` every run's.
 
 ## Building from source
 
@@ -161,7 +184,7 @@ sayon build     # build/debug/hello
 | `crates/interp` | The interpreter |
 | `crates/driver` | Loads a program's modules and runs the compiler's phases |
 | `crates/codegen` | Native code, by way of LLVM IR |
-| `crates/runtime` | The runtime library compiled programs link with |
+| `crates/runtime` | The runtime library compiled programs link with, and Sayon's allocator |
 | `crates/lsp` | The language server behind `sayon lsp` |
 | `crates/cli` | The `sayon` command |
 | `crates/installer` | The installer, `sayon-setup` |
@@ -182,7 +205,3 @@ A few other repositories sit beside this one:
 | [sayon-vscode](https://github.com/sayon-lang/sayon-vscode) | The VS Code extension |
 
 If you check out the website and the extension next to this repository, as `../www.sayon-lang.org` and `../sayon-vscode`, `cargo test` tests them with the `sayon` built here, and says it skipped them otherwise. `SAYON_REPOSITORIES` can name another folder that holds them.
-
-## License
-
-Sayon uses the [Apache License 2.0 with LLVM's exception](LICENSE) (`Apache-2.0 WITH LLVM-exception`). The exception means the parts of Sayon that end up inside your program, such as the runtime, can ship with it without carrying Sayon's license or notices. [docs/licenses.md](docs/licenses.md) lists what comes from others and under which licenses.

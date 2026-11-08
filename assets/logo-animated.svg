@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="sayon-title">
+<title id="sayon-title">Sayon logo</title>
+<style>
+/* The two pieces slide together once, then the S makes a half turn every
+   eight seconds. It looks the same after a half turn, so each turn ends
+   where the next begins. */
+.mark, .first, .second { transform-box: view-box; transform-origin: 256px 256px; }
+.first { animation: first 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.second { animation: second 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.mark { animation: turn 8s cubic-bezier(0.65, 0, 0.35, 1) 1.2s infinite; }
+@keyframes first { from { transform: translate(56px, -56px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes second { from { transform: translate(-56px, 56px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes turn { 0%, 86% { transform: rotate(0deg); } 100% { transform: rotate(180deg); } }
+@media (prefers-reduced-motion: reduce) { .mark, .first, .second { animation: none; } }
+</style>
+<g fill="#DB5735" class="mark">
+<g class="first"><path d="M 410 64 C 430 64 441 84 431 101 L 404 145 C 391 167 372 174 351 159 L 329 143 C 320 136 311 132 298 132 H 220 C 179 132 149 159 149 193 C 149 213 160 230 180 240 L 297 299 C 314 308 320 328 310 343 C 300 358 283 362 267 354 L 136 288 C 99 270 78 237 78 197 C 78 124 143 64 220 64 Z"/></g>
+<g class="second"><path d="M 410 64 C 430 64 441 84 431 101 L 404 145 C 391 167 372 174 351 159 L 329 143 C 320 136 311 132 298 132 H 220 C 179 132 149 159 149 193 C 149 213 160 230 180 240 L 297 299 C 314 308 320 328 310 343 C 300 358 283 362 267 354 L 136 288 C 99 270 78 237 78 197 C 78 124 143 64 220 64 Z" transform="rotate(180 256 256)"/></g>
+</g>
+</svg>
