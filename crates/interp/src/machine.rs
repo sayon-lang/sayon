@@ -1169,6 +1169,17 @@ impl<'m> Machine<'m> {
                 Value::Int(length as i128)
             }
             Rvalue::ByteLength(value) => Value::Int(self.string(value).len() as i128),
+            // The interpreter's dictionaries close up as soon as an entry is
+            // removed, so each of their places holds an entry.
+            Rvalue::DictSlots(value) => {
+                let source = self.source(value);
+                let slots = self.with_source(&source, |v| match v {
+                    Value::Dict(dict) => dict.len(),
+                    other => panic!("places of {other:?}"),
+                });
+                Value::Int(slots as i128)
+            }
+            Rvalue::DictNext { index, .. } => Value::Int(self.int(index)),
             Rvalue::HasKey { dict, key } => {
                 let key = self.take(key);
                 let source = self.source(dict);

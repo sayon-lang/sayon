@@ -1,0 +1,55 @@
+# Removing many entries from dictionaries: what is left keeps its order,
+# loops and printing see only what is left, and keys added back go last.
+# Compiled programs leave the places of removed entries empty until enough
+# have been removed, so this goes past that point and back.
+
+function names(count: integer) -> Dict<string, integer>
+    table: Dict<string, integer> = []
+    for i in range(count)
+        table["key {i}"] = i * i
+    return table
+
+function main()
+    table = names(10)
+    for i in range(0, 10, 3)
+        remove(table, "key {i}")
+    print(table)
+    print(length(table), haskey(table, "key 3"), haskey(table, "key 4"))
+    for key, value in table
+        print(key, value)
+    # Added back, a key goes after the others.
+    table["key 3"] = -3
+    print(table)
+    # A copy, and a dictionary made with the same entries, are equal to it.
+    copy = clone(table)
+    print(copy == table)
+    same: Dict<string, integer> = []
+    for key, value in table
+        same[clone(key)] = value
+    print(same == table)
+    # Taking out all but a few, then putting them all back.
+    large = names(1000)
+    for i in range(1000)
+        if i % 100 != 7
+            remove(large, "key {i}")
+    print(length(large), large)
+    for i in range(1000)
+        if i % 100 != 7
+            large["key {i}"] = i
+    total = 0
+    for _key, value in large
+        total += value
+    print(length(large), total)
+    # Emptied one entry at a time, and filled again.
+    for i in range(1000)
+        remove(large, "key {i}")
+    print(length(large), large)
+    large["again"] = 1
+    print(large)
+    # The key found last, then removed, is not found again.
+    counts: Dict<integer, integer> = [1 = 10, 2 = 20, 3 = 30]
+    print(counts[2])
+    remove(counts, 2)
+    print(haskey(counts, 2), counts)
+    counts[2] = 22
+    print(counts[2], counts)

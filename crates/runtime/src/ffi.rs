@@ -159,6 +159,13 @@ pub struct SayonError {
 
 /// An insertion-ordered dictionary: keys and values in insertion order, and
 /// an open-addressing table of positions found by the keys' hashes.
+///
+/// Removing an entry leaves its place empty, with the hash `REMOVED`, so
+/// that the entries after it keep their positions and removing costs no
+/// more than adding. The empty places are closed up once they outnumber
+/// the entries, or when the table grows: both change the dictionary, so no
+/// position found before is still in use. A loop over the entries steps
+/// over the empty places (`sayon_dict_next`).
 pub struct SayonDict {
     ops: *const KeyOps,
     /// Key storage in 8-byte words, `key_stride` words per key.
@@ -166,6 +173,7 @@ pub struct SayonDict {
     key_stride: usize,
     hashes: Vec<u64>,
     /// Positions plus one, or 0 for a free slot; the length is a power of two.
+    /// A removed entry's slot keeps its position, so lookups go on past it.
     table: Vec<u32>,
     /// Value storage in 8-byte words, `stride` words per value.
     values: Vec<u64>,
@@ -174,7 +182,12 @@ pub struct SayonDict {
     /// Where the last key found is, or `usize::MAX`. A lookup tries it
     /// first, so that `haskey(d, k)` and then `d[k]` hash `k` once.
     last: std::cell::Cell<usize>,
+    /// How many places hold a removed entry.
+    removed: usize,
 }
+
+/// The hash kept in the place of a removed entry, which no key's hash is.
+const REMOVED: u64 = u64::MAX;
 
 /// Text being put together, as `sayon_builder_*` append to it. Compiled code
 /// keeps one on its own stack, the size of a string, from
@@ -946,8 +959,49 @@ fn mix(hash: i64) -> u64 {
 }
 
 impl SayonDict {
+    /// The entries the dictionary holds.
     fn len(&self) -> usize {
+        self.hashes.len() - self.removed
+    }
+
+    /// The places for entries, those of removed entries among them.
+    fn slots(&self) -> usize {
         self.hashes.len()
+    }
+
+    fn holds(&self, position: usize) -> bool {
+        self.hashes[position] != REMOVED
+    }
+
+    /// Moves the entries down over the places of removed ones, keeping
+    /// their order, and finds each a slot in the table again.
+    fn close_up(&mut self) {
+        let (key_stride, stride) = (self.key_stride, self.stride);
+        let mut kept = 0;
+        for position in 0..self.slots() {
+            if !self.holds(position) {
+                continue;
+            }
+            if kept != position {
+                // The entry's bytes move; it is not copied, so nothing is
+                // destroyed or kept twice.
+                self.keys
+                    .copy_within(position * key_stride..(position + 1) * key_stride, kept * key_stride);
+                self.values
+                    .copy_within(position * stride..(position + 1) * stride, kept * stride);
+                self.hashes[kept] = self.hashes[position];
+            }
+            kept += 1;
+        }
+        self.keys.truncate(kept * key_stride);
+        self.values.truncate(kept * stride);
+        self.hashes.truncate(kept);
+        self.removed = 0;
+        self.last.set(usize::MAX);
+        self.table.iter_mut().for_each(|slot| *slot = 0);
+        for position in 0..kept {
+            self.place(position);
+        }
     }
 
     fn key(&self, position: usize) -> *const u8 {
@@ -962,7 +1016,9 @@ impl SayonDict {
 
     unsafe fn hash_of(&self, key: *const u8) -> u64 {
         // SAFETY: the key is a valid value of the key type.
-        unsafe { mix(((*self.ops).hash)(key)) }
+        let hash = unsafe { mix(((*self.ops).hash)(key)) };
+        // `REMOVED` marks the place of a removed entry.
+        hash.min(REMOVED - 1)
     }
 
     unsafe fn find(&self, key: *const u8) -> Option<usize> {
@@ -974,7 +1030,8 @@ impl SayonDict {
             // The key found last, tried first. Keys are unique, so an equal
             // one is the entry asked for, wherever entries have moved since.
             let last = self.last.get();
-            if last < self.hashes.len() && ((*self.ops).eq)(self.key(last), key) {
+            if last < self.slots() && self.holds(last) && ((*self.ops).eq)(self.key(last), key)
+            {
                 return Some(last);
             }
             let hash = self.hash_of(key);
@@ -1006,13 +1063,20 @@ impl SayonDict {
 
     /// Appends a copy of the key with an empty value, returning its position.
     unsafe fn push(&mut self, key: *const u8, hash: u64) -> usize {
-        if (self.len() + 1) * 4 > self.table.len() * 3 {
-            self.table = vec![0; (self.table.len() * 2).max(8)];
-            for position in 0..self.len() {
-                self.place(position);
+        if (self.slots() + 1) * 4 > self.table.len() * 3 {
+            // Closing up the places of removed entries may leave room
+            // enough; otherwise the table doubles.
+            if self.removed > 0 {
+                self.close_up();
+            }
+            if (self.slots() + 1) * 4 > self.table.len() * 3 {
+                self.table = vec![0; (self.table.len() * 2).max(8)];
+                for position in 0..self.slots() {
+                    self.place(position);
+                }
             }
         }
-        let position = self.len();
+        let position = self.slots();
         self.keys.resize(self.keys.len() + self.key_stride, 0);
         // SAFETY: the new key storage is `key_stride` words.
         unsafe {
@@ -1059,6 +1123,7 @@ pub unsafe extern "C" fn sayon_dict_new(
         stride: value_size.div_ceil(8).max(1),
         value_size,
         last: std::cell::Cell::new(usize::MAX),
+        removed: 0,
     };
     // SAFETY: `out` is writable.
     allocated();
@@ -1069,6 +1134,28 @@ pub unsafe extern "C" fn sayon_dict_new(
 pub unsafe extern "C" fn sayon_dict_len(d: *const SayonDict) -> i64 {
     // SAFETY: valid dictionary.
     unsafe { (*d).len() as i64 }
+}
+
+/// The places for entries, those of removed entries among them: where a
+/// loop over the entries ends.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sayon_dict_slots(d: *const SayonDict) -> i64 {
+    // SAFETY: valid dictionary.
+    unsafe { (*d).slots() as i64 }
+}
+
+/// The first place at or after `position` that holds an entry, or the
+/// number of places when none does: a loop over the entries steps over the
+/// places of removed ones.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sayon_dict_next(d: *const SayonDict, position: i64) -> i64 {
+    // SAFETY: valid dictionary.
+    let dict = unsafe { &*d };
+    let mut position = position.max(0) as usize;
+    while position < dict.slots() && !dict.holds(position) {
+        position += 1;
+    }
+    position as i64
 }
 
 #[unsafe(no_mangle)]
@@ -1164,15 +1251,14 @@ pub unsafe extern "C" fn sayon_dict_remove(
         if let Some(drop_key) = (*dict.ops).drop {
             drop_key(dict.key(position) as *mut u8);
         }
-        let (key_stride, stride) = (dict.key_stride, dict.stride);
-        dict.keys
-            .drain(position * key_stride..(position + 1) * key_stride);
-        dict.values
-            .drain(position * stride..(position + 1) * stride);
-        dict.hashes.remove(position);
-        dict.table.iter_mut().for_each(|slot| *slot = 0);
-        for later in 0..dict.len() {
-            dict.place(later);
+        // The place stays, empty, so that no other entry moves.
+        dict.hashes[position] = REMOVED;
+        dict.removed += 1;
+        if dict.last.get() == position {
+            dict.last.set(usize::MAX);
+        }
+        if dict.removed > dict.len() {
+            dict.close_up();
         }
         true
     }
@@ -1190,7 +1276,10 @@ pub unsafe extern "C" fn sayon_dict_drop(slot: *mut *mut SayonDict, drop_value: 
         }
         let mut dict = Box::from_raw(d);
         released();
-        for position in 0..dict.len() {
+        for position in 0..dict.slots() {
+            if !dict.holds(position) {
+                continue;
+            }
             if let Some(drop_value) = drop_value {
                 drop_value(dict.value(position));
             }
@@ -1213,7 +1302,10 @@ pub unsafe extern "C" fn sayon_dict_clone(
         let source = &*src;
         sayon_dict_new(dst, source.ops, source.value_size as i64);
         let target = &mut **dst;
-        for position in 0..source.len() {
+        for position in 0..source.slots() {
+            if !source.holds(position) {
+                continue;
+            }
             let copied = target.push(source.key(position), source.hashes[position]);
             let from = source.values.as_ptr().add(position * source.stride) as *const u8;
             let to = target.value(copied);
@@ -1237,7 +1329,10 @@ pub unsafe extern "C" fn sayon_dict_eq(
         if x.len() != y.len() {
             return false;
         }
-        for position in 0..x.len() {
+        for position in 0..x.slots() {
+            if !x.holds(position) {
+                continue;
+            }
             let Some(other) = y.find(x.key(position)) else {
                 return false;
             };

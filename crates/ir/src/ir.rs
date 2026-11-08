@@ -347,6 +347,16 @@ pub enum Rvalue {
         ty: Type,
     },
     ByteLength(Operand),
+    /// The places for a dictionary's entries, those of removed entries
+    /// among them: where a loop over its entries ends.
+    DictSlots(Operand),
+    /// The first place of a dictionary at or after `index` that holds an
+    /// entry, or `DictSlots` when none does. A loop over the entries steps
+    /// over removed ones with it.
+    DictNext {
+        dict: Operand,
+        index: Operand,
+    },
     HasKey {
         dict: Operand,
         key: Operand,

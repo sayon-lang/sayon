@@ -1505,6 +1505,26 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 }
                 self.body.line(format!("store i64 {result}, ptr {dest}"));
             }
+            Rvalue::DictSlots(value) => {
+                let (pointer, _) = self.pointer(value);
+                let handle = self.body.tmp();
+                self.body.line(format!("{handle} = load ptr, ptr {pointer}"));
+                let result = self.body.tmp();
+                self.body
+                    .line(format!("{result} = call i64 @sayon_dict_slots(ptr {handle})"));
+                self.body.line(format!("store i64 {result}, ptr {dest}"));
+            }
+            Rvalue::DictNext { dict, index } => {
+                let (pointer, _) = self.pointer(dict);
+                let (_, position, _) = self.value(index);
+                let handle = self.body.tmp();
+                self.body.line(format!("{handle} = load ptr, ptr {pointer}"));
+                let result = self.body.tmp();
+                self.body.line(format!(
+                    "{result} = call i64 @sayon_dict_next(ptr {handle}, i64 {position})"
+                ));
+                self.body.line(format!("store i64 {result}, ptr {dest}"));
+            }
             Rvalue::ByteLength(value) => {
                 let (pointer, _) = self.pointer(value);
                 let (_, result) = self.string_parts(&pointer);
@@ -3794,6 +3814,8 @@ declare i32 @sayon_array_swap(ptr, ptr, i64, i64, i64, ptr)
 declare i32 @sayon_check_view(ptr, i64, i64, i64, ptr) cold
 declare i64 @sayon_str_hash(ptr)
 declare i64 @sayon_dict_len(ptr)
+declare i64 @sayon_dict_slots(ptr) memory(read) nounwind willreturn
+declare i64 @sayon_dict_next(ptr, i64) memory(read) nounwind willreturn
 declare i64 @sayon_dict_find(ptr, ptr)
 declare i32 @sayon_dict_find_checked(ptr, ptr, ptr, ptr, ptr)
 declare ptr @sayon_dict_key_ptr(ptr, i64)

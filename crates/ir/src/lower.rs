@@ -1246,6 +1246,17 @@ impl<'l, 'p> FnLower<'l, 'p> {
             // A string loop steps through the UTF-8 bytes; `index` is the
             // byte offset of the next character.
             self.assign(Place::slot(count), Rvalue::ByteLength(borrowed));
+        } else if let Type::Dict(..) = iterable_ty {
+            // A dictionary loop goes through the places of its entries,
+            // stepping over those of removed entries.
+            self.assign(
+                Place::slot(index),
+                Rvalue::DictNext {
+                    dict: borrowed.clone(),
+                    index: Operand::Copy(Place::slot(index)),
+                },
+            );
+            self.assign(Place::slot(count), Rvalue::DictSlots(borrowed));
         } else if iterable_ty != Type::Range {
             // Re-read each time; the loop's borrow keeps the length fixed.
             self.assign(

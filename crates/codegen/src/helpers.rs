@@ -912,11 +912,24 @@ impl<'m> Codegen<'m> {
                 body.line(format!("{handle} = load ptr, ptr %value"));
                 let length = body.tmp();
                 body.line(format!("{length} = call i64 @sayon_dict_len(ptr {handle})"));
+                // The place of the next entry to show, stepping over the
+                // places of removed entries.
+                let cursor = body.alloca("i64");
+                body.line(format!("store i64 0, ptr {cursor}"));
                 body.counted_loop(&length, |b, index| {
                     separator_unless_first(b, index, &separator);
+                    let from = b.tmp();
+                    b.line(format!("{from} = load i64, ptr {cursor}"));
+                    let place = b.tmp();
+                    b.line(format!(
+                        "{place} = call i64 @sayon_dict_next(ptr {handle}, i64 {from})"
+                    ));
+                    let after = b.tmp();
+                    b.line(format!("{after} = add i64 {place}, 1"));
+                    b.line(format!("store i64 {after}, ptr {cursor}"));
                     let key = b.tmp();
                     b.line(format!(
-                        "{key} = call ptr @sayon_dict_key_ptr(ptr {handle}, i64 {index})"
+                        "{key} = call ptr @sayon_dict_key_ptr(ptr {handle}, i64 {place})"
                     ));
                     b.line(format!(
                         "call void {key_display}(ptr %builder, ptr {key}, i1 true)"
@@ -926,7 +939,7 @@ impl<'m> Codegen<'m> {
                     ));
                     let entry = b.tmp();
                     b.line(format!(
-                        "{entry} = call ptr @sayon_dict_value_ptr(ptr {handle}, i64 {index})"
+                        "{entry} = call ptr @sayon_dict_value_ptr(ptr {handle}, i64 {place})"
                     ));
                     b.line(format!(
                         "call void {display}(ptr %builder, ptr {entry}, i1 true)"
