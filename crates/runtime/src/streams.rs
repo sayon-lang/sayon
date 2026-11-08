@@ -78,7 +78,32 @@ struct Entry {
 #[derive(Default)]
 struct Table {
     last: i64,
-    entries: HashMap<i64, Entry>,
+    entries: HashMap<i64, Entry, std::hash::BuildHasherDefault<NumberHasher>>,
+}
+
+/// Hashes a stream's number. The numbers are the runtime's own, counted up
+/// from 1, so no one can choose them to make the table slow, and a fixed
+/// hash keeps the system's random numbers, which Rust's usual hasher asks
+/// for as the table is made, out of every program: each one makes the
+/// table as it ends, to flush what it wrote.
+#[derive(Default)]
+struct NumberHasher(u64);
+
+impl std::hash::Hasher for NumberHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 = (self.0.rotate_left(8) ^ u64::from(byte)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        }
+    }
+
+    /// Spreads consecutive numbers over all of the hash's bits.
+    fn write_i64(&mut self, value: i64) {
+        self.0 = (value as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    }
 }
 
 static STREAMS: LazyLock<Mutex<Table>> = LazyLock::new(Mutex::default);
@@ -539,6 +564,7 @@ fn timeout(nanoseconds: i64) -> Result<Option<std::time::Duration>, HostError> {
 pub fn connect(host: &str, port_number: i64, timeout_ns: i64) -> Result<i64, HostError> {
     let port = port(port_number)?;
     let timeout = timeout(timeout_ns)?;
+    let _ = SEND_RESTS.set(send_rests);
     let connecting = Connecting::start(host, port, timeout);
     Ok(insert(
         Handle::Socket(Socket::Connecting(connecting)),
@@ -580,6 +606,7 @@ pub fn listen(host: &str, port_number: i64) -> Result<i64, HostError> {
 
 /// The next connection made to a listener, as a stream of its own.
 pub fn accept(id: i64) -> Result<i64, HostError> {
+    let _ = SEND_RESTS.set(send_rests);
     let connection = socket(id, |socket, name| match socket {
         Socket::Listener(listener) => listener.accept(),
         _ => Err(("IOError", format!("{name} is not a listener"))),
@@ -721,16 +748,32 @@ pub fn release(id: i64) {
 
 /// Writes what every open stream still buffers, when the program ends.
 pub fn flush_all() {
-    for entry in table().entries.values_mut() {
+    let mut table = table();
+    for entry in table.entries.values_mut() {
         match &mut entry.handle {
             Handle::Writer(writer) => {
                 let _ = writer.flush();
             }
-            Handle::Socket(Socket::Connection(connection)) => connection.send_rest(),
             Handle::Output => {
                 let _ = crate::console::stdout().flush();
             }
             _ => {}
+        }
+    }
+    if let Some(send) = SEND_RESTS.get() {
+        send(&mut table);
+    }
+}
+
+/// Sends what the connections still hold, for `flush_all`. It is set when
+/// the first connection opens, so that a program that never opens one
+/// doesn't carry the code of sockets.
+static SEND_RESTS: std::sync::OnceLock<fn(&mut Table)> = std::sync::OnceLock::new();
+
+fn send_rests(table: &mut Table) {
+    for entry in table.entries.values_mut() {
+        if let Handle::Socket(Socket::Connection(connection)) = &mut entry.handle {
+            connection.send_rest();
         }
     }
 }

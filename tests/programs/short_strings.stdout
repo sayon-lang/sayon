@@ -1,0 +1,18 @@
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+012345678901234567890123456789 30 30
+22 22 true true bab [97, 98]
+23 23 true true bab [97, 98, 99]
+24 24 true true bab [97, 98, 97, 98]
+true true true
+éöü 3 6
+["a" = 3, "bb" = 2, "ccc" = 1, "dddddddddddddddddddddddddd" = 1]
+["a much longer string than fits inside", "a much longer string than fits inside!", "apple", "fig", "pear", "zz"]
+hi Ada! a longer greeting for Ada, which goes past twenty-three bytes
+p0,p1,p2,p3,p4,p5,p6,p7,p8,p9,p10,p11 37 12
+abcabcabcabc 12
+h 1
+é 2
+l 1
+l 1
+o 1
+[104, 111] [114, 101, 101, 32]

@@ -3,16 +3,16 @@
 //! from what the sandbox does not give it (`sayon_target::SANDBOX`); this
 //! keeps its time and its memory. A watchdog thread stops it after
 //! [`PROCESSOR_SECONDS`] of the processor or [`WALL_SECONDS`] in all, and
-//! the allocator, which counts what is allocated, past [`MEMORY`]; the
-//! interpreter stops it past [`OUTPUT`] written. The checking counts, too.
+//! Sayon's allocator, which counts what is allocated in the sandbox, past
+//! [`MEMORY`]; the interpreter stops it past [`OUTPUT`] written. The
+//! checking counts, too.
 //!
 //! The operating system backs these, a little past them, in case a mistake
 //! here lets a program through: on Windows a job object, which also starts
 //! no other process; on Linux a limit on processor time.
 
 use crate::status;
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 pub const PROCESSOR_SECONDS: u64 = 5;
@@ -20,82 +20,19 @@ pub const WALL_SECONDS: u64 = 10;
 pub const MEMORY: usize = 256 << 20;
 pub const OUTPUT: usize = 64 << 10;
 
-/// What is allocated now, and how much may be: everything but in the
-/// sandbox.
-static ALLOCATED: AtomicUsize = AtomicUsize::new(0);
-static LIMIT: AtomicUsize = AtomicUsize::new(usize::MAX);
-/// Set once the program is being stopped, so that what stopping it
-/// allocates is no longer counted.
+/// Set once the program is being stopped, so that only one thread stops it.
 static STOPPING: AtomicBool = AtomicBool::new(false);
 
-/// The program's allocator: the system's, counting what it gives.
-pub struct Counting;
-
-impl Counting {
-    /// Stops the program when `more` bytes would take it past the limit.
-    fn admit(more: usize) {
-        if !STOPPING.load(Ordering::Relaxed)
-            && ALLOCATED.load(Ordering::Relaxed).saturating_add(more)
-                > LIMIT.load(Ordering::Relaxed)
-        {
-            stop(&format!("it used more than {} MiB of memory", MEMORY >> 20));
-        }
-    }
-}
-
-// SAFETY: each call passes its arguments on to the system's allocator, as
-// they came, and only counts the sizes.
-unsafe impl GlobalAlloc for Counting {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        Counting::admit(layout.size());
-        // SAFETY: the caller's layout, unchanged.
-        let pointer = unsafe { System.alloc(layout) };
-        if !pointer.is_null() {
-            ALLOCATED.fetch_add(layout.size(), Ordering::Relaxed);
-        }
-        pointer
-    }
-
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        Counting::admit(layout.size());
-        // SAFETY: the caller's layout, unchanged.
-        let pointer = unsafe { System.alloc_zeroed(layout) };
-        if !pointer.is_null() {
-            ALLOCATED.fetch_add(layout.size(), Ordering::Relaxed);
-        }
-        pointer
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        // SAFETY: a block this allocator gave, with its layout.
-        unsafe { System.dealloc(pointer, layout) };
-        ALLOCATED.fetch_sub(layout.size(), Ordering::Relaxed);
-    }
-
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
-        if size > layout.size() {
-            Counting::admit(size - layout.size());
-        }
-        // SAFETY: a block this allocator gave, with its layout.
-        let moved = unsafe { System.realloc(pointer, layout, size) };
-        if !moved.is_null() {
-            if size > layout.size() {
-                ALLOCATED.fetch_add(size - layout.size(), Ordering::Relaxed);
-            } else {
-                ALLOCATED.fetch_sub(layout.size() - size, Ordering::Relaxed);
-            }
-        }
-        moved
-    }
+/// What the allocator calls when the program would hold more than
+/// [`MEMORY`].
+fn out_of_memory() -> ! {
+    stop(&format!("it used more than {} MiB of memory", MEMORY >> 20))
 }
 
 /// Puts this process in the sandbox's limits, from now on: what checks and
 /// runs the program in it counts.
 pub fn enter() {
-    LIMIT.store(
-        ALLOCATED.load(Ordering::Relaxed).saturating_add(MEMORY),
-        Ordering::Relaxed,
-    );
+    sayon_runtime::alloc::limit(MEMORY, out_of_memory);
     os::back_up();
     let started = Instant::now();
     let watching = std::thread::Builder::new()
@@ -127,6 +64,8 @@ pub fn stopped(reason: &str) -> u8 {
 
 /// Stops the program at once, from wherever it is, saying why.
 pub fn stop(reason: &str) -> ! {
+    // What stopping the program allocates is not counted against it.
+    sayon_runtime::alloc::unlimit();
     if STOPPING.swap(true, Ordering::SeqCst) {
         // Another thread is stopping it already.
         loop {
@@ -334,14 +273,5 @@ mod tests {
                 os::processor_time()
             );
         }
-    }
-
-    #[test]
-    fn what_is_allocated_is_counted() {
-        // Other tests allocate and free on their own threads meanwhile, so
-        // only what this one holds is certain: its block, while it lives.
-        let block = std::hint::black_box(vec![0u8; 1 << 20]);
-        assert!(ALLOCATED.load(Ordering::Relaxed) >= 1 << 20);
-        drop(block);
     }
 }

@@ -1,0 +1,32 @@
+# Splitting, joining, and searching text, which compiled programs do with
+# functions of their own, and dictionary lookups after entries move.
+
+strings = import("standard/strings.sayon")
+
+function main()
+    text = "item 1: 7\nitem 2: 3\n\nitem é: 77"
+    pieces = strings.split(text, "\n")
+    print(pieces, length(pieces))
+    print(strings.split("", ","), strings.split("a,b,", ","), strings.split("é,ö", ","))
+    print(strings.join(pieces, " | "))
+    print(strings.join([], "-"), strings.join(["one"], "-"), strings.join(["", ""], "+"))
+    for word in ["7", "é", "item", "zz", ""]
+        print(word, strings.contains(text, word), strings.find(text, word), strings.starts_with(text, word), strings.ends_with(text, word))
+    try
+        strings.split(text, "")
+    catch problem
+        print(problem.code, problem.message)
+    # A dictionary remembers its last lookup; removing entries moves the
+    # later ones, and the answers must stay right.
+    counts: Dict<string, integer> = []
+    for word in ["a", "b", "c", "d"]
+        counts[word] = length(word)
+    if haskey(counts, "c")
+        counts["c"] += 10
+    print(counts)
+    remove(counts, "a")
+    print(haskey(counts, "c"), counts["c"], haskey(counts, "a"))
+    remove(counts, "c")
+    print(haskey(counts, "c"), haskey(counts, "d"), counts["d"])
+    counts["c"] = 3
+    print(counts, counts["c"])

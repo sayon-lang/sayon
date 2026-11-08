@@ -43,6 +43,26 @@ pub fn waits(op: &Op) -> bool {
     }
 }
 
+/// Whether the program can have tasks for `sayon_tasks_finish` to finish
+/// as it ends: it starts some, or waits in a way that has the scheduler
+/// wait with it. A program that does neither never makes the scheduler,
+/// and leaving the call out leaves the scheduler, and its sockets, out of
+/// the executable.
+pub fn uses_tasks(module: &Module) -> bool {
+    module
+        .functions
+        .iter()
+        .flat_map(|f| &f.blocks)
+        .any(|block| match &block.term {
+            Terminator::Op { op, .. } => match op {
+                Op::Spawn { .. } | Op::SpawnParallel { .. } => true,
+                Op::Host { function, .. } => function.may_wait() || function.suspends(),
+                other => waits(other),
+            },
+            _ => false,
+        })
+}
+
 /// Whether the program's tasks need coroutines: on a target without
 /// fibers, when the program waits anywhere.
 pub fn needed(module: &Module) -> bool {

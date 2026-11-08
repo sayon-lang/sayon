@@ -59,12 +59,10 @@ function reverse(update items)
 # back in it.
 private constant SHORT = 16
 
-# Copies of the first half of the elements: room for the sorts to work in.
+# Copies of the first half of the elements: room for the sorts to work in,
+# made at its size at once.
 private function first_half(items)
-    spare = []
-    for position in range(length(items) / 2)
-        push(spare, clone(items[position]))
-    return spare
+    return clone(view(items, 0, length(items) / 2))
 
 private function sort_part(update items, update spare, start: integer, end: integer)
     if end - start <= SHORT

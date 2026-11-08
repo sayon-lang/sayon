@@ -1,7 +1,6 @@
 //! Text rules shared by the interpreter and compiled programs, so both
 //! execution modes print and parse identically.
 
-use std::fmt::Write as _;
 
 /// The longest start of `bytes`, up to `limit` bytes, that ends between
 /// two UTF-8 characters: a character cut by the limit, or by the end of
@@ -93,25 +92,23 @@ pub fn format_f32(value: f32) -> String {
 
 /// Writes `text` as a Sayon string literal, as strings appear when displayed
 /// inside a collection.
-pub fn quote(text: &str, out: &mut String) {
-    out.push('"');
+pub fn quote(text: &str, out: &mut impl std::fmt::Write) {
+    let _ = out.write_char('"');
     for c in text.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\0' => out.push_str("\\0"),
-            '{' => out.push_str("{{"),
-            '}' => out.push_str("}}"),
-            c if c.is_control() => {
-                let _ = write!(out, "\\u{{{:X}}}", c as u32);
-            }
-            c => out.push(c),
-        }
+        let _ = match c {
+            '"' => out.write_str("\\\""),
+            '\\' => out.write_str("\\\\"),
+            '\n' => out.write_str("\\n"),
+            '\r' => out.write_str("\\r"),
+            '\t' => out.write_str("\\t"),
+            '\0' => out.write_str("\\0"),
+            '{' => out.write_str("{{"),
+            '}' => out.write_str("}}"),
+            c if c.is_control() => write!(out, "\\u{{{:X}}}", c as u32),
+            c => out.write_char(c),
+        };
     }
-    out.push('"');
+    let _ = out.write_char('"');
 }
 
 /// A number parsed by `tonumber`.

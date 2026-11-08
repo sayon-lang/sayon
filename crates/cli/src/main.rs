@@ -11,10 +11,6 @@ mod sandbox;
 use std::collections::HashMap;
 use std::process::ExitCode;
 
-/// The system's allocator, counting what it gives, for the sandbox's limit.
-#[global_allocator]
-static ALLOCATOR: sandbox::Counting = sandbox::Counting;
-
 /// Exit statuses. A program's own `main` result is passed through unchanged.
 pub mod status {
     pub const SUCCESS: u8 = 0;

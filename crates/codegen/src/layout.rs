@@ -6,7 +6,7 @@
 //! | float, float32 | `double`, `float` | 8, 4 |
 //! | boolean | `i1` | 1 |
 //! | nothing | `i8` (always 0) | 1 |
-//! | string | `%sayon.str = { ptr, i64 len, i64 cap }` | 24 |
+//! | string | `%sayon.str = { ptr, i64 len, i64 cap }`, or on 64-bit targets up to 23 bytes of text inline, with the length in the last byte (see `sayon_runtime::ffi::SayonStr`) | 24 |
 //! | Array<T> | `%sayon.array = { ptr, i64 len, i64 cap }` | 24 |
 //! | Range | `%sayon.range = { i64, i64, i64 }` | 24 |
 //! | Dict, Error | `ptr` to a runtime object | P |
@@ -125,6 +125,48 @@ impl Layouts {
 
     pub fn is_enum(&self, named: &NamedType) -> bool {
         self.types[named.id.0 as usize].is_enum()
+    }
+
+    /// Whether a value of `ty` holds a cell in its own bytes, where it can
+    /// change while the value is borrowed read-only. The elements of arrays
+    /// and dictionaries, and what handles refer to, lie elsewhere.
+    pub fn holds_cell(&self, ty: &Type) -> bool {
+        self.holds_cell_inside(ty, &mut Vec::new())
+    }
+
+    fn holds_cell_inside(&self, ty: &Type, open: &mut Vec<Type>) -> bool {
+        match ty {
+            Type::Wrapper(Wrapper::Cell, _) => true,
+            Type::Union(members) => members.iter().any(|m| self.holds_cell_inside(m, open)),
+            Type::Named(named) => {
+                let definition = &self.types[named.id.0 as usize];
+                if definition.foreign {
+                    // C may change it.
+                    return true;
+                }
+                // A type met again inside itself lies behind a pointer, and
+                // its own bytes are being looked through already.
+                if open.contains(ty) {
+                    return false;
+                }
+                open.push(ty.clone());
+                let holds = if definition.is_enum() {
+                    (0..definition.variants().len() as u32).any(|variant| {
+                        variant_fields(&self.types, named, variant)
+                            .iter()
+                            .any(|field| self.holds_cell_inside(field, open))
+                    })
+                } else {
+                    structure_fields(&self.types, named)
+                        .iter()
+                        .any(|field| self.holds_cell_inside(field, open))
+                };
+                open.pop();
+                holds
+            }
+            Type::Param(_) | Type::Var(_) | Type::Unknown => true,
+            _ => false,
+        }
     }
 
     /// Whether a structure has a finally function, and so a byte after its

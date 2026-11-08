@@ -1,0 +1,57 @@
+# Parameters that borrow their arguments: what a function reads through
+# one stays as it was while the function writes elsewhere, and a cell,
+# which changes even through a read-only borrow, is seen to change through
+# every borrow of it.
+
+type Counter = [name: string, hits: Cell<integer>]
+
+# The same counter, borrowed twice: setting its cell through one borrow
+# shows through the other.
+function bump(first: Counter, second: Counter) -> integer
+    first.hits.set(first.hits.get() + 1)
+    return second.hits.get()
+
+function bump_union(first: Cell<integer> or string, second: Cell<integer> or string) -> integer
+    if typeof(first) != "string"
+        first.set(first.get() + 10)
+    if typeof(second) != "string"
+        return second.get()
+    return -1
+
+# Reads one array while writing another, element by element.
+function scaled(values: Array<integer>, factor: integer, update out: Array<integer>)
+    n = length(values)
+    for i in range(n)
+        total = 0
+        for j in range(n)
+            total += values[j] * factor
+        out[i] = total + i
+
+function grow(items: Array<integer>) -> Array<integer>
+    result = clone(items)
+    push(result, length(items) * 10)
+    return result
+
+function longer(a: string, b: string) -> string
+    if bytelength(a) >= bytelength(b)
+        return a + "!"
+    return b + "?"
+
+function main()
+    counter = Counter(name = "visits", hits = cell(0))
+    print(bump(counter, counter), bump(counter, counter), counter.hits.get())
+    shared_cell: Cell<integer> or string = cell(1)
+    print(bump_union(shared_cell, shared_cell))
+    values = [1, 2, 3, 4]
+    out = [0, 0, 0, 0]
+    scaled(values, 2, out)
+    print(out)
+    items = [1]
+    items = grow(items)
+    items = grow(items)
+    items = grow(items)
+    print(items)
+    word = "short"
+    word = longer(word, word)
+    word = longer(word, "a much longer string than fits inside")
+    print(word)

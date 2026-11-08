@@ -541,9 +541,15 @@ impl<'m> Codegen<'m> {
         body.start("finished");
         let release_globals = self.release_globals();
         // Tasks still running are cancelled and cleaned up first; a task's
-        // `os.exit`, or one that failed unjoined, decides the status.
+        // `os.exit`, or one that failed unjoined, decides the status. A
+        // program that can have no tasks skips this (see `uses_tasks`).
+        let has_tasks = crate::coroutines::uses_tasks(module);
         let tasks = body.tmp();
-        body.line(format!("{tasks} = call i32 @sayon_tasks_finish(i1 false)"));
+        if has_tasks {
+            body.line(format!("{tasks} = call i32 @sayon_tasks_finish(i1 false)"));
+        } else {
+            body.line(format!("{tasks} = add i32 -1, 0"));
+        }
         let decided = body.tmp();
         body.line(format!("{decided} = icmp sge i32 {tasks}, 0"));
         body.line(format!(
@@ -580,7 +586,11 @@ impl<'m> Codegen<'m> {
         // The tasks stop first, so their cleanup comes before the report;
         // a task's `os.exit` replaces it.
         let tasks = body.tmp();
-        body.line(format!("{tasks} = call i32 @sayon_tasks_finish(i1 true)"));
+        if has_tasks {
+            body.line(format!("{tasks} = call i32 @sayon_tasks_finish(i1 true)"));
+        } else {
+            body.line(format!("{tasks} = add i32 -1, 0"));
+        }
         let exiting = body.tmp();
         body.line(format!("{exiting} = icmp sge i32 {tasks}, 0"));
         body.line(format!("br i1 {exiting}, label %task_exit, label %report"));
@@ -704,6 +714,18 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 // environment and a coroutine, which outlives its first
                 // call, are left as they are.
                 SlotKind::Ref { mutable: true } if !self.coroutine && !environment => {
+                    "ptr noalias".to_string()
+                }
+                // A read-only parameter borrows its place shared: nothing
+                // can change it while the call lasts, so LLVM may keep what
+                // it read from it too, such as an array's length across a
+                // store into another array. A cell is the exception, since
+                // it changes even through a read-only path.
+                SlotKind::Ref { mutable: false }
+                    if !self.coroutine
+                        && !environment
+                        && !self.cg.layouts.holds_cell(&definition.ty) =>
+                {
                     "ptr noalias".to_string()
                 }
                 SlotKind::Ref { .. } => "ptr".to_string(),
@@ -1485,12 +1507,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             }
             Rvalue::ByteLength(value) => {
                 let (pointer, _) = self.pointer(value);
-                let field = self.body.tmp();
-                self.body.line(format!(
-                    "{field} = getelementptr inbounds %sayon.str, ptr {pointer}, i32 0, i32 1"
-                ));
-                let result = self.body.tmp();
-                self.body.line(format!("{result} = load i64, ptr {field}"));
+                let (_, result) = self.string_parts(&pointer);
                 self.body.line(format!("store i64 {result}, ptr {dest}"));
             }
             Rvalue::HasKey { dict, key } => {
@@ -2324,17 +2341,23 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             Op::MakeView { base, start, end } => {
                 let (pointer, ty) = self.place_ptr(base);
                 // A string starts like an array of its UTF-8 bytes.
-                let element = match ty {
-                    Type::Array(element) | Type::View(element, _) => *element,
+                let element = match &ty {
+                    Type::Array(element) | Type::View(element, _) => (**element).clone(),
                     Type::String => Type::Int(IntType::U8),
                     other => panic!("view of {other}"),
                 };
-                let data = self.body.tmp();
-                self.body.line(format!("{data} = load ptr, ptr {pointer}"));
-                let length_field = self.offset_pointer(&pointer, 8);
-                let length = self.body.tmp();
-                self.body
-                    .line(format!("{length} = load i64, ptr {length_field}"));
+                // A string's text can lie inside it (see `string_parts`).
+                let (data, length) = if ty == Type::String {
+                    self.string_parts(&pointer)
+                } else {
+                    let data = self.body.tmp();
+                    self.body.line(format!("{data} = load ptr, ptr {pointer}"));
+                    let length_field = self.offset_pointer(&pointer, 8);
+                    let length = self.body.tmp();
+                    self.body
+                        .line(format!("{length} = load i64, ptr {length_field}"));
+                    (data, length)
+                };
                 let start = match start {
                     Some(start) => self.value(start).1,
                     None => "0".to_string(),
@@ -2788,6 +2811,9 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 tags,
             } => {
                 if let Some(status) = self.math(*function, args, dest) {
+                    return Some(status);
+                }
+                if let Some(status) = self.text(*function, args, dest, span) {
                     return Some(status);
                 }
                 let count = args.len().max(1);
@@ -3368,6 +3394,80 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         }
     }
 
+    /// A primitive of `standard/strings` that the runtime has a function of
+    /// its own for, which reads and writes Sayon's strings and arrays where
+    /// they are instead of gathering them into values first. The searches
+    /// only read, which LLVM is told, so it can drop a repeated one. `None`
+    /// for other primitives.
+    fn text(
+        &mut self,
+        function: sayon_runtime::host::Host,
+        args: &[Operand],
+        dest: Option<&Place>,
+        span: Span,
+    ) -> Option<String> {
+        use sayon_runtime::host::Host;
+        let search = match function {
+            Host::Contains => Some(("sayon_text_contains", "zeroext i1", "i1")),
+            Host::StartsWith => Some(("sayon_text_starts_with", "zeroext i1", "i1")),
+            Host::EndsWith => Some(("sayon_text_ends_with", "zeroext i1", "i1")),
+            Host::Find => Some(("sayon_text_find", "i64", "i64")),
+            _ => None,
+        };
+        if let Some((callee, returns, stored)) = search {
+            self.cg.intrinsic(format!(
+                "declare {returns} @{callee}(ptr, ptr) memory(read) nounwind willreturn"
+            ));
+            let (text, _) = self.pointer(&args[0]);
+            let (part, _) = self.pointer(&args[1]);
+            let result = self.body.tmp();
+            self.body.line(format!(
+                "{result} = call {returns} @{callee}(ptr {text}, ptr {part})"
+            ));
+            if let Some(place) = dest {
+                let (target, _) = self.place_ptr(place);
+                self.body
+                    .line(format!("store {stored} {result}, ptr {target}"));
+            }
+            return Some("0".to_string());
+        }
+        match function {
+            Host::Split => {
+                self.cg.intrinsic(
+                    "declare i32 @sayon_text_split(ptr, ptr, ptr, ptr, ptr)".to_string(),
+                );
+                let (text, _) = self.pointer(&args[0]);
+                let (separator, _) = self.pointer(&args[1]);
+                let out = match dest {
+                    Some(place) => self.place_ptr(place).0,
+                    None => self.body.alloca("%sayon.array"),
+                };
+                let err = self.error_slot();
+                let location = self.cg.location(span);
+                let status = self.body.tmp();
+                self.body.line(format!(
+                    "{status} = call i32 @sayon_text_split(ptr {err}, ptr {text}, ptr {separator}, ptr {out}, ptr {location})"
+                ));
+                Some(status)
+            }
+            Host::Join => {
+                self.cg
+                    .intrinsic("declare void @sayon_text_join(ptr, ptr, ptr)".to_string());
+                let (parts, _) = self.pointer(&args[0]);
+                let (separator, _) = self.pointer(&args[1]);
+                let out = match dest {
+                    Some(place) => self.place_ptr(place).0,
+                    None => self.body.alloca("%sayon.str"),
+                };
+                self.body.line(format!(
+                    "call void @sayon_text_join(ptr {parts}, ptr {separator}, ptr {out})"
+                ));
+                Some("0".to_string())
+            }
+            _ => None,
+        }
+    }
+
     /// A primitive of `standard/math`, called without the host call's
     /// dispatch. Square roots and rounding toward a whole number are LLVM's
     /// own operations; the others are the runtime's functions, which LLVM
@@ -3428,14 +3528,50 @@ impl<'c, 'm> FnEmit<'c, 'm> {
     }
 
     /// Starts a builder in a slot of the function's own, with room for
-    /// `guess` bytes, and gives its address. The runtime's builder is three
-    /// words the size of an address.
+    /// `guess` bytes, and gives its address. The runtime's builder is a
+    /// string.
     fn start_builder(&mut self, guess: usize) -> String {
-        let builder = self.body.alloca("[3 x ptr]");
+        let builder = self.body.alloca("%sayon.str");
         self.body.line(format!(
             "call void @sayon_builder_start(ptr {builder}, i64 {guess})"
         ));
         builder
+    }
+
+    /// Where the text of the string at `pointer` is, and how many bytes it
+    /// has. On a 64-bit target text of up to 23 bytes lies inside the string
+    /// itself, its length in the string's last byte with the top bit set (see
+    /// the runtime's `SayonStr`); other text, and all text on WebAssembly,
+    /// lies at the string's address, with its length beside it.
+    fn string_parts(&mut self, pointer: &str) -> (String, String) {
+        let data = self.body.tmp();
+        self.body.line(format!("{data} = load ptr, ptr {pointer}"));
+        let length_field = self.offset_pointer(pointer, 8);
+        let length = self.body.tmp();
+        self.body
+            .line(format!("{length} = load i64, ptr {length_field}"));
+        if self.cg.layouts.pointer_size() != 8 {
+            return (data, length);
+        }
+        let tag_field = self.offset_pointer(pointer, 23);
+        let tag = self.body.tmp();
+        self.body.line(format!("{tag} = load i8, ptr {tag_field}"));
+        let inside = self.body.tmp();
+        self.body.line(format!("{inside} = icmp slt i8 {tag}, 0"));
+        let short = self.body.tmp();
+        self.body.line(format!("{short} = and i8 {tag}, 127"));
+        let short_length = self.body.tmp();
+        self.body
+            .line(format!("{short_length} = zext i8 {short} to i64"));
+        let where_text = self.body.tmp();
+        self.body.line(format!(
+            "{where_text} = select i1 {inside}, ptr {pointer}, ptr {data}"
+        ));
+        let how_long = self.body.tmp();
+        self.body.line(format!(
+            "{how_long} = select i1 {inside}, i64 {short_length}, i64 {length}"
+        ));
+        (where_text, how_long)
     }
 
     /// The array's length, loaded from its header at `pointer`.

@@ -14,6 +14,7 @@ macro_rules! report {
     }};
 }
 
+pub mod alloc;
 #[cfg(target_os = "android")]
 pub mod android;
 pub mod callbacks;
@@ -44,3 +45,9 @@ pub mod tls;
 pub mod unicode_tables;
 pub mod window;
 pub mod zones;
+
+/// Everything linked with the runtime gets its memory from Sayon's
+/// allocator: compiled programs, and the `sayon` tool, whose interpreter
+/// runs programs too.
+#[global_allocator]
+static ALLOCATOR: alloc::Allocator = alloc::Allocator;

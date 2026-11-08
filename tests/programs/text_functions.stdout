@@ -1,0 +1,14 @@
+["item 1: 7", "item 2: 3", "", "item é: 77"] 4
+[""] ["a", "b", ""] ["é", "ö"]
+item 1: 7 | item 2: 3 |  | item é: 77
+ one +
+7 true 8 false true
+é true 26 false false
+item true 0 true false
+zz false nothing false false
+ true 0 true true
+ValueError the separator cannot be empty
+["a" = 1, "b" = 1, "c" = 11, "d" = 1]
+true 11 false
+false true 1
+["b" = 1, "d" = 1, "c" = 3] 3
