@@ -62,20 +62,42 @@ Features planned for later are refused with a message that says when they're com
 
 ## Speed
 
-Programs compile to native code through LLVM, with the overflow and bounds checks left in. [benchmarks](benchmarks) holds eight small programs written in Sayon, C++, and Rust, doing the same work in each, and a runner that builds and measures all of them. Processor time on an Intel Core i3-7100U laptop with Windows 10, median of five runs:
+Programs compile to native code through LLVM, with the overflow and bounds checks left in. [benchmarks](benchmarks) holds eight small programs written in Sayon, C++, and Rust, doing the same work in each, and a runner that builds and measures all of them. Each program has its own README with a full table. Here's processor time and peak memory on an Intel Core i3-7100U laptop with Windows 10, median of seven runs:
 
-| Benchmark | C++ | Rust | Sayon |
-|---|---:|---:|---:|
-| binary_trees | 1.53 s | 1.58 s | 1.11 s |
-| mandelbrot | 0.89 s | 0.69 s | 0.73 s |
-| fannkuch | 0.48 s | 0.52 s | 0.66 s |
-| nbody | 0.42 s | 0.22 s | 0.45 s |
-| spectral_norm | 0.36 s | 0.34 s | 0.56 s |
-| text | 0.83 s | 0.98 s | 1.20 s |
-| sort | 0.56 s | 0.28 s | 0.86 s |
-| word_count | 0.20 s | 0.58 s | 0.66 s |
+| Benchmark | C++ | Rust | Sayon | Memory: C++, Rust, Sayon |
+|---|---:|---:|---:|---:|
+| [binary_trees](benchmarks/binary_trees/README.md) | 0.80 s | 0.81 s | 0.27 s | 6.7, 7.0, 6.2 MB |
+| [text](benchmarks/text/README.md) | 0.56 s | 0.66 s | 0.33 s | 172.9, 143.4, 67.8 MB |
+| [fannkuch](benchmarks/fannkuch/README.md) | 0.28 s | 0.30 s | 0.30 s | 3.1, 3.4, 3.2 MB |
+| [mandelbrot](benchmarks/mandelbrot/README.md) | 0.62 s | 0.44 s | 0.50 s | 3.1, 3.3, 3.2 MB |
+| [spectral_norm](benchmarks/spectral_norm/README.md) | 0.22 s | 0.17 s | 0.27 s | 3.1, 3.4, 3.3 MB |
+| [nbody](benchmarks/nbody/README.md) | 0.23 s | 0.11 s | 0.25 s | 3.1, 3.4, 3.2 MB |
+| [word_count](benchmarks/word_count/README.md) | 0.12 s | 0.42 s | 0.31 s | 3.1, 3.5, 3.3 MB |
+| [sort](benchmarks/sort/README.md) | 0.41 s | 0.20 s | 0.58 s | 40.2, 38.2, 38.1 MB |
 
-Sayon is the fastest of the three at building and dropping trees, ahead of C++ on mandelbrot, and level with C++ on nbody, where Rust is twice as fast as both. It's slower on the rest, partly because of the checks C++ and Rust leave out of release builds, and on word_count because C++ keeps short strings inside the string itself. Memory use is close to theirs: about half a megabyte more for the small programs, a few megabytes more on sort, and less than C++ on text. The [benchmarks README](benchmarks/README.md) explains each program and how to run them yourself, and [results.md](benchmarks/results.md) has the memory numbers too.
+Sayon is the fastest of the three on binary_trees and text, by a wide margin, and holds the least memory on both. On binary_trees that's mostly its allocator, since the C++ and Rust versions get their memory from the system's. On text it's short strings: Sayon keeps up to 23 bytes inside the string itself, so none of the million lines needs memory of its own. It also beats Rust on word_count, and all three come out about even on fannkuch.
+
+It's slower on the rest. On spectral_norm, part of that is the overflow checks, which C++ and Rust leave out of release builds. Rust's sort is a carefully tuned driftsort, and in nbody Rust knows that two references can't point at the same body, which neither C++ nor Sayon can tell. C++ is faster still on word_count. Each program's README says what differs.
+
+Sayon holds less memory than Rust on all eight, and less than C++ on binary_trees, text, and sort. On the small ones it's 0.1 to 0.2 MB more than C++, which is its runtime at startup. Its executables are about twice the size of theirs, around 300 KB.
+
+The laptop was busy while these ran, as it usually is, so a number can move by a fifth or so from one run to the next. The three versions take turns, though, so they share the same load, and the per-program READMEs show the fastest and slowest runs. [results.md](benchmarks/results.md) has everything side by side, and the [benchmarks README](benchmarks/README.md) explains how they're kept fair and how to run them yourself.
+
+## Safety
+
+Sayon and Rust stop the same memory bugs before a program runs: using a value after it's freed, freeing it twice, a reference that outlives what it points to, and two threads changing the same data at once. Neither has null references. Both let you step outside the rules with `unsafe`, to call C or handle raw memory, and in both, shared handles that point at each other in a circle keep each other alive, which is what weak handles are for.
+
+Where they differ:
+
+| | Rust | Sayon |
+|---|---|---|
+| Integer overflow | A panic in debug builds. Release builds wrap around without a word, unless you turn on `overflow-checks` | An `OverflowError`, in every build |
+| Converting between number types | `as` cuts off or clamps the value without a word. `try_from` checks | Always checked: `integer8(300)` is a `ConversionError` |
+| An index past the end, a missing key, division by zero | A panic, which ends the thread unless `catch_unwind` stops it | An error like any other, which `try` can catch |
+| What a program can reach | Anything the process can | The same in a normal build. But the compiler works out which capabilities a program needs, such as files or sockets, and refuses code its target can't support, and `sayon run --sandbox` runs a stranger's file with only the console, clocks, random numbers, and code that touches nothing outside |
+| Code that runs when you build | Build scripts and procedural macros | None. Sayon has no build scripts or macros, so building a package never runs its code |
+
+So Sayon checks more by default. The thing it can't match yet is time: Rust's compiler has been used and tested by a great many people for years, and Sayon's is young, so a bug in it could still let through something the rules forbid.
 
 ## Installing
 
