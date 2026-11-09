@@ -1,11 +1,13 @@
-//! What a program needs from its host: the capabilities of the operations
-//! it can reach from its entry, through every function it calls or uses as
-//! a value. A function nothing reaches needs nothing, and neither does a
-//! platform branch that was not selected, since it was never checked.
-//!
-//! Each need is placed in the program's own code: an operation inside the
-//! standard library or a dependency is reported where the program's code
-//! first calls into what leads to it.
+/*!
+What a program needs from its host: the capabilities of the operations
+it can reach from its entry, through every function it calls or uses as
+a value. A function nothing reaches needs nothing, and neither does a
+platform branch that was not selected, since it was never checked.
+
+Each need is placed in the program's own code: an operation inside the
+standard library or a dependency is reported where the program's code
+first calls into what leads to it.
+*/
 
 use crate::hir::{self, Builtin, ExprKind, FuncId, Program};
 use sayon_runtime::host::Host;
@@ -13,15 +15,17 @@ use sayon_syntax::Span;
 use sayon_target::Capability;
 use std::collections::VecDeque;
 
-/// A capability the program needs, and where its own code first needs it.
+/** A capability the program needs, and where its own code first needs it. */
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Need {
     pub capability: Capability,
     pub span: Span,
 }
 
-/// The capability a host primitive needs, if any but the ones every target
-/// has.
+/**
+The capability a host primitive needs, if any but the ones every target
+has.
+*/
 pub fn host_capability(host: Host) -> Option<Capability> {
     use Capability::*;
     Some(match host {
@@ -86,7 +90,7 @@ pub fn host_capability(host: Host) -> Option<Capability> {
     })
 }
 
-/// The capability a built-in needs, if any but the ones every target has.
+/** The capability a built-in needs, if any but the ones every target has. */
 fn builtin_capability(builtin: Builtin) -> Option<Capability> {
     use Capability::*;
     Some(match builtin {
@@ -110,9 +114,11 @@ fn builtin_capability(builtin: Builtin) -> Option<Capability> {
     })
 }
 
-/// The capabilities the program needs, each once, in the order of
-/// [`Capability::ALL`]. `own` tells whether a span is in the program's own
-/// code rather than the standard library or a dependency.
+/**
+The capabilities the program needs, each once, in the order of
+[`Capability::ALL`]. `own` tells whether a span is in the program's own
+code rather than the standard library or a dependency.
+*/
 pub fn needs(program: &Program, own: &dyn Fn(Span) -> bool) -> Vec<Need> {
     let mut walk = Walk {
         found: Vec::new(),
@@ -129,8 +135,10 @@ pub fn needs(program: &Program, own: &dyn Fn(Span) -> bool) -> Vec<Need> {
     }
     while let Some(id) = walk.queue.pop_front() {
         let function = program.function(id);
-        // Code of the standard library or a dependency is placed where the
-        // program's code led to it.
+        /*
+        Code of the standard library or a dependency is placed where the
+        program's code led to it.
+        */
         let site = if own(function.span) {
             None
         } else {
@@ -149,12 +157,12 @@ pub fn needs(program: &Program, own: &dyn Fn(Span) -> bool) -> Vec<Need> {
     walk.found
 }
 
-/// Gives each expression of a body to the function it is passed.
+/** Gives each expression of a body to the function it is passed. */
 type Body<'a> = dyn FnMut(&mut dyn FnMut(&hir::Expr)) + 'a;
 
 struct Walk {
     found: Vec<Need>,
-    /// For each function reached, where the program's code led to it.
+    /** For each function reached, where the program's code led to it. */
     reached: Vec<Option<Option<Span>>>,
     queue: VecDeque<FuncId>,
 }
@@ -168,8 +176,10 @@ impl Walk {
         }
     }
 
-    /// Looks through the expressions `body` gives: `site` is where the
-    /// program's code leads to them, or `None` for its own code.
+    /**
+    Looks through the expressions `body` gives: `site` is where the
+    program's code leads to them, or `None` for its own code.
+    */
     fn look(&mut self, site: Option<Span>, body: &mut Body) {
         let mut calls: Vec<(FuncId, Span)> = Vec::new();
         let mut needs: Vec<(Capability, Span)> = Vec::new();

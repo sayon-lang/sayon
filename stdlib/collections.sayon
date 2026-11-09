@@ -1,27 +1,31 @@
-# Sorting arrays, and the Set, Queue, Stack, List, and Map collections.
-#
-#     collections = import("standard/collections.sayon")
-#     names = ["Grace", "Ada", "Linus"]
-#     collections.sort(names)
-#
-# Beside arrays and dictionaries, which are built in: a Set holds each value
-# once; a Queue gives values back in the order they came, and a Stack in the
-# opposite order; a List keeps values in a sequence that can change anywhere
-# at once; and a Map keeps its keys in order.
-#
-# A collection owns its values: adding one moves it in, and taking one out
-# gives it back. Methods that return values, such as `values` and `get`,
-# give copies.
+##
+Sorting arrays, and the Set, Queue, Stack, List, and Map collections.
+
+    collections = import("standard/collections.sayon")
+    names = ["Grace", "Ada", "Linus"]
+    collections.sort(names)
+
+Beside arrays and dictionaries, which are built in: a Set holds each value
+once; a Queue gives values back in the order they came, and a Stack in the
+opposite order; a List keeps values in a sequence that can change anywhere
+at once; and a Map keeps its keys in order.
+
+A collection owns its values: adding one moves it in, and taking one out
+gives it back. Methods that return values, such as `values` and `get`,
+give copies.
+##
 
 private constant NONE = -1
 
 # ----- sorting ------------------------------------------------------------------
 
-# Sorts an array in place, smallest first. Elements are numbers or strings.
-# Sorting is stable: equal elements keep their order. It takes time
-# proportional to n log n for n elements, and room for half of them: the
-# sort works with copies of the first half, so sorting strings copies half
-# their text for a while.
+##
+Sorts an array in place, smallest first. Elements are numbers or strings.
+Sorting is stable: equal elements keep their order. It takes time
+proportional to n log n for n elements, and room for half of them: the
+sort works with copies of the first half, so sorting strings copies half
+their text for a while.
+##
 function sort(update items)
     count = length(items)
     if count < 2
@@ -29,11 +33,13 @@ function sort(update items)
     spare = first_half(items)
     sort_part(items, spare, 0, count)
 
-# Sorts an array in place by a comparison: `before(a, b)` is true when `a`
-# must come before `b`. Sorting is stable, so elements for which neither
-# comes before the other keep their order. It needs the same room as
-# `sort`. An error in `before` stops the sort; the elements are then all
-# still in the array, in some order.
+##
+Sorts an array in place by a comparison: `before(a, b)` is true when `a`
+must come before `b`. Sorting is stable, so elements for which neither
+comes before the other keep their order. It needs the same room as
+`sort`. An error in `before` stops the sort; the elements are then all
+still in the array, in some order.
+##
 function sort_by(update items, update before)
     count = length(items)
     if count < 2
@@ -50,17 +56,21 @@ function reverse(update items)
         low += 1
         high -= 1
 
-# How the sorts work: a part of the array up to SHORT elements long is
-# sorted by insertion. A longer part is split in two halves, which are
-# sorted, then merged. To merge, the first half moves out to the spare
-# array, and the elements go back in order, from the spare array or the
-# second half, whichever is smaller. Elements are only ever swapped, so
-# none is copied while sorting, and the spare array's own elements end up
-# back in it.
+##
+How the sorts work: a part of the array up to SHORT elements long is
+sorted by insertion. A longer part is split in two halves, which are
+sorted, then merged. To merge, the first half moves out to the spare
+array, and the elements go back in order, from the spare array or the
+second half, whichever is smaller. Elements are only ever swapped, so
+none is copied while sorting, and the spare array's own elements end up
+back in it.
+##
 private constant SHORT = 16
 
-# Copies of the first half of the elements: room for the sorts to work in,
-# made at its size at once.
+##
+Copies of the first half of the elements: room for the sorts to work in,
+made at its size at once.
+##
 private function first_half(items)
     return clone(view(items, 0, length(items) / 2))
 
@@ -130,8 +140,10 @@ private function sort_part_by(update items, update before, update spare, start: 
                 taken += 1
             slot += 1
     catch problem
-        # The elements still in the spare array go back to the free places,
-        # so that all of them are in the array again.
+        ##
+        The elements still in the spare array go back to the free places,
+        so that all of them are in the array again.
+        ##
         while taken < count
             swap(items, slot, spare, taken)
             taken += 1
@@ -144,11 +156,13 @@ private function sort_part_by(update items, update before, update spare, start: 
 
 # ----- sets ---------------------------------------------------------------------
 
-# Values without duplicates, in the order they were first added. Values are
-# compared like dictionary keys, so they must be valid keys. Adding a value
-# and looking one up take constant time on average; removing one takes time
-# proportional to the set's size, since the values after it keep their order.
-# Sets are equal (`==`) when they have the same values, in any order.
+##
+Values without duplicates, in the order they were first added. Values are
+compared like dictionary keys, so they must be valid keys. Adding a value
+and looking one up take constant time on average; removing one takes time
+proportional to the set's size, since the values after it keep their order.
+Sets are equal (`==`) when they have the same values, in any order.
+##
 type Set<T> = [members: Dict<T, boolean>]
 
 # A new, empty set.
@@ -184,10 +198,12 @@ function set_values<T>(set: Set<T>) -> Array<T>
 
 # ----- queues -------------------------------------------------------------------
 
-# Values taken out in the order they were put in. Adding and taking take
-# constant time on average: a value is moved once, from the back to the front.
-# How a queue is kept depends on the order of its changes, so `==` can find
-# two queues of the same values different: compare their `values()`.
+##
+Values taken out in the order they were put in. Adding and taking take
+constant time on average: a value is moved once, from the back to the front.
+How a queue is kept depends on the order of its changes, so `==` can find
+two queues of the same values different: compare their `values()`.
+##
 type Queue<T> = [front: Array<T>, back: Array<T>]
 
 # A new, empty queue.
@@ -209,8 +225,10 @@ function queue_take<T>(update queue: Queue<T>) -> T or nothing
                 push(queue.front, moved)
     return pop(queue.front)
 
-# A copy of the value at the front of the queue, the one `take` would take
-# next, or nothing when the queue is empty.
+##
+A copy of the value at the front of the queue, the one `take` would take
+next, or nothing when the queue is empty.
+##
 function queue_peek<T>(queue: Queue<T>) -> T or nothing
     count = length(queue.front)
     if count > 0
@@ -236,9 +254,11 @@ function queue_values<T>(queue: Queue<T>) -> Array<T>
 
 # ----- stacks -------------------------------------------------------------------
 
-# Values taken out in the opposite order they were put in: `pop` takes the
-# value pushed last. Pushing and popping take constant time on average.
-# Stacks are equal (`==`) when they have the same values in the same order.
+##
+Values taken out in the opposite order they were put in: `pop` takes the
+value pushed last. Pushing and popping take constant time on average.
+Stacks are equal (`==`) when they have the same values in the same order.
+##
 type Stack<T> = [items: Array<T>]
 
 # A new, empty stack.
@@ -254,8 +274,10 @@ function stack_push<T>(update stack: Stack<T>, own value: T)
 function stack_pop<T>(update stack: Stack<T>) -> T or nothing
     return pop(stack.items)
 
-# A copy of the value on top of the stack, the one `pop` would take next, or
-# nothing when the stack is empty.
+##
+A copy of the value on top of the stack, the one `pop` would take next, or
+nothing when the stack is empty.
+##
 function stack_peek<T>(stack: Stack<T>) -> T or nothing
     count = length(stack.items)
     if count == 0
@@ -277,24 +299,28 @@ function stack_values<T>(stack: Stack<T>) -> Array<T>
 
 # ----- lists --------------------------------------------------------------------
 
-# Values in a sequence, like an array, where adding a value or taking one out
-# anywhere takes constant time, as do reaching a value through its position
-# and moving to its neighbors. Each value added gets a `Position`, which
-# names it until it is taken out, however the list changes around it. How a
-# list is kept depends on the order of its changes, so `==` can find two
-# lists of the same values different: compare their `values()`.
-#
-# The values lie together in `items`, by slot; `successors` and
-# `predecessors` link the slots in order, and `head` and `tail` are the
-# first and last (`NONE` when empty). A position's handle finds its slot in
-# `slots`; taking a value out frees the handle for reuse, counting up its
-# generation, so the positions given out before name nothing.
+##
+Values in a sequence, like an array, where adding a value or taking one out
+anywhere takes constant time, as do reaching a value through its position
+and moving to its neighbors. Each value added gets a `Position`, which
+names it until it is taken out, however the list changes around it. How a
+list is kept depends on the order of its changes, so `==` can find two
+lists of the same values different: compare their `values()`.
+
+The values lie together in `items`, by slot; `successors` and
+`predecessors` link the slots in order, and `head` and `tail` are the
+first and last (`NONE` when empty). A position's handle finds its slot in
+`slots`; taking a value out frees the handle for reuse, counting up its
+generation, so the positions given out before name nothing.
+##
 type List<T> = [items: Array<T>, successors: Array<integer>, predecessors: Array<integer>, handles: Array<integer>, slots: Array<integer>, generations: Array<integer>, spare: Array<integer>, head: integer, tail: integer]
 
-# Where a value is in a list. A position names its value until the value is
-# taken out; after that, using it is a `ValueError`. A position belongs to
-# the list that gave it out: with another list it names another value, or
-# none.
+##
+Where a value is in a list. A position names its value until the value is
+taken out; after that, using it is a `ValueError`. A position belongs to
+the list that gave it out: with another list it names another value, or
+none.
+##
 type Position = [handle: integer, generation: integer]
 
 # A new, empty list.
@@ -354,8 +380,10 @@ function list_get<T>(list: List<T>, position: Position) -> T
     slot = slot_of(list, position)
     return clone(list.items[slot])
 
-# Puts a value in place of the one at a position, which then names the new
-# value.
+##
+Puts a value in place of the one at a position, which then names the new
+value.
+##
 function list_set<T>(update list: List<T>, position: Position, own value: T)
     slot = slot_of(list, position)
     list.items[slot] = value
@@ -368,20 +396,26 @@ function list_first<T>(list: List<T>) -> Position or nothing
 function list_last<T>(list: List<T>) -> Position or nothing
     return position_at(list, list.tail)
 
-# The position of the value after the one at a position, or nothing after
-# the last.
+##
+The position of the value after the one at a position, or nothing after
+the last.
+##
 function list_after<T>(list: List<T>, position: Position) -> Position or nothing
     slot = slot_of(list, position)
     return position_at(list, list.successors[slot])
 
-# The position of the value before the one at a position, or nothing before
-# the first.
+##
+The position of the value before the one at a position, or nothing before
+the first.
+##
 function list_before<T>(list: List<T>, position: Position) -> Position or nothing
     slot = slot_of(list, position)
     return position_at(list, list.predecessors[slot])
 
-# The position of the first value equal to `value`, or nothing when no value
-# is. It takes time proportional to the list's size.
+##
+The position of the first value equal to `value`, or nothing when no value
+is. It takes time proportional to the list's size.
+##
 function list_find<T>(list: List<T>, value: T) -> Position or nothing
     variable slot = list.head
     while slot != NONE
@@ -417,8 +451,10 @@ private function position_at<T>(list: List<T>, slot: integer) -> Position or not
     handle = list.handles[slot]
     return Position(handle = handle, generation = list.generations[handle])
 
-# Puts a value in a new slot between two others (`NONE` at an end), and
-# gives it a handle.
+##
+Puts a value in a new slot between two others (`NONE` at an end), and
+gives it a handle.
+##
 private function link<T>(update list: List<T>, own value: T, previous: integer, following: integer) -> Position
     slot = length(list.items)
     push(list.items, value)
@@ -443,8 +479,10 @@ private function link<T>(update list: List<T>, own value: T, previous: integer, 
         list.predecessors[following] = slot
     return Position(handle = handle, generation = list.generations[handle])
 
-# Takes the value in a slot out of the list. The value in the last slot
-# moves into the freed one, so the values stay together.
+##
+Takes the value in a slot out of the list. The value in the last slot
+moves into the freed one, so the values stay together.
+##
 private function unlink<T>(update list: List<T>, slot: integer) -> T
     previous = list.predecessors[slot]
     following = list.successors[slot]
@@ -485,20 +523,22 @@ private function unlink<T>(update list: List<T>, slot: integer) -> T
 
 # ----- maps ---------------------------------------------------------------------
 
-# Keys with values, kept in the order of their keys, smallest first, where a
-# dictionary keeps the order they were added in. Keys are numbers or strings,
-# and cannot be NaN. Looking a key up, adding one, and removing one take time
-# proportional to log n for n keys, as do finding the first and last keys
-# and the keys around a key; listing them takes time proportional to n. How a
-# map is kept depends on the order of its changes, so `==` can find two maps
-# of the same keys and values different: compare their `keys()` and
-# `values()`.
-#
-# The map is an AVL tree whose nodes lie together in arrays, by slot: a
-# node's key, value, `lower` and `higher` children and parent (`NONE` for
-# none), and height. Every node's children differ in height by one at most,
-# so the tree is at most about 1.44 log2 n high. A change compares keys only
-# on its way down, before it changes anything.
+##
+Keys with values, kept in the order of their keys, smallest first, where a
+dictionary keeps the order they were added in. Keys are numbers or strings,
+and cannot be NaN. Looking a key up, adding one, and removing one take time
+proportional to log n for n keys, as do finding the first and last keys
+and the keys around a key; listing them takes time proportional to n. How a
+map is kept depends on the order of its changes, so `==` can find two maps
+of the same keys and values different: compare their `keys()` and
+`values()`.
+
+The map is an AVL tree whose nodes lie together in arrays, by slot: a
+node's key, value, `lower` and `higher` children and parent (`NONE` for
+none), and height. Every node's children differ in height by one at most,
+so the tree is at most about 1.44 log2 n high. A change compares keys only
+on its way down, before it changes anything.
+##
 type Map<K, V> = [node_keys: Array<K>, node_values: Array<V>, lower: Array<integer>, higher: Array<integer>, parents: Array<integer>, heights: Array<integer>, root: integer]
 
 # A new, empty map.
@@ -565,8 +605,10 @@ function map_remove<K, V>(update map: Map<K, V>, key: K) -> V or nothing
         return nothing
     variable gone = node
     if map.lower[node] != NONE and map.higher[node] != NONE
-        # The node with the next key, which has no lower child, takes over
-        # the key and value, and is taken out instead.
+        ##
+        The node with the next key, which has no lower child, takes over
+        the key and value, and is taken out instead.
+        ##
         variable next_node = map.higher[node]
         while map.lower[next_node] != NONE
             next_node = map.lower[next_node]
@@ -658,8 +700,10 @@ function map_after<K, V>(map: Map<K, V>, key: K) -> K or nothing
         return nothing
     return clone(map.node_keys[best])
 
-# Copies of the keys from `low` up to, but not including, `high`, smallest
-# first.
+##
+Copies of the keys from `low` up to, but not including, `high`, smallest
+first.
+##
 function map_between<K, V>(map: Map<K, V>, low: K, high: K) -> Array<K>
     keys: Array<K> = []
     if low != low or high != high
@@ -712,9 +756,11 @@ private function next_in_order<K, V>(map: Map<K, V>, node: integer) -> integer
         parent = map.parents[parent]
     return parent
 
-# Restores the balance from a node up, after one of its subtrees changed in
-# height by one. Once a subtree keeps its height, the nodes above keep
-# theirs, and nothing above changes.
+##
+Restores the balance from a node up, after one of its subtrees changed in
+height by one. Once a subtree keeps its height, the nodes above keep
+theirs, and nothing above changes.
+##
 private function rebalance_up<K, V>(update map: Map<K, V>, start: integer)
     variable node = start
     while node != NONE
@@ -724,8 +770,10 @@ private function rebalance_up<K, V>(update map: Map<K, V>, start: integer)
             return
         node = map.parents[top]
 
-# Rotates a node whose children differ in height by two, and fixes the
-# height of one that is balanced; returns the subtree's top.
+##
+Rotates a node whose children differ in height by two, and fixes the
+height of one that is balanced; returns the subtree's top.
+##
 private function balance<K, V>(update map: Map<K, V>, node: integer) -> integer
     lean = height(map, map.lower[node]) - height(map, map.higher[node])
     if lean > 1

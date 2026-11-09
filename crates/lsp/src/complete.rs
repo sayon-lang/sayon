@@ -1,14 +1,16 @@
-//! Completion and signature help: what fits where the editor's cursor is.
-//!
-//! Completion reads the place first (`context`): nothing in comments and
-//! strings, module paths in `import("...")`, variants after `case`, types
-//! after `:`, `->`, and `<`, and members after a dot. Elsewhere it offers
-//! the names in scope, the built-in functions, keywords with snippets of
-//! their blocks, and the standard modules not imported yet, with their
-//! imports. In a call's arguments, what fits the parameter's type comes
-//! first: values of that type, also from the imported modules, the variants
-//! of an expected enum, and the fields left to name in a structure being
-//! built. Functions are inserted with placeholders for their arguments.
+/*!
+Completion and signature help: what fits where the editor's cursor is.
+
+Completion reads the place first (`context`): nothing in comments and
+strings, module paths in `import("...")`, variants after `case`, types
+after `:`, `->`, and `<`, and members after a dot. Elsewhere it offers
+the names in scope, the built-in functions, keywords with snippets of
+their blocks, and the standard modules not imported yet, with their
+imports. In a call's arguments, what fits the parameter's type comes
+first: values of that type, also from the imported modules, the variants
+of an expected enum, and the fields left to name in a structure being
+built. Functions are inserted with placeholders for their arguments.
+*/
 
 use crate::context::{Call, context};
 use crate::json::Json;
@@ -19,9 +21,11 @@ use sayon_syntax::SourceMap;
 use std::collections::HashSet;
 use std::path::Path;
 
-/// The ordering of items, as their `sortText` begins: what fits the place
-/// first, then locals, definitions, built-ins, keywords, and modules to
-/// import.
+/**
+The ordering of items, as their `sortText` begins: what fits the place
+first, then locals, definitions, built-ins, keywords, and modules to
+import.
+*/
 const FITS: &str = "0";
 const LOCAL: &str = "1";
 const DEFINED: &str = "2";
@@ -29,8 +33,10 @@ const BUILT_IN: &str = "3";
 const KEYWORD: &str = "4";
 const TO_IMPORT: &str = "5";
 
-/// The blocks keywords start, as snippets: the keyword, the text, and what
-/// it makes.
+/**
+The blocks keywords start, as snippets: the keyword, the text, and what
+it makes.
+*/
 const SNIPPETS: &[(&str, &str, &str)] = &[
     ("function", "function ${1:name}(${2})\n\t$0", "a function"),
     ("if", "if ${1:condition}\n\t$0", "an `if` block"),
@@ -66,7 +72,7 @@ const SNIPPETS: &[(&str, &str, &str)] = &[
     ("test", "test \"${1:what it checks}\"\n\t$0", "a test block"),
 ];
 
-/// The types every module can name, besides the declared ones.
+/** The types every module can name, besides the declared ones. */
 const TYPES: &[&str] = &[
     "integer",
     "float",
@@ -100,7 +106,7 @@ const TYPES: &[&str] = &[
     "c_string",
 ];
 
-/// Where the name that ends `text` starts.
+/** Where the name that ends `text` starts. */
 pub fn name_start(text: &str) -> usize {
     text.char_indices()
         .rev()
@@ -108,7 +114,7 @@ pub fn name_start(text: &str) -> usize {
         .map_or(0, |(index, c)| index + c.len_utf8())
 }
 
-/// The comment lines just above a definition, which describe it.
+/** The comment just above a definition, which describes it. */
 pub fn documentation(sources: &SourceMap, symbol: &Symbol) -> Option<String> {
     if matches!(
         symbol.kind,
@@ -117,32 +123,80 @@ pub fn documentation(sources: &SourceMap, symbol: &Symbol) -> Option<String> {
         return None;
     }
     let file = sources.get(symbol.span.file);
-    let mut line = file.line_index(symbol.span.start);
-    let mut lines = Vec::new();
-    while line > 0 {
-        line -= 1;
-        let text = file.line_text(line).trim_start();
-        let Some(comment) = text.strip_prefix('#') else {
-            break;
-        };
-        lines.push(comment.strip_prefix(' ').unwrap_or(comment).to_string());
-    }
-    if lines.is_empty() {
-        return None;
-    }
-    lines.reverse();
-    Some(lines.join("\n"))
+    let line = file.line_index(symbol.span.start);
+    let lines: Vec<&str> = (0..line).map(|number| file.line_text(number)).collect();
+    described(&lines, line)
 }
 
-/// A snippet's text with `$`, `}`, and `\` escaped.
+/**
+The comment above line `line`, as one text, passing over the `# allow(...)`
+lines between it and the line, which speak to the linter.
+*/
+fn described(lines: &[&str], line: usize) -> Option<String> {
+    let mut end = line;
+    while end > 0 && lines[end - 1].trim_start().starts_with("# allow(") {
+        end -= 1;
+    }
+    let comment = comment_above(lines, end);
+    (!comment.is_empty()).then(|| comment.join("\n"))
+}
+
+fn is_fence(line: &str) -> bool {
+    line.trim() == "##"
+}
+
+/**
+The comment that ends just above line `end`, line by line: a block between
+`##` lines, without the indentation its lines share, or a run of `#` lines,
+each without its `#` and the space after it.
+*/
+fn comment_above(lines: &[&str], end: usize) -> Vec<String> {
+    if end > 0 && is_fence(lines[end - 1]) {
+        return match (0..end - 1).rev().find(|&line| is_fence(lines[line])) {
+            Some(opening) => unindented(&lines[opening + 1..end - 1]),
+            None => Vec::new(),
+        };
+    }
+    let start = (0..end)
+        .rev()
+        .take_while(|&line| lines[line].trim_start().starts_with('#') && !is_fence(lines[line]))
+        .last()
+        .unwrap_or(end);
+    lines[start..end]
+        .iter()
+        .map(|line| {
+            let comment = &line.trim_start()[1..];
+            comment.strip_prefix(' ').unwrap_or(comment).to_string()
+        })
+        .collect()
+}
+
+/** Lines without the indentation they share, blank lines left out of the count. */
+fn unindented(lines: &[&str]) -> Vec<String> {
+    let indentation = |line: &str| line.len() - line.trim_start_matches([' ', '\t']).len();
+    let shared = lines
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| indentation(line))
+        .min()
+        .unwrap_or(0);
+    lines
+        .iter()
+        .map(|line| line.get(shared..).unwrap_or("").trim_end().to_string())
+        .collect()
+}
+
+/** A snippet's text with `$`, `}`, and `\` escaped. */
 fn escaped(text: &str) -> String {
     text.replace('\\', "\\\\")
         .replace('$', "\\$")
         .replace('}', "\\}")
 }
 
-/// The locals the place can see: those of the bodies around it declared
-/// before it, or the script's top level's outside every body.
+/**
+The locals the place can see: those of the bodies around it declared
+before it, or the script's top level's outside every body.
+*/
 fn visible_locals(analysis: &Analysis, offset: usize) -> Vec<usize> {
     let index = &analysis.index;
     let file = analysis.file;
@@ -172,17 +226,21 @@ fn visible_locals(analysis: &Analysis, offset: usize) -> Vec<usize> {
         .collect()
 }
 
-/// What `name` means, written before `end`: what the nearest such name
-/// before it refers to, or else a definition of the file or a visible local
-/// by that name.
+/**
+What `name` means, written before `end`: what the nearest such name
+before it refers to, or else a definition of the file or a visible local
+by that name.
+*/
 fn symbol_named(analysis: &Analysis, name: &str, end: usize) -> Option<usize> {
     if name.is_empty() {
         return None;
     }
     let file = analysis.sources.get(analysis.file);
     let index = &analysis.index;
-    // A name after a dot is a member of something else, as `canvas` in
-    // `graphics.canvas(...)`.
+    /*
+    A name after a dot is a member of something else, as `canvas` in
+    `graphics.canvas(...)`.
+    */
     let member = |start: u32| file.text[..start as usize].trim_end().ends_with('.');
     if let Some(reference) = index
         .references
@@ -206,8 +264,10 @@ fn symbol_named(analysis: &Analysis, name: &str, end: usize) -> Option<usize> {
         })
 }
 
-/// What names joined by dots, ending at `end`, mean, and whether the last
-/// is a method of the value before its dot.
+/**
+What names joined by dots, ending at `end`, mean, and whether the last
+is a method of the value before its dot.
+*/
 fn resolve(analysis: &Analysis, chain: &str, end: usize) -> Option<(usize, bool)> {
     let index = &analysis.index;
     let parts: Vec<&str> = chain.split('.').collect();
@@ -216,7 +276,7 @@ fn resolve(analysis: &Analysis, chain: &str, end: usize) -> Option<(usize, bool)
         index.symbols[first].kind,
         SymbolKind::Module | SymbolKind::Type
     );
-    // What the last name was resolved to, where it is written.
+    /* What the last name was resolved to, where it is written. */
     if let Some(reference) = index.at(analysis.file, end as u32)
         && analysis.sources.get(analysis.file).slice(reference.span) == *parts.last()?
     {
@@ -241,8 +301,10 @@ fn resolve(analysis: &Analysis, chain: &str, end: usize) -> Option<(usize, bool)
     Some((symbol, method))
 }
 
-/// The parameters a call of a symbol writes: a method's but the value
-/// before its dot.
+/**
+The parameters a call of a symbol writes: a method's but the value
+before its dot.
+*/
 fn written_params(symbol: &Symbol, method: bool) -> &[Param] {
     if method && !symbol.params.is_empty() {
         &symbol.params[1..]
@@ -251,7 +313,7 @@ fn written_params(symbol: &Symbol, method: bool) -> &[Param] {
     }
 }
 
-/// The parameter the argument at a call's place is for.
+/** The parameter the argument at a call's place is for. */
 fn parameter<'s>(symbol: &'s Symbol, method: bool, call: &Call) -> Option<(usize, &'s Param)> {
     let params = written_params(symbol, method);
     match &call.naming {
@@ -260,7 +322,7 @@ fn parameter<'s>(symbol: &'s Symbol, method: bool, call: &Call) -> Option<(usize
     }
 }
 
-/// The protocol's kind of completion item for a symbol.
+/** The protocol's kind of completion item for a symbol. */
 fn kind_of(symbol: &Symbol, method: bool) -> u32 {
     match symbol.kind {
         SymbolKind::Variable | SymbolKind::Parameter => 6,
@@ -275,7 +337,7 @@ fn kind_of(symbol: &Symbol, method: bool) -> u32 {
     }
 }
 
-/// A completion item being made.
+/** A completion item being made. */
 struct Item {
     label: String,
     kind: u32,
@@ -284,9 +346,9 @@ struct Item {
     documentation: Option<String>,
     insert: Option<String>,
     snippet: bool,
-    /// Show the parameters once it is inserted.
+    /** Show the parameters once it is inserted. */
     hints: bool,
-    /// What it replaces, when not the name the cursor is in: a byte range.
+    /** What it replaces, when not the name the cursor is in: a byte range. */
     replaces: Option<(usize, usize)>,
     edits: Vec<Json>,
     preselect: bool,
@@ -381,15 +443,17 @@ fn range_of(text: &str, start: usize, end: usize) -> Json {
     ])
 }
 
-/// Whether a name at the end of `head`, the line's text before it, is in a
-/// type: after `:` or `->`, or among a type's arguments, after `Array<` or a
-/// comma inside such brackets.
+/**
+Whether a name at the end of `head`, the line's text before it, is in a
+type: after `:` or `->`, or among a type's arguments, after `Array<` or a
+comma inside such brackets.
+*/
 fn type_position(head: &str) -> bool {
     let head = head.trim_end();
     if head.ends_with("->") || (head.ends_with(':') && !head.ends_with("::")) {
         return true;
     }
-    // An unclosed `<` right after a name.
+    /* An unclosed `<` right after a name. */
     let mut depth = 0usize;
     for (index, c) in head.char_indices().rev() {
         match c {
@@ -408,8 +472,10 @@ fn type_position(head: &str) -> bool {
     false
 }
 
-/// The line new imports go on: after the last import, or else after the
-/// comments the file starts with.
+/**
+The line new imports go on: after the last import, or else after the
+comments the file starts with.
+*/
 fn import_line(text: &str) -> usize {
     let lines: Vec<&str> = text.split('\n').collect();
     let import = |line: &str| {
@@ -420,10 +486,7 @@ fn import_line(text: &str) -> usize {
     if let Some(last) = lines.iter().rposition(|l| import(l)) {
         return last + 1;
     }
-    let comments = lines
-        .iter()
-        .take_while(|l| l.trim_start().starts_with('#'))
-        .count();
+    let comments = leading_comments(&lines);
     if comments > 0 && lines.get(comments).is_some_and(|l| l.trim().is_empty()) {
         comments + 1
     } else {
@@ -431,19 +494,48 @@ fn import_line(text: &str) -> usize {
     }
 }
 
-/// The `#` lines a module's file starts with, which say what it is.
-fn module_summary(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let lines: Vec<String> = text
-        .lines()
-        .take_while(|l| l.starts_with('#'))
-        .take(8)
-        .map(|l| l.trim_start_matches('#').trim_start().to_string())
-        .collect();
-    (!lines.is_empty()).then(|| lines.join("\n"))
+/** How many lines the comments a file starts with take, blocks and `#` lines alike. */
+fn leading_comments(lines: &[&str]) -> usize {
+    let mut position = 0;
+    while let Some(line) = lines.get(position) {
+        if is_fence(line) {
+            match (position + 1..lines.len()).find(|&next| is_fence(lines[next])) {
+                Some(closing) => position = closing + 1,
+                None => break,
+            }
+        } else if line.trim_start().starts_with('#') {
+            position += 1;
+        } else {
+            break;
+        }
+    }
+    position
 }
 
-/// The standard library's modules, by their names.
+/** The comment a module's file starts with, which says what it is. */
+fn module_summary(path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let lines: Vec<&str> = text.lines().collect();
+    let summary: Vec<String> = first_comment(&lines).into_iter().take(8).collect();
+    (!summary.is_empty()).then(|| summary.join("\n"))
+}
+
+/** The first comment of a file, line by line, as `comment_above` gives it. */
+fn first_comment(lines: &[&str]) -> Vec<String> {
+    let end = if lines.first().is_some_and(|line| is_fence(line)) {
+        (1..lines.len())
+            .find(|&line| is_fence(lines[line]))
+            .map_or(0, |closing| closing + 1)
+    } else {
+        lines
+            .iter()
+            .take_while(|line| line.trim_start().starts_with('#') && !is_fence(line))
+            .count()
+    };
+    comment_above(lines, end)
+}
+
+/** The standard library's modules, by their names. */
 fn standard_modules(analysis: &Analysis) -> Vec<(String, std::path::PathBuf)> {
     let Some(dir) = &analysis.stdlib else {
         return Vec::new();
@@ -464,12 +556,14 @@ struct Completer<'a> {
     analysis: &'a Analysis,
     text: &'a str,
     offset: usize,
-    /// Whether a call's `(` already follows the name at the place.
+    /** Whether a call's `(` already follows the name at the place. */
     called: bool,
-    /// Whether the functions being offered are methods, after a value's
-    /// dot.
+    /**
+    Whether the functions being offered are methods, after a value's
+    dot.
+    */
     methods: bool,
-    /// The type of the parameter the argument at the place is for.
+    /** The type of the parameter the argument at the place is for. */
     expected: Option<(String, Option<Owner>)>,
     seen: HashSet<String>,
     items: Vec<Item>,
@@ -484,8 +578,10 @@ impl Completer<'_> {
         matches!((&self.expected, &symbol.ty), (Some((expected, _)), Some(ty)) if expected == ty)
     }
 
-    /// An item for a symbol, written as `label`, in `sort`'s place, or
-    /// first when it fits: a function with placeholders for its arguments.
+    /**
+    An item for a symbol, written as `label`, in `sort`'s place, or
+    first when it fits: a function with placeholders for its arguments.
+    */
     fn item(&self, label: &str, symbol: usize, sort: &str) -> Item {
         let found = self.symbol(symbol);
         let fits = self.fits(found)
@@ -541,8 +637,10 @@ impl Completer<'_> {
         ])
     }
 
-    /// The modules an import's path can name: the standard library's, and
-    /// the program's own files under its root.
+    /**
+    The modules an import's path can name: the standard library's, and
+    the program's own files under its root.
+    */
     fn import_paths(&mut self, start: usize) {
         for (name, path) in standard_modules(self.analysis) {
             let mut item = Item::new(format!("standard/{name}.sayon"), 17, BUILT_IN);
@@ -569,9 +667,11 @@ impl Completer<'_> {
         }
     }
 
-    /// The members of what is before the dot at `dot`: a module's
-    /// definitions, a value's fields and methods, or an enum's variants; in a
-    /// type, only types.
+    /**
+    The members of what is before the dot at `dot`: a module's
+    definitions, a value's fields and methods, or an enum's variants; in a
+    type, only types.
+    */
     fn members(&mut self, dot: usize, in_type: bool) {
         let receiver_start = name_start(&self.text[..dot]);
         let receiver = &self.text[receiver_start..dot];
@@ -603,7 +703,7 @@ impl Completer<'_> {
         }
     }
 
-    /// The types a type can name.
+    /** The types a type can name. */
     fn types(&mut self) {
         let scope = self
             .analysis
@@ -629,8 +729,10 @@ impl Completer<'_> {
         }
     }
 
-    /// The variants of what the `match` around the place matches, for a
-    /// `case`.
+    /**
+    The variants of what the `match` around the place matches, for a
+    `case`.
+    */
     fn cases(&mut self, line_begin: usize) {
         let indent = |line: &str| line.len() - line.trim_start().len();
         let here = indent(&self.text[line_begin..self.offset]);
@@ -672,9 +774,11 @@ impl Completer<'_> {
         self.push(item);
     }
 
-    /// What fits the argument at the place: the fields left to name in a
-    /// structure being built, the variants of an expected enum, `true` and
-    /// `false`, and values of the expected type from the imported modules.
+    /**
+    What fits the argument at the place: the fields left to name in a
+    structure being built, the variants of an expected enum, `true` and
+    `false`, and values of the expected type from the imported modules.
+    */
     fn arguments(&mut self, call: &Call) {
         let Some((symbol, method)) = resolve(self.analysis, &call.callee, call.callee_end) else {
             return;
@@ -717,7 +821,7 @@ impl Completer<'_> {
                 self.push(item);
             }
         }
-        // Values of the type from the imported modules, as `graphics.BLACK`.
+        /* Values of the type from the imported modules, as `graphics.BLACK`. */
         let scope = self
             .analysis
             .index
@@ -753,8 +857,10 @@ impl Completer<'_> {
         }
     }
 
-    /// The names a place in code can write: locals, the file's definitions
-    /// and imports, built-in functions, keywords, and modules to import.
+    /**
+    The names a place in code can write: locals, the file's definitions
+    and imports, built-in functions, keywords, and modules to import.
+    */
     fn names(&mut self) {
         for symbol in visible_locals(self.analysis, self.offset) {
             let name = self.symbol(symbol).name.clone();
@@ -792,7 +898,7 @@ impl Completer<'_> {
         for keyword in sayon_syntax::token::Keyword::ALL {
             self.push(Item::new(keyword.as_str(), 14, KEYWORD));
         }
-        // The standard modules this file does not import, with their imports.
+        /* The standard modules this file does not import, with their imports. */
         let line = import_line(self.text);
         let at = point(self.text, line_offset(self.text, line));
         for (name, path) in standard_modules(self.analysis) {
@@ -818,13 +924,15 @@ impl Completer<'_> {
     }
 }
 
-/// The byte offset where a line starts.
+/** The byte offset where a line starts. */
 fn line_offset(text: &str, line: usize) -> usize {
     text.split_inclusive('\n').take(line).map(str::len).sum()
 }
 
-/// The `.sayon` files under a directory, as paths from `root` with `/`, to
-/// four levels deep, leaving out build output and hidden directories.
+/**
+The `.sayon` files under a directory, as paths from `root` with `/`, to
+four levels deep, leaving out build output and hidden directories.
+*/
 fn files_under(root: &Path, dir: &Path, depth: u32, found: &mut Vec<(String, std::path::PathBuf)>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -850,7 +958,7 @@ fn files_under(root: &Path, dir: &Path, depth: u32, found: &mut Vec<(String, std
     }
 }
 
-/// What can be written at a place in a document.
+/** What can be written at a place in a document. */
 pub fn completion(analysis: &Analysis, text: &str, offset: usize) -> Json {
     let place = context(text, offset);
     let after = text[offset..].trim_start_matches(|c: char| c.is_alphanumeric() || c == '_');
@@ -899,8 +1007,10 @@ pub fn completion(analysis: &Analysis, text: &str, offset: usize) -> Json {
     completer.finish()
 }
 
-/// The signature of the call whose arguments hold a place, its parameter
-/// there marked.
+/**
+The signature of the call whose arguments hold a place, its parameter
+there marked.
+*/
 pub fn signature_help(analysis: &Analysis, text: &str, offset: usize) -> Option<Json> {
     let place = context(text, offset);
     if place.comment || place.string {
@@ -986,7 +1096,45 @@ mod tests {
     #[test]
     fn imports_go_after_the_last_import_or_the_first_comments() {
         assert_eq!(import_line("# A program.\n\nx = 1\n"), 2);
+        assert_eq!(import_line("##\nA program.\n##\n# More.\n\nx = 1\n"), 5);
         assert_eq!(import_line("a = import(\"a.sayon\")\nb = 2\n"), 1);
         assert_eq!(import_line("print(1)\n"), 0);
+    }
+
+    #[test]
+    fn a_definition_is_described_by_the_comment_above_it() {
+        let lines = |text: &'static str| text.lines().collect::<Vec<_>>();
+        let block = lines("x = 1\n##\nAdds two numbers.\n\n    sum(1, 2)\n##\nfunction sum()");
+        assert_eq!(
+            described(&block, 6).as_deref(),
+            Some("Adds two numbers.\n\n    sum(1, 2)")
+        );
+        let indented = lines("    ##\n    Inside.\n        code\n    ##\n    function f()");
+        assert_eq!(
+            described(&indented, 4).as_deref(),
+            Some("Inside.\n    code")
+        );
+        let run = lines("##\nnot this\n##\n# The first.\n#  The second.\nfunction f()");
+        assert_eq!(
+            described(&run, 5).as_deref(),
+            Some("The first.\n The second.")
+        );
+        let allowed = lines("##\nRemoves.\n##\n# allow(shadowed_builtin)\nfunction remove()");
+        assert_eq!(described(&allowed, 4).as_deref(), Some("Removes."));
+        assert_eq!(described(&lines("x = 1\nfunction f()"), 1), None);
+    }
+
+    #[test]
+    fn a_module_says_what_it_is_in_its_first_comment() {
+        let lines = |text: &'static str| text.lines().collect::<Vec<_>>();
+        assert_eq!(
+            first_comment(&lines("##\nFiles.\nAnd paths.\n##\n# x")),
+            ["Files.", "And paths."]
+        );
+        assert_eq!(
+            first_comment(&lines("# Time.\n##\nnot this\n##")),
+            ["Time."]
+        );
+        assert!(first_comment(&lines("x = 1\n# late")).is_empty());
     }
 }

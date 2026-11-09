@@ -1,8 +1,10 @@
-//! Executes IR with an explicit frame stack.
-//!
-//! A slot holds nothing, an owned value, or a reference (a root slot or global
-//! plus a path into it). Moving a value takes it out of its slot; borrowing
-//! creates a reference that the callee reads and writes through.
+/*!
+Executes IR with an explicit frame stack.
+
+A slot holds nothing, an owned value, or a reference (a root slot or global
+plus a path into it). Moving a value takes it out of its slot; borrowing
+creates a reference that the callee reads and writes through.
+*/
 
 use crate::value::*;
 use parallel::{JoinThreads, MutexCell, ParallelState, Program};
@@ -17,7 +19,7 @@ use tasks::{Fiber, Progress};
 pub(crate) mod parallel;
 mod tasks;
 
-/// Where a program's output goes, shared by the machines of its threads.
+/** Where a program's output goes, shared by the machines of its threads. */
 pub type Output<'m> = Arc<Lock<&'m mut (dyn Write + Send)>>;
 use sayon_runtime::text::{
     Number, parse_number, position_error, range_length, split_bounds_message, view_bounds_message,
@@ -27,28 +29,32 @@ use std::cell::RefCell;
 use std::io::Write;
 use std::rc::Rc;
 
-/// The deepest call nesting allowed before execution stops.
+/** The deepest call nesting allowed before execution stops. */
 pub const MAX_CALL_DEPTH: usize = 100_000;
 
 #[derive(Debug)]
 pub enum RunError {
-    /// A recoverable error nothing caught.
+    /** A recoverable error nothing caught. */
     Uncaught(ErrorValue),
-    /// Tasks failed and nothing joined them, though the main task finished.
+    /** Tasks failed and nothing joined them, though the main task finished. */
     TaskFailures(Vec<ErrorValue>),
-    /// A failure that ends execution without running cleanup.
+    /** A failure that ends execution without running cleanup. */
     Fatal(String),
-    /// The sandbox stopped the program, at once, for the reason given,
-    /// such as having written more than it lets a program write.
+    /**
+    The sandbox stopped the program, at once, for the reason given,
+    such as having written more than it lets a program write.
+    */
     Stopped(String),
 }
 
-/// What a program in the sandbox (`sayon run --sandbox`) may use, and how
-/// much it may write. The checker keeps it from the rest; this refuses them
-/// again while it runs, so that no mistake of the checker lets one through.
+/**
+What a program in the sandbox (`sayon run --sandbox`) may use, and how
+much it may write. The checker keeps it from the rest; this refuses them
+again while it runs, so that no mistake of the checker lets one through.
+*/
 pub struct Sandbox {
     pub capabilities: &'static [sayon_target::Capability],
-    /// The bytes it may write to its output and errors together.
+    /** The bytes it may write to its output and errors together. */
     pub output_limit: usize,
 }
 
@@ -69,8 +75,10 @@ struct Frame {
     slots: Vec<SlotValue>,
     block: BlockId,
     inst: usize,
-    /// Destination, normal successor, and error successor of the call this
-    /// frame is waiting on.
+    /**
+    Destination, normal successor, and error successor of the call this
+    frame is waiting on.
+    */
     waiting: Option<(Option<Place>, BlockId, BlockId)>,
 }
 
@@ -80,60 +88,72 @@ pub struct Machine<'m> {
     globals: Vec<Option<Value>>,
     frames: Vec<Frame>,
     out: Output<'m>,
-    /// Every task; the running one's frames are `frames`.
+    /** Every task; the running one's frames are `frames`. */
     fibers: Vec<Fiber>,
     current: usize,
-    /// Set when every task is to stop where it waits: at the end of the
-    /// main task, or when a task called `os.exit`.
+    /**
+    Set when every task is to stop where it waits: at the end of the
+    main task, or when a task called `os.exit`.
+    */
     stopping: bool,
-    /// The status a task's `os.exit` asked for.
+    /** The status a task's `os.exit` asked for. */
     exit_status: Option<i32>,
-    /// The C libraries and functions the program has called.
+    /** The C libraries and functions the program has called. */
     foreign: crate::foreign::Foreign,
-    /// What the machines of the program's threads share.
+    /** What the machines of the program's threads share. */
     program: Arc<Program>,
-    /// For the machine of a task on a thread of its own: the task.
+    /** For the machine of a task on a thread of its own: the task. */
     thread_task: Option<Arc<ParallelState>>,
-    /// The channels made on this thread that no task on another thread can
-    /// hold yet (see `parallel`), and the length at which to forget the
-    /// ones gone.
+    /**
+    The channels made on this thread that no task on another thread can
+    hold yet (see `parallel`), and the length at which to forget the
+    ones gone.
+    */
     local_channels: Vec<std::sync::Weak<crate::value::ChannelCell>>,
     prune_channels_at: usize,
-    /// The frame depth below each function that runs inside an operation:
-    /// one that C called back, or a finally function; the newest last.
+    /**
+    The frame depth below each function that runs inside an operation:
+    one that C called back, or a finally function; the newest last.
+    */
     nested: Vec<(usize, Nested)>,
-    /// The values of finally functions that run.
+    /** The values of finally functions that run. */
     held: Vec<Value>,
-    /// The sandbox the program runs in, if any, and what it wrote so far.
+    /** The sandbox the program runs in, if any, and what it wrote so far. */
     sandbox: Option<Sandbox>,
     written: usize,
-    /// Why the sandbox stopped the program, once it did: the operation that
-    /// went too far fails, and the program stops there.
+    /**
+    Why the sandbox stopped the program, once it did: the operation that
+    went too far fails, and the program stops there.
+    */
     stopped: Option<String>,
 }
 
-/// What runs inside an operation, from the frame below it.
+/** What runs inside an operation, from the frame below it. */
 #[derive(Clone, Copy, PartialEq)]
 enum Nested {
     Callback,
     Finally,
 }
 
-/// The first step of `steps` through a view: its position, the viewed
-/// array, and the element of the array it reaches.
+/**
+The first step of `steps` through a view: its position, the viewed
+array, and the element of the array it reaches.
+*/
 fn view_step(current: &Value, steps: &[Step], index: usize) -> Option<(usize, Ref, usize)> {
     let (step, rest) = steps.split_first()?;
     match (step, current) {
         (Step::Index(i), Value::View(view)) => Some((index, view.array.clone(), view.start + i)),
-        // A byte of a string, through a byte view, is the last step.
+        /* A byte of a string, through a byte view, is the last step. */
         (_, Value::Str(_)) => None,
         (Step::Deref, Value::Shared(shared)) => view_step(&shared.borrow(), rest, index + 1),
         _ => view_step(step_into(*step, current), rest, index + 1),
     }
 }
 
-/// Calls `f` on what `steps` reach from `current`. A step through a shared
-/// value reads inside it while `f` runs.
+/**
+Calls `f` on what `steps` reach from `current`. A step through a shared
+value reads inside it while `f` runs.
+*/
 fn read_steps<R>(current: &Value, steps: &[Step], f: impl FnOnce(&Value) -> R) -> R {
     let Some((step, rest)) = steps.split_first() else {
         return f(current);
@@ -145,8 +165,10 @@ fn read_steps<R>(current: &Value, steps: &[Step], f: impl FnOnce(&Value) -> R) -
     }
 }
 
-/// Calls `f` on what `steps` reach from `current`, for a change. Only a
-/// cell changes inside a shared value.
+/**
+Calls `f` on what `steps` reach from `current`, for a change. Only a
+cell changes inside a shared value.
+*/
 fn write_steps<R>(current: &mut Value, steps: &[Step], f: impl FnOnce(&mut Value) -> R) -> R {
     let Some((step, rest)) = steps.split_first() else {
         return f(current);
@@ -166,8 +188,10 @@ fn write_steps<R>(current: &mut Value, steps: &[Step], f: impl FnOnce(&mut Value
     write_steps(next, rest, f)
 }
 
-/// The bytes a write of the console holds: those of its text, or of its
-/// bytes, or none for a flush.
+/**
+The bytes a write of the console holds: those of its text, or of its
+bytes, or none for a flush.
+*/
 fn written_size(values: &[Value]) -> usize {
     match values {
         [Value::Str(text), ..] => text.len(),
@@ -176,7 +200,7 @@ fn written_size(values: &[Value]) -> usize {
     }
 }
 
-/// The part of a value that one step leads to.
+/** The part of a value that one step leads to. */
 fn step_into(step: Step, value: &Value) -> &Value {
     match (step, value) {
         (Step::Index(i), Value::Array(items)) => &items[i],
@@ -245,14 +269,18 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Runs the program in a sandbox: it may use only the capabilities
-    /// given, and write only so much.
+    /**
+    Runs the program in a sandbox: it may use only the capabilities
+    given, and write only so much.
+    */
     pub fn sandbox(&mut self, sandbox: Sandbox) {
         self.sandbox = Some(sandbox);
     }
 
-    /// The error for an operation the sandbox does not give the program:
-    /// the checker refuses such programs, so this is only a second gate.
+    /**
+    The error for an operation the sandbox does not give the program:
+    the checker refuses such programs, so this is only a second gate.
+    */
     fn refused(&self, capability: sayon_target::Capability, span: Span) -> ErrorValue {
         self.error(
             "SandboxError",
@@ -264,15 +292,17 @@ impl<'m> Machine<'m> {
         )
     }
 
-    /// Whether the sandbox, if any, lets the program use a capability.
+    /** Whether the sandbox, if any, lets the program use a capability. */
     fn allows(&self, capability: sayon_target::Capability) -> bool {
         self.sandbox
             .as_ref()
             .is_none_or(|sandbox| sandbox.capabilities.contains(&capability))
     }
 
-    /// Counts `bytes` the program is about to write; past the sandbox's
-    /// limit, it stops the program instead, before they are written.
+    /**
+    Counts `bytes` the program is about to write; past the sandbox's
+    limit, it stops the program instead, before they are written.
+    */
     fn count_written(&mut self, bytes: usize, span: Span) -> Result<(), ErrorValue> {
         let Some(sandbox) = &self.sandbox else {
             return Ok(());
@@ -288,7 +318,7 @@ impl<'m> Machine<'m> {
         Err(problem)
     }
 
-    /// The machine of a task on a thread of its own.
+    /** The machine of a task on a thread of its own. */
     fn for_thread(
         module: &'m Module,
         sources: &'m SourceMap,
@@ -301,19 +331,21 @@ impl<'m> Machine<'m> {
         machine
     }
 
-    /// The program's output, for one write.
+    /** The program's output, for one write. */
     fn output(&self) -> std::sync::MutexGuard<'_, &'m mut (dyn Write + Send)> {
         parallel::lock(&self.out)
     }
 
-    /// Initializes globals, runs the entry function, and returns its exit
-    /// status, or the one `os.exit` gave.
+    /**
+    Initializes globals, runs the entry function, and returns its exit
+    status, or the one `os.exit` gave.
+    */
     pub fn run(&mut self) -> Result<i32, RunError> {
         let _threads = JoinThreads(self.program.clone());
         let result = self.run_program();
         let result = self.finish(result);
         let _ = self.output().flush();
-        // Files kept by constants stay open until the program ends.
+        /* Files kept by constants stay open until the program ends. */
         sayon_runtime::streams::flush_all();
         result
     }
@@ -330,21 +362,25 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Ends the tasks still running, then gives the program's result: the
-    /// status `os.exit` asked for, the main task's own, or the failures of
-    /// tasks nothing joined.
+    /**
+    Ends the tasks still running, then gives the program's result: the
+    status `os.exit` asked for, the main task's own, or the failures of
+    tasks nothing joined.
+    */
     fn finish<T>(&mut self, result: Result<T, RunError>) -> Result<T, RunError>
     where
         T: From<i32>,
     {
-        // Nothing more runs after a fatal error, as in compiled programs,
-        // which stop at once, nor after the sandbox stops a program.
+        /*
+        Nothing more runs after a fatal error, as in compiled programs,
+        which stop at once, nor after the sandbox stops a program.
+        */
         if let Err(RunError::Fatal(_) | RunError::Stopped(_)) = &result {
             return result;
         }
         self.shutdown();
         let thread_failures = self.finish_threads();
-        // Then the constants, in the reverse order of their initialization.
+        /* Then the constants, in the reverse order of their initialization. */
         let module = self.module;
         let mut destroyed = self.run_finally();
         for (global, _) in module.initializers.iter().rev() {
@@ -372,7 +408,7 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Initializes globals and runs one test function.
+    /** Initializes globals and runs one test function. */
     pub fn run_test(&mut self, test: FunctionId) -> Result<(), RunError> {
         let _threads = JoinThreads(self.program.clone());
         let module = self.module;
@@ -430,23 +466,27 @@ impl<'m> Machine<'m> {
         frame.inst = 0;
     }
 
-    /// Runs the function value at `reference` with `args` to its end, for C
-    /// that calls it back during a call of a C function.
-    ///
-    /// # Safety
-    /// `machine` is a machine in such a call, which it made from `self`.
+    /**
+    Runs the function value at `reference` with `args` to its end, for C
+    that calls it back during a call of a C function.
+
+    # Safety
+    `machine` is a machine in such a call, which it made from `self`.
+    */
     unsafe fn run_callback_on(
         machine: *mut std::ffi::c_void,
         reference: &Ref,
         args: Vec<Value>,
     ) -> Result<Value, ErrorValue> {
-        // SAFETY: the machine waits for C, which calls back on its thread.
+        /* SAFETY: the machine waits for C, which calls back on its thread. */
         let machine = unsafe { &mut *(machine as *mut Machine<'static>) };
         machine.run_callback(reference, args)
     }
 
-    /// Why the running task cannot wait, as an error's code and message:
-    /// it holds a lock, or runs a finally function or a function C called.
+    /**
+    Why the running task cannot wait, as an error's code and message:
+    it holds a lock, or runs a finally function or a function C called.
+    */
     pub(super) fn refusal(&self) -> Option<(&'static str, &'static str)> {
         if self.fibers[self.current].locks > 0 {
             Some((
@@ -497,10 +537,12 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Runs the finally functions of the values destroyed so far, in order,
-    /// each with the value held where it can change it. Then it destroys
-    /// the value's fields, and what that queues runs before the next value,
-    /// as in compiled programs. A failure ends the program.
+    /**
+    Runs the finally functions of the values destroyed so far, in order,
+    each with the value held where it can change it. Then it destroys
+    the value's fields, and what that queues runs before the next value,
+    as in compiled programs. A failure ends the program.
+    */
     pub(super) fn run_finally(&mut self) -> Result<(), RunError> {
         for (ty, values) in crate::value::take_destroyed() {
             let function = self.module.finally[&ty];
@@ -535,7 +577,7 @@ impl<'m> Machine<'m> {
                     }
                     RunError::Fatal(message) => message,
                     RunError::TaskFailures(_) => format!("the finally function `{name}` failed"),
-                    // The sandbox's stop stays what it is.
+                    /* The sandbox's stop stays what it is. */
                     stopped @ RunError::Stopped(_) => return Err(stopped),
                 };
                 return Err(RunError::Fatal(message));
@@ -580,10 +622,12 @@ impl<'m> Machine<'m> {
                         SlotValue::Value(value) => value,
                         _ => Value::Nothing,
                     };
-                    // The frame's values go now: when a task finishes,
-                    // `finish_task` may wait for others before it returns,
-                    // and what the task captured, such as a connection,
-                    // must not outlive it meanwhile.
+                    /*
+                    The frame's values go now: when a task finishes,
+                    `finish_task` may wait for others before it returns,
+                    and what the task captured, such as a connection,
+                    must not outlive it meanwhile.
+                    */
                     drop(frame);
                     if self.frames.len() == base {
                         if self.current == 0
@@ -594,7 +638,7 @@ impl<'m> Machine<'m> {
                         {
                             return Ok(value);
                         }
-                        // A task finished; another goes on.
+                        /* A task finished; another goes on. */
                         if !self.finish_task(Ok(value)) {
                             return Ok(Value::Nothing);
                         }
@@ -619,7 +663,7 @@ impl<'m> Machine<'m> {
                             location: None,
                         },
                     };
-                    // As for a return, the frame's values go first.
+                    /* As for a return, the frame's values go first. */
                     drop(frame);
                     if self.frames.len() == base {
                         if self.current == 0
@@ -692,8 +736,10 @@ impl<'m> Machine<'m> {
                         self.top().slots[slot] = SlotValue::Value(Value::Error(Box::new(problem)));
                         self.jump(*error);
                     }
-                    // Another task runs now; this one runs the operation
-                    // again when it is resumed.
+                    /*
+                    Another task runs now; this one runs the operation
+                    again when it is resumed.
+                    */
                     Progress::Wait(_) if self.refusal().is_some() => {
                         let (code, message) = self.refusal().expect("a refusal");
                         let problem = self.error(code, message, *span);
@@ -728,7 +774,7 @@ impl<'m> Machine<'m> {
                         }
                         self.jump(*normal);
                     }
-                    // Nothing catches the sandbox's stop.
+                    /* Nothing catches the sandbox's stop. */
                     Err(_) if self.stopped.is_some() => {
                         let reason = self.stopped.take().unwrap_or_default();
                         return Err(RunError::Stopped(reason));
@@ -749,7 +795,7 @@ impl<'m> Machine<'m> {
         }
     }
 
-    // ----- places --------------------------------------------------------------
+    /* ----- places -------------------------------------------------------------- */
 
     fn slot_int(&self, frame: usize, slot: SlotId) -> usize {
         match &self.frames[frame].slots[slot.0 as usize] {
@@ -799,8 +845,10 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// The reference with every step through a view replaced by the step
-    /// into the viewed array's element.
+    /**
+    The reference with every step through a view replaced by the step
+    into the viewed array's element.
+    */
     fn flatten(&self, reference: &Ref) -> Ref {
         match view_step(self.root_value(reference.root), &reference.path, 0) {
             Some((index, array, element)) => {
@@ -821,7 +869,7 @@ impl<'m> Machine<'m> {
         read_steps(self.root_value(reference.root), &reference.path, f)
     }
 
-    /// The elements a view shows, as an array.
+    /** The elements a view shows, as an array. */
     fn view_array(&self, view: &ViewValue) -> Value {
         self.read(&view.array, |value| match value {
             Value::Array(items) => {
@@ -837,7 +885,7 @@ impl<'m> Machine<'m> {
         })
     }
 
-    /// Reads a source, showing a view as the array of its elements.
+    /** Reads a source, showing a view as the array of its elements. */
     fn with_shown<R>(&self, source: &Source, f: impl FnOnce(&Value) -> R) -> R {
         self.with_source(source, |value| match value {
             Value::View(view) => f(&self.view_array(view)),
@@ -877,9 +925,11 @@ impl<'m> Machine<'m> {
         let mut reference = self.resolve(place);
         let payload_only = matches!(reference.path.as_slice(), [Step::Payload]);
         if !reference.path.is_empty() && !payload_only {
-            // Taking part of a value (a binding of a match that owns it, or
-            // a field of a temporary). Moving a union's payload empties the
-            // union; the rest is never read again.
+            /*
+            Taking part of a value (a binding of a match that owns it, or
+            a field of a temporary). Moving a union's payload empties the
+            union; the rest is never read again.
+            */
             let last = reference.path.pop().expect("path");
             return self.with_mut(&reference, |parent| {
                 if let Step::Payload = last {
@@ -918,7 +968,7 @@ impl<'m> Machine<'m> {
     fn drop_place(&mut self, place: &Place) {
         let reference = self.resolve(place);
         if !reference.path.is_empty() {
-            // Elements are replaced by the assignment that follows.
+            /* Elements are replaced by the assignment that follows. */
             return;
         }
         match reference.root {
@@ -932,7 +982,7 @@ impl<'m> Machine<'m> {
         }
     }
 
-    // ----- operands ----------------------------------------------------------------
+    /* ----- operands ---------------------------------------------------------------- */
 
     fn source(&mut self, operand: &Operand) -> Source {
         match operand {
@@ -951,8 +1001,10 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// An owned value from an operand; borrowed operands are copied, which the
-    /// lowering only produces for Copy types and display.
+    /**
+    An owned value from an operand; borrowed operands are copied, which the
+    lowering only produces for Copy types and display.
+    */
     fn take(&mut self, operand: &Operand) -> Value {
         match self.source(operand) {
             Source::Owned(value) => value,
@@ -980,7 +1032,7 @@ impl<'m> Machine<'m> {
         })
     }
 
-    // ----- instructions --------------------------------------------------------
+    /* ----- instructions -------------------------------------------------------- */
 
     fn instruction(&mut self, inst: &Inst) {
         match inst {
@@ -1169,8 +1221,10 @@ impl<'m> Machine<'m> {
                 Value::Int(length as i128)
             }
             Rvalue::ByteLength(value) => Value::Int(self.string(value).len() as i128),
-            // The interpreter's dictionaries close up as soon as an entry is
-            // removed, so each of their places holds an entry.
+            /*
+            The interpreter's dictionaries close up as soon as an entry is
+            removed, so each of their places holds an entry.
+            */
             Rvalue::DictSlots(value) => {
                 let source = self.source(value);
                 let slots = self.with_source(&source, |v| match v {
@@ -1255,7 +1309,7 @@ impl<'m> Machine<'m> {
             }
             Rvalue::MakeMutex { value, .. } => {
                 let value = self.take(value);
-                // Tasks on other threads may take the value out.
+                /* Tasks on other threads may take the value out. */
                 self.cross_channels();
                 Value::Mutex(MutexCell::new(value))
             }
@@ -1319,7 +1373,7 @@ impl<'m> Machine<'m> {
         }
     }
 
-    // ----- fallible operations ---------------------------------------------------
+    /* ----- fallible operations --------------------------------------------------- */
 
     fn location(&self, span: Span) -> String {
         let file = self.sources.get(span.file);
@@ -1715,8 +1769,10 @@ impl<'m> Machine<'m> {
             Op::CallForeign { function, args } => {
                 let module = self.module;
                 let mut values: Vec<(Value, Type)> = Vec::new();
-                // The function values C can call back, which stay where
-                // they are.
+                /*
+                The function values C can call back, which stay where
+                they are.
+                */
                 let mut functions: Vec<Option<Ref>> = Vec::new();
                 for (arg, ty) in args {
                     if let Type::Function(_) = ty {
@@ -1731,7 +1787,7 @@ impl<'m> Machine<'m> {
                     functions.push(None);
                     values.push((self.with_source(&source, Value::clone), ty.clone()));
                 }
-                // What the program printed comes before what C prints.
+                /* What the program printed comes before what C prints. */
                 let _ = self.output().flush();
                 let declaration = &module.foreign[function.0 as usize];
                 let target = self
@@ -1768,7 +1824,7 @@ impl<'m> Machine<'m> {
                 ty,
             } => {
                 let address = self.address(address, offset, "read from", span)?;
-                // SAFETY: unsafe code vouched for the memory.
+                /* SAFETY: unsafe code vouched for the memory. */
                 Ok(unsafe { crate::foreign::read(address, ty, &self.module.types) })
             }
             Op::RawWrite {
@@ -1780,7 +1836,7 @@ impl<'m> Machine<'m> {
                 let address = self.address(address, offset, "write to", span)?;
                 let source = self.source(value);
                 let value = self.with_source(&source, Value::clone);
-                // SAFETY: unsafe code vouched for the memory.
+                /* SAFETY: unsafe code vouched for the memory. */
                 unsafe { crate::foreign::write(address, &value, ty, &self.module.types) };
                 Ok(Value::Nothing)
             }
@@ -1795,8 +1851,10 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// The address `offset` bytes after a pointer, or the error for
-    /// `null_pointer`.
+    /**
+    The address `offset` bytes after a pointer, or the error for
+    `null_pointer`.
+    */
     fn address(
         &mut self,
         address: &Operand,
@@ -1819,9 +1877,11 @@ impl<'m> Machine<'m> {
         Ok(base.wrapping_add_signed(offset as isize))
     }
 
-    /// Runs a host primitive through the runtime's shared implementation.
-    /// Output goes through the interpreter's own writer so it stays in order
-    /// with `print`.
+    /**
+    Runs a host primitive through the runtime's shared implementation.
+    Output goes through the interpreter's own writer so it stays in order
+    with `print`.
+    */
     fn host(
         &mut self,
         function: Host,
@@ -1853,7 +1913,7 @@ impl<'m> Machine<'m> {
                     self.error("IOError", format!("could not write output: {error}"), span)
                 });
             }
-            // A file of standard output writes where `print` does.
+            /* A file of standard output writes where `print` does. */
             Host::StreamWrite | Host::StreamWriteBytes | Host::StreamFlush
                 if matches!(&values[0], Value::Stream(stream)
                     if sayon_runtime::streams::is_standard_output(stream.id())) =>
@@ -1875,8 +1935,10 @@ impl<'m> Machine<'m> {
                 self.count_written(written_size(&values), span)?;
                 let _ = self.output().flush();
             }
-            // What the program printed shows before it waits for input or
-            // another program writes.
+            /*
+            What the program printed shows before it waits for input or
+            another program writes.
+            */
             Host::ReadLine
             | Host::Start
             | Host::StreamReadLine

@@ -1,6 +1,8 @@
-# Hash map: put a lot of integer keys into the standard library's hash
-# map, look each one up, take every other one out, and look them all up
-# again. Hashing, probing, and memory for the table.
+##
+Hash map: put a lot of integer keys into the standard library's hash
+map, look each one up, take every other one out, and look them all up
+again. Hashing, probing, and memory for the table.
+##
 
 os = import("standard/os.sayon")
 strings = import("standard/strings.sayon")

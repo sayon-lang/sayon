@@ -1,7 +1,9 @@
-//! The Sayon installer. Each release has one per device (operating system
-//! and processor), with that device's Sayon files inside. It installs Sayon
-//! for the current user, makes `sayon` available in new terminals, and
-//! leaves an uninstaller in the installation folder.
+/*!
+The Sayon installer. Each release has one per device (operating system
+and processor), with that device's Sayon files inside. It installs Sayon
+for the current user, makes `sayon` available in new terminals, and
+leaves an uninstaller in the installation folder.
+*/
 
 mod archive;
 mod install;
@@ -31,7 +33,7 @@ Options:
     -V, --version        Print the version
 ";
 
-/// The device the installer (and the Sayon inside it) is built for.
+/** The device the installer (and the Sayon inside it) is built for. */
 fn device() -> String {
     let target = env!("SAYON_INSTALLER_TARGET");
     let system = if target.contains("windows") {
@@ -60,7 +62,7 @@ struct Options {
 }
 
 fn parse(args: &[String]) -> Result<Option<Options>, String> {
-    // The copy left in the installation folder uninstalls by default.
+    /* The copy left in the installation folder uninstalls by default. */
     let as_uninstaller = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.file_stem().map(|s| s.to_string_lossy().to_lowercase()))
@@ -99,8 +101,10 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
     Ok(Some(options))
 }
 
-/// Asks a yes-or-no question; `default` is the answer to an empty line.
-/// Without an answer (no input at all) nothing is changed.
+/**
+Asks a yes-or-no question; `default` is the answer to an empty line.
+Without an answer (no input at all) nothing is changed.
+*/
 fn confirm(question: &str, default: bool) -> bool {
     let hint = if default { "[Y/n]" } else { "[y/N]" };
     print!("{question} {hint} ");
@@ -174,7 +178,7 @@ fn install(options: &Options) -> Result<(), String> {
     let sayon = prefix
         .join("bin")
         .join(format!("sayon{}", platform::EXECUTABLE_SUFFIX));
-    // `sayon doctor` reports what works now and what native builds still need.
+    /* `sayon doctor` reports what works now and what native builds still need. */
     let _ = std::process::Command::new(&sayon).arg("doctor").status();
     println!();
     println!("Sayon {VERSION} is installed.");
@@ -220,7 +224,7 @@ fn uninstall(options: &Options) -> Result<(), String> {
     let gone = match install::remove(&prefix, keep) {
         Ok(gone) => gone,
         Err(message) => {
-            // Keep the installation registered so that removing it can be retried.
+            /* Keep the installation registered so that removing it can be retried. */
             if let Some(moved) = &moved {
                 let _ = std::fs::rename(moved, prefix.join(platform::UNINSTALLER));
             }
@@ -242,8 +246,10 @@ fn uninstall(options: &Options) -> Result<(), String> {
     Ok(())
 }
 
-/// The installation to remove: the one this uninstaller belongs to, the
-/// one recorded at installation, or the default location.
+/**
+The installation to remove: the one this uninstaller belongs to, the
+one recorded at installation, or the default location.
+*/
 fn locate_installation() -> Option<PathBuf> {
     let own = std::env::current_exe()
         .ok()
@@ -292,7 +298,7 @@ fn main() -> ExitCode {
             (64, false)
         }
     };
-    // Keep a window opened just for the installer readable until it closes.
+    /* Keep a window opened just for the installer readable until it closes. */
     if !unattended && platform::owns_console() {
         print!("\nPress Enter to close this window.");
         let _ = std::io::stdout().flush();

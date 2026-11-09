@@ -1,5 +1,7 @@
-//! JSON, as the language server protocol's messages and the package
-//! registry's answers are written: values, parsed from text and written back.
+/*!
+JSON, as the language server protocol's messages and the package
+registry's answers are written: values, parsed from text and written back.
+*/
 
 use std::fmt::Write;
 
@@ -10,7 +12,7 @@ pub enum Json {
     Number(f64),
     String(String),
     Array(Vec<Json>),
-    /// Members in the order they were written.
+    /** Members in the order they were written. */
     Object(Vec<(String, Json)>),
 }
 
@@ -32,7 +34,7 @@ impl Json {
         Json::Number(value.into())
     }
 
-    /// The member `key` of an object; `Null` for anything else.
+    /** The member `key` of an object; `Null` for anything else. */
     pub fn get(&self, key: &str) -> &Json {
         match self {
             Json::Object(members) => members
@@ -78,7 +80,7 @@ impl Json {
         matches!(self, Json::Null)
     }
 
-    /// Parses a whole text as one value.
+    /** Parses a whole text as one value. */
     pub fn parse(text: &str) -> Result<Json, String> {
         let mut parser = Parser {
             bytes: text.as_bytes(),
@@ -149,7 +151,7 @@ fn write_string(f: &mut std::fmt::Formatter<'_>, text: &str) -> std::fmt::Result
     f.write_char('"')
 }
 
-/// How deep arrays and objects may nest.
+/** How deep arrays and objects may nest. */
 const DEEPEST: usize = 128;
 
 struct Parser<'a> {

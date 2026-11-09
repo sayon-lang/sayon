@@ -1,4 +1,4 @@
-//! Statement checking.
+/*! Statement checking. */
 
 use crate::checker::{Checker, Deferred, FnCtx, Item, Scope};
 use crate::hir::{self, LocalKind, Place, StmtKind};
@@ -13,8 +13,10 @@ fn stmt(kind: StmtKind, span: Span) -> hir::Stmt {
 }
 
 impl<'a> Checker<'a> {
-    /// The call that gets the next value of a loop over an iterator, whose
-    /// type's `next` returns a value, or `nothing` at the end.
+    /**
+    The call that gets the next value of a loop over an iterator, whose
+    type's `next` returns a value, or `nothing` at the end.
+    */
     fn iterator_next(
         &mut self,
         cx: &mut FnCtx,
@@ -193,7 +195,7 @@ impl<'a> Checker<'a> {
             }
             ast::StmtKind::Declare(decl) => {
                 if decl.kind == DeclKind::Constant && cx.is_script && cx.scopes.len() == 1 {
-                    // Module constants were collected and checked as items.
+                    /* Module constants were collected and checked as items. */
                     return None;
                 }
                 return self.check_declaration(cx, decl, span);
@@ -244,7 +246,7 @@ impl<'a> Checker<'a> {
                         next =
                             self.iterator_next(cx, id, &iterable_hir, &item_types, iterable.span);
                         if next.is_none() {
-                            // Reported; the loop variables are unknown.
+                            /* Reported; the loop variables are unknown. */
                             self.apply_iteration(&Type::Unknown, &item_types, iterable.span);
                         }
                     }
@@ -333,8 +335,10 @@ impl<'a> Checker<'a> {
                 };
                 StmtKind::Return(value)
             }
-            // A function declared in a function is a closure bound to a
-            // variable: it can use the variables declared before it.
+            /*
+            A function declared in a function is a closure bound to a
+            variable: it can use the variables declared before it.
+            */
             ast::StmtKind::Function(function) => {
                 let Some(name) = &function.name else {
                     return None;
@@ -484,8 +488,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// A branch of an `if` whose condition the compiler decided: only the
-    /// branch it selects is checked, and becomes a plain block.
+    /**
+    A branch of an `if` whose condition the compiler decided: only the
+    branch it selects is checked, and becomes a plain block.
+    */
     fn check_selected(
         &mut self,
         cx: &mut FnCtx,
@@ -572,7 +578,7 @@ impl<'a> Checker<'a> {
             None
         };
 
-        // After `if x == nothing` followed by a return, `x` is known to hold a value.
+        /* After `if x == nothing` followed by a return, `x` is known to hold a value. */
         let then_exits = block_exits(&then_block);
         let else_exits = else_block.as_ref().is_some_and(block_exits);
         if then_exits && !else_exits {
@@ -653,7 +659,7 @@ impl<'a> Checker<'a> {
             );
             return None;
         }
-        // Introduces a new local, visible after its initializer.
+        /* Introduces a new local, visible after its initializer. */
         let value = self.check_expr(cx, value, None);
         let ty = value.ty.clone();
         let local = cx.declare(&name.name, ty, name.span, LocalKind::Variable);
@@ -728,13 +734,15 @@ impl<'a> Checker<'a> {
         Some(stmt(StmtKind::Let { local, value }, span))
     }
 
-    /// Resolves an assignment target to a place and the type stored there.
+    /** Resolves an assignment target to a place and the type stored there. */
     pub fn check_place(&mut self, cx: &mut FnCtx, target: &ast::Expr) -> Option<(Place, Type)> {
         self.check_place_in(cx, target, false)
     }
 
-    /// `inner` is set for the base of an element or field target, where a
-    /// union local narrowed by a test is used with its narrowed type.
+    /**
+    `inner` is set for the base of an element or field target, where a
+    union local narrowed by a test is used with its narrowed type.
+    */
     fn check_place_in(
         &mut self,
         cx: &mut FnCtx,

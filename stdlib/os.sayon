@@ -1,14 +1,18 @@
-# The program's environment.
-#
-#     os = import("standard/os.sayon")
-#     for argument in os.arguments()
-#         print(argument)
+##
+The program's environment.
+
+    os = import("standard/os.sayon")
+    for argument in os.arguments()
+        print(argument)
+##
 
 io = import("standard/io.sayon")
 time = import("standard/time.sayon")
 
-# The arguments given to the program, without the program's own name. With
-# `sayon run`, these are the words after `--`.
+##
+The arguments given to the program, without the program's own name. With
+`sayon run`, these are the words after `--`.
+##
 function arguments() -> Array<string>
     return host_arguments()
 
@@ -24,24 +28,30 @@ function platform() -> string
 function current_directory() -> string
     return host_current_directory()
 
-# What a finished program used: the most memory it held at once, in bytes,
-# and the processor time it took, its own and the system's on its behalf,
-# added up over its threads. Both are 0 where the system does not say.
+##
+What a finished program used: the most memory it held at once, in bytes,
+and the processor time it took, its own and the system's on its behalf,
+added up over its threads. Both are 0 where the system does not say.
+##
 type Usage = [peak_memory: integer, processor_time: time.Duration]
 
-# What a program run by `run` did: its exit status (-1 when it was stopped
-# without one), what it wrote to its standard output and error, and what
-# it used.
+##
+What a program run by `run` did: its exit status (-1 when it was stopped
+without one), what it wrote to its standard output and error, and what
+it used.
+##
 type Completed = [status: integer, output: string, errors: string, usage: Usage]
 
-# Runs a program and waits for it to finish, letting other tasks run.
-# `program` is a path, or a name found on the system's search path; the
-# arguments are passed exactly as they are, without a shell, so no
-# character in them has a special meaning. The program reads `input`, and
-# runs in `directory`, or in the current directory when it is "". It has
-# this program's environment variables and those of `environment`, or with
-# `inherit_environment = false` only those. Fails with IOError when it
-# cannot be started, and with EncodingError when its output is not UTF-8.
+##
+Runs a program and waits for it to finish, letting other tasks run.
+`program` is a path, or a name found on the system's search path; the
+arguments are passed exactly as they are, without a shell, so no
+character in them has a special meaning. The program reads `input`, and
+runs in `directory`, or in the current directory when it is "". It has
+this program's environment variables and those of `environment`, or with
+`inherit_environment = false` only those. Fails with IOError when it
+cannot be started, and with EncodingError when its output is not UTF-8.
+##
 function run(program: string, arguments: Array<string>, directory = "", input = "", environment: Dict<string, string> = [], inherit_environment = true) -> Completed
     process = start(program, arguments, directory, environment, inherit_environment)
     process.input.write(input)
@@ -51,10 +61,12 @@ function run(program: string, arguments: Array<string>, directory = "", input = 
     status = process.wait()
     return Completed(status = status, output = output, errors = errors, usage = process.usage())
 
-# A program started with `start`: what it reads from `input`, and what it
-# writes to `output` and `errors`, are files of standard/io, which can be
-# read and written while it runs. Reading them, and waiting for the
-# program, let other tasks run.
+##
+A program started with `start`: what it reads from `input`, and what it
+writes to `output` and `errors`, are files of standard/io, which can be
+read and written while it runs. Reading them, and waiting for the
+program, let other tasks run.
+##
 type Process = [handle: HostStream, input: io.File, output: io.File, errors: io.File]
 
 # Starts a program, as `run` does, without waiting for it to finish.
@@ -70,18 +82,24 @@ function start(program: string, arguments: Array<string>, directory = "", enviro
     errors = io.File(stream = host_process_errors(handle), path = "the error output of {name}", line_limit = io.LINE_LIMIT)
     return Process(handle = handle, input = input, output = output, errors = errors)
 
-# Ends the program's input once what was written to it has gone: the
-# program then reads to its end.
+##
+Ends the program's input once what was written to it has gone: the
+program then reads to its end.
+##
 function process_finish_input(update process: Process)
     host_stream_close(process.input.stream)
 
-# Waits for the program to finish, and gives its exit status: -1 when it
-# was stopped without one.
+##
+Waits for the program to finish, and gives its exit status: -1 when it
+was stopped without one.
+##
 function process_wait(update process: Process) -> integer
     return host_process_wait(process.handle)
 
-# What the program used, once it has finished. Fails with ValueError while
-# it is still running.
+##
+What the program used, once it has finished. Fails with ValueError while
+it is still running.
+##
 function process_usage(process: Process) -> Usage
     memory = host_process_peak_memory(process.handle)
     nanoseconds = host_process_processor_time(process.handle)
@@ -95,9 +113,11 @@ function process_stop(update process: Process)
 function process_id(process: Process) -> integer
     return host_process_id(process.handle)
 
-# Ends the program with an exit status from 0 (success) to 255. The program
-# ends in order: `finally` blocks run and values are cleaned up on the way
-# out, though `catch` and `try` do not stop it. Fails with ValueError for a
-# status outside 0 to 255.
+##
+Ends the program with an exit status from 0 (success) to 255. The program
+ends in order: `finally` blocks run and values are cleaned up on the way
+out, though `catch` and `try` do not stop it. Fails with ValueError for a
+status outside 0 to 255.
+##
 function exit(code = 0)
     host_exit(code)

@@ -1,5 +1,7 @@
-//! Dependencies end to end: `sayon install`, the lock, and imports of
-//! `dependencies/...`, with local packages and a Git repository on disk.
+/*!
+Dependencies end to end: `sayon install`, the lock, and imports of
+`dependencies/...`, with local packages and a Git repository on disk.
+*/
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -30,7 +32,7 @@ fn write(path: &Path, text: &str) {
     std::fs::write(path, text).unwrap();
 }
 
-/// A fresh, short directory under the system's temporary folder.
+/** A fresh, short directory under the system's temporary folder. */
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("sp-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -98,7 +100,7 @@ fn local_dependencies_are_locked_and_imported() {
     assert_eq!(again.status, 0, "{}", again.stderr);
     assert!(again.stderr.contains("up to date"));
 
-    // A changed manifest needs a new lock.
+    /* A changed manifest needs a new lock. */
     write(
         &app.join("sayon.toml"),
         &format!("{manifest}inner = {{ path = \"../inner\" }}\n"),
@@ -189,7 +191,7 @@ fn git_dependencies_are_fetched_and_verified() {
     let run = sayon(&app, &cache, &["run"]);
     assert_eq!(run.stdout, "<hi>\n", "{}", run.stderr);
 
-    // A changed cached copy is refused, and `install` fetches it again.
+    /* A changed cached copy is refused, and `install` fetches it again. */
     let entry = std::fs::read_dir(cache.join("git"))
         .unwrap()
         .map(|e| e.unwrap().path())

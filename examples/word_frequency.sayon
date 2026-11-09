@@ -1,11 +1,13 @@
-# Counts the words of the text files under a directory, on several threads
-# at once, and prints the most frequent ones.
-#
-#     sayon run examples/word_frequency.sayon -- path/to/directory
-#
-# Workers on threads of their own take the files' paths from one channel,
-# count each file's words, and send the counts back on another; the main
-# task adds them up. Without a directory it counts the examples' own words.
+##
+Counts the words of the text files under a directory, on several threads
+at once, and prints the most frequent ones.
+
+    sayon run examples/word_frequency.sayon -- path/to/directory
+
+Workers on threads of their own take the files' paths from one channel,
+count each file's words, and send the counts back on another; the main
+task adds them up. Without a directory it counts the examples' own words.
+##
 
 collections = import("standard/collections.sayon")
 filesystem = import("standard/filesystem.sayon")

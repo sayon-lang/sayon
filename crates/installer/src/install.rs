@@ -1,25 +1,27 @@
-//! Putting the Sayon files in place and taking them away again.
-//!
-//! An installation directory holds a marker file naming the installed
-//! version. The installer only replaces or removes a directory that has the
-//! marker, so a mistyped `--prefix` can never delete someone's files. Files
-//! are unpacked into a sibling staging directory first and swapped in at the
-//! end, so an interrupted installation leaves the previous one intact.
-//!
-//! Removing a directory takes its marker last, so one that could not be
-//! removed completely, because a program still had a file of it open, is
-//! still recognized and removed by the next installation. Until then the
-//! staging and previous directories take the next free numbered name, so
-//! that a leftover never stops an installation.
+/*!
+Putting the Sayon files in place and taking them away again.
+
+An installation directory holds a marker file naming the installed
+version. The installer only replaces or removes a directory that has the
+marker, so a mistyped `--prefix` can never delete someone's files. Files
+are unpacked into a sibling staging directory first and swapped in at the
+end, so an interrupted installation leaves the previous one intact.
+
+Removing a directory takes its marker last, so one that could not be
+removed completely, because a program still had a file of it open, is
+still recognized and removed by the next installation. Until then the
+staging and previous directories take the next free numbered name, so
+that a leftover never stops an installation.
+*/
 
 use crate::archive::Entry;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// The file that marks a directory as a Sayon installation.
+/** The file that marks a directory as a Sayon installation. */
 pub const MARKER: &str = ".sayon-installation";
 
-/// The installed version, when `prefix` holds a Sayon installation.
+/** The installed version, when `prefix` holds a Sayon installation. */
 pub fn installed_version(prefix: &Path) -> Option<String> {
     let text = fs::read_to_string(prefix.join(MARKER)).ok()?;
     text.lines().find_map(|line| {
@@ -28,7 +30,7 @@ pub fn installed_version(prefix: &Path) -> Option<String> {
     })
 }
 
-/// Checks that installing into `prefix` replaces nothing but Sayon.
+/** Checks that installing into `prefix` replaces nothing but Sayon. */
 pub fn check_destination(prefix: &Path) -> Result<(), String> {
     if !prefix.exists() {
         return Ok(());
@@ -50,7 +52,7 @@ pub fn check_destination(prefix: &Path) -> Result<(), String> {
     }
 }
 
-/// The files to install, with the archive's top-level folder removed.
+/** The files to install, with the archive's top-level folder removed. */
 pub fn layout(entries: Vec<Entry>) -> Vec<Entry> {
     let first = |path: &str| path.split('/').next().unwrap_or("").to_string();
     let top = entries.first().map(|e| first(&e.path));
@@ -71,20 +73,24 @@ pub fn layout(entries: Vec<Entry>) -> Vec<Entry> {
         .collect()
 }
 
-/// A sibling of `prefix` with a suffix added to its name.
+/** A sibling of `prefix` with a suffix added to its name. */
 fn sibling(prefix: &Path, suffix: &str) -> PathBuf {
     let mut name = prefix.file_name().unwrap_or_default().to_os_string();
     name.push(suffix);
     prefix.with_file_name(name)
 }
 
-/// The folders an installation works in next to `prefix`, and how many
-/// numbered ones of each it tries when the first are taken.
+/**
+The folders an installation works in next to `prefix`, and how many
+numbered ones of each it tries when the first are taken.
+*/
 const WORK_FOLDERS: [&str; 2] = [".installing", ".previous"];
 const NUMBERED: u32 = 20;
 
-/// The `n`th folder next to `prefix` with `suffix`: `Sayon.previous`,
-/// then `Sayon.previous-2`, and so on.
+/**
+The `n`th folder next to `prefix` with `suffix`: `Sayon.previous`,
+then `Sayon.previous-2`, and so on.
+*/
 fn work_folder(prefix: &Path, suffix: &str, n: u32) -> PathBuf {
     match n {
         1 => sibling(prefix, suffix),
@@ -92,9 +98,11 @@ fn work_folder(prefix: &Path, suffix: &str, n: u32) -> PathBuf {
     }
 }
 
-/// Removes a folder the installer made earlier, as far as it can now: one
-/// that holds the marker, or an empty one. Anything else is left alone.
-/// Whether the folder is gone.
+/**
+Removes a folder the installer made earlier, as far as it can now: one
+that holds the marker, or an empty one. Anything else is left alone.
+Whether the folder is gone.
+*/
 fn discard(dir: &Path) -> bool {
     if !dir.exists() {
         return true;
@@ -105,8 +113,10 @@ fn discard(dir: &Path) -> bool {
     dir.join(MARKER).is_file() && remove(dir, None).unwrap_or(false)
 }
 
-/// Removes what earlier installations left next to `prefix`, as far as it
-/// can now.
+/**
+Removes what earlier installations left next to `prefix`, as far as it
+can now.
+*/
 pub fn clear_leftovers(prefix: &Path) {
     for suffix in WORK_FOLDERS {
         for n in 1..=NUMBERED {
@@ -115,7 +125,7 @@ pub fn clear_leftovers(prefix: &Path) {
     }
 }
 
-/// The first folder next to `prefix` with `suffix` that is free.
+/** The first folder next to `prefix` with `suffix` that is free. */
 fn free_folder(prefix: &Path, suffix: &str) -> Result<PathBuf, String> {
     (1..=NUMBERED)
         .map(|n| work_folder(prefix, suffix, n))
@@ -128,8 +138,10 @@ fn free_folder(prefix: &Path, suffix: &str) -> Result<PathBuf, String> {
         })
 }
 
-/// Unpacks `files` and a copy of the installer (as the uninstaller) into
-/// `prefix`, replacing a previous installation. Returns the bytes written.
+/**
+Unpacks `files` and a copy of the installer (as the uninstaller) into
+`prefix`, replacing a previous installation. Returns the bytes written.
+*/
 pub fn unpack(
     files: &[Entry],
     prefix: &Path,
@@ -137,13 +149,15 @@ pub fn unpack(
     uninstaller: Option<(&Path, &str)>,
 ) -> Result<u64, String> {
     check_destination(prefix)?;
-    // Left by an interrupted installation, or by one that could not finish
-    // removing the installation it replaced.
+    /*
+    Left by an interrupted installation, or by one that could not finish
+    removing the installation it replaced.
+    */
     clear_leftovers(prefix);
     let staging = free_folder(prefix, ".installing")?;
     fs::create_dir_all(&staging)
         .map_err(|e| format!("cannot create {}: {e}", staging.display()))?;
-    // The marker comes first, so a leftover staging folder is recognizable.
+    /* The marker comes first, so a leftover staging folder is recognizable. */
     fs::write(
         staging.join(MARKER),
         format!("# Written by the Sayon installer; the uninstaller removes this folder.\nversion = \"{version}\"\n"),
@@ -171,8 +185,10 @@ pub fn unpack(
     Ok(total)
 }
 
-/// Moves the staged files into place, keeping the old installation until
-/// the new one is there.
+/**
+Moves the staged files into place, keeping the old installation until
+the new one is there.
+*/
 fn swap(staging: &Path, prefix: &Path) -> Result<(), String> {
     let busy = |e: std::io::Error| {
         format!(
@@ -190,19 +206,21 @@ fn swap(staging: &Path, prefix: &Path) -> Result<(), String> {
     let old = free_folder(prefix, ".previous")?;
     fs::rename(prefix, &old).map_err(busy)?;
     if let Err(error) = fs::rename(staging, prefix) {
-        // Put the previous installation back.
+        /* Put the previous installation back. */
         let _ = fs::rename(&old, prefix);
         return Err(busy(error));
     }
-    // What is still open stays, with its marker, for the next installation.
+    /* What is still open stays, with its marker, for the next installation. */
     discard(&old);
     Ok(())
 }
 
-/// Removes a Sayon installation, except `keep` (the running uninstaller,
-/// which some systems cannot delete while it runs). The marker goes last,
-/// so an interrupted removal can be retried. Returns whether the whole
-/// directory is gone.
+/**
+Removes a Sayon installation, except `keep` (the running uninstaller,
+which some systems cannot delete while it runs). The marker goes last,
+so an interrupted removal can be retried. Returns whether the whole
+directory is gone.
+*/
 pub fn remove(prefix: &Path, keep: Option<&Path>) -> Result<bool, String> {
     let marker = prefix.join(MARKER);
     if !marker.is_file() {
@@ -221,8 +239,10 @@ pub fn remove(prefix: &Path, keep: Option<&Path>) -> Result<bool, String> {
     Ok(!prefix.exists())
 }
 
-/// Removes everything inside `dir` except the `kept` files, and `dir`
-/// itself once it is empty.
+/**
+Removes everything inside `dir` except the `kept` files, and `dir`
+itself once it is empty.
+*/
 fn remove_tree(dir: &Path, kept: &[PathBuf]) -> Result<(), String> {
     let entries = fs::read_dir(dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
     let mut keeps_something = false;
@@ -288,7 +308,7 @@ mod tests {
         assert_eq!(installed_version(&prefix).as_deref(), Some("1.0.0"));
         assert_eq!(fs::read_to_string(prefix.join("bin/tool")).unwrap(), "one");
 
-        // An upgrade replaces every file.
+        /* An upgrade replaces every file. */
         let second = vec![file("bin/tool", "two")];
         unpack(&second, &prefix, "2.0.0", None).unwrap();
         assert_eq!(installed_version(&prefix).as_deref(), Some("2.0.0"));
@@ -296,7 +316,7 @@ mod tests {
         assert!(!root.join("Sayon.previous").exists());
         assert!(!root.join("Sayon.installing").exists());
 
-        // Folders holding other files are left alone.
+        /* Folders holding other files are left alone. */
         let other = root.join("Documents");
         fs::create_dir_all(&other).unwrap();
         fs::write(other.join("notes.txt"), "mine").unwrap();
@@ -314,13 +334,15 @@ mod tests {
         let root = scratch("leftovers");
         let prefix = root.join("Sayon");
         unpack(&[file("bin/tool", "one")], &prefix, "1.0.0", None).unwrap();
-        // What an older installer left when it could not finish removing an
-        // installation: its files without the marker, so not the installer's
-        // to remove.
+        /*
+        What an older installer left when it could not finish removing an
+        installation: its files without the marker, so not the installer's
+        to remove.
+        */
         let stranger = root.join("Sayon.previous");
         fs::create_dir_all(stranger.join("bin")).unwrap();
         fs::write(stranger.join("bin/tool"), "old").unwrap();
-        // A staging folder an interrupted installation left, with its marker.
+        /* A staging folder an interrupted installation left, with its marker. */
         let interrupted = root.join("Sayon.installing");
         fs::create_dir_all(&interrupted).unwrap();
         fs::write(interrupted.join(MARKER), "version = \"0.9.0\"\n").unwrap();
@@ -337,7 +359,7 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
-    /// A file a program holds open, as Windows lets no one delete it.
+    /** A file a program holds open, as Windows lets no one delete it. */
     #[cfg(windows)]
     fn hold(path: &Path) -> fs::File {
         use std::os::windows::fs::OpenOptionsExt;
@@ -366,7 +388,7 @@ mod tests {
         assert!(!discard(&stuck));
         assert!(stuck.join(MARKER).is_file());
 
-        // The installation goes on beside it, and the next one clears it.
+        /* The installation goes on beside it, and the next one clears it. */
         unpack(&[file("bin/tool", "two")], &prefix, "2.0.0", None).unwrap();
         assert_eq!(fs::read_to_string(prefix.join("bin/tool")).unwrap(), "two");
         assert!(stuck.join(MARKER).is_file());

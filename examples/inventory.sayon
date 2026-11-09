@@ -1,6 +1,8 @@
-# Lists the files under a directory with their sizes, and totals by extension.
-#
-#     sayon run examples/inventory.sayon -- path/to/directory
+##
+Lists the files under a directory with their sizes, and totals by extension.
+
+    sayon run examples/inventory.sayon -- path/to/directory
+##
 
 os = import("standard/os.sayon")
 filesystem = import("standard/filesystem.sayon")

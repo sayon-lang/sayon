@@ -1,14 +1,16 @@
-//! JPEG images for `standard/graphics`: decoding baseline and progressive
-//! JPEG (ITU-T T.81) with Huffman coding, as cameras and the web make them,
-//! into red, green, blue, and alpha bytes, turned as a photo's EXIF
-//! orientation says. Samples are gray, YCbCr, RGB, or Adobe's CMYK and
-//! YCCK, with any sampling factors and restart intervals. The inverse DCT
-//! is libjpeg's integer one, color is upsampled by repeating samples, and
-//! YCbCr becomes RGB as libjpeg rounds it, so that the pixels are those of
-//! `djpeg -nosmooth -dct int`. Coded data that ends early leaves the rest
-//! of the image gray, as browsers show such files. Arithmetic coding,
-//! 12-bit samples, and the lossless and hierarchical modes fail with
-//! ImageError.
+/*!
+JPEG images for `standard/graphics`: decoding baseline and progressive
+JPEG (ITU-T T.81) with Huffman coding, as cameras and the web make them,
+into red, green, blue, and alpha bytes, turned as a photo's EXIF
+orientation says. Samples are gray, YCbCr, RGB, or Adobe's CMYK and
+YCCK, with any sampling factors and restart intervals. The inverse DCT
+is libjpeg's integer one, color is upsampled by repeating samples, and
+YCbCr becomes RGB as libjpeg rounds it, so that the pixels are those of
+`djpeg -nosmooth -dct int`. Coded data that ends early leaves the rest
+of the image gray, as browsers show such files. Arithmetic coding,
+12-bit samples, and the lossless and hierarchical modes fail with
+ImageError.
+*/
 
 use crate::host::HostError;
 use crate::png::Image;
@@ -21,20 +23,22 @@ fn damaged() -> HostError {
     fail("the JPEG image is damaged")
 }
 
-/// Where each coefficient of a block goes, row by row, by its place in the
-/// zigzag order the image lists them in.
+/**
+Where each coefficient of a block goes, row by row, by its place in the
+zigzag order the image lists them in.
+*/
 const ZIGZAG: [usize; 64] = [
     0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20,
     13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59,
     52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63,
 ];
 
-/// Whether bytes start as a JPEG image does.
+/** Whether bytes start as a JPEG image does. */
 pub fn is_jpeg(bytes: &[u8]) -> bool {
     bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF
 }
 
-/// A big-endian number of two bytes.
+/** A big-endian number of two bytes. */
 fn number(bytes: &[u8], at: usize) -> Result<usize, HostError> {
     bytes
         .get(at..at + 2)
@@ -42,7 +46,7 @@ fn number(bytes: &[u8], at: usize) -> Result<usize, HostError> {
         .ok_or_else(|| fail("the JPEG image ends early"))
 }
 
-/// The next marker from `at`: its code, and where what follows it starts.
+/** The next marker from `at`: its code, and where what follows it starts. */
 fn next_marker(bytes: &[u8], mut at: usize) -> Option<(u8, usize)> {
     while at + 1 < bytes.len() {
         if bytes[at] == 0xFF && !matches!(bytes[at + 1], 0x00 | 0xFF) {
@@ -53,12 +57,12 @@ fn next_marker(bytes: &[u8], mut at: usize) -> Option<(u8, usize)> {
     None
 }
 
-/// Whether a marker starts a frame, of any coding.
+/** Whether a marker starts a frame, of any coding. */
 fn starts_frame(marker: u8) -> bool {
     matches!(marker, 0xC0..=0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF)
 }
 
-/// The orientation an EXIF segment gives a photo, 1 to 8, or nothing.
+/** The orientation an EXIF segment gives a photo, 1 to 8, or nothing. */
 fn orientation(segment: &[u8]) -> Option<u8> {
     let tiff = segment.strip_prefix(b"Exif\0\0")?;
     let big = match tiff.get(0..2)? {
@@ -93,8 +97,10 @@ fn orientation(segment: &[u8]) -> Option<u8> {
     None
 }
 
-/// The width and height of a JPEG image as decoding gives them, turned as
-/// its orientation says, read from its header alone.
+/**
+The width and height of a JPEG image as decoding gives them, turned as
+its orientation says, read from its header alone.
+*/
 pub fn size(bytes: &[u8]) -> Result<(usize, usize), HostError> {
     if !is_jpeg(bytes) {
         return Err(fail("the data is not a JPEG image"));
@@ -132,17 +138,23 @@ pub fn size(bytes: &[u8]) -> Result<(usize, usize), HostError> {
     Err(fail("the JPEG image has no frame"))
 }
 
-/// The bits a code is looked up by at once; longer codes are found bit by
-/// bit.
+/**
+The bits a code is looked up by at once; longer codes are found bit by
+bit.
+*/
 const FAST_BITS: u32 = 9;
 
-/// A Huffman table of a scan's symbols.
+/** A Huffman table of a scan's symbols. */
 struct Huffman {
-    /// By the next FAST_BITS bits: a code's length times 256 and its symbol,
-    /// or 0 for a longer code.
+    /**
+    By the next FAST_BITS bits: a code's length times 256 and its symbol,
+    or 0 for a longer code.
+    */
     fast: Vec<u16>,
-    /// By length: the largest code of that length, or -1 for none; the
-    /// smallest; and where its symbols start.
+    /**
+    By length: the largest code of that length, or -1 for none; the
+    smallest; and where its symbols start.
+    */
     largest: [i32; 17],
     smallest: [i32; 17],
     start: [usize; 17],
@@ -150,8 +162,10 @@ struct Huffman {
 }
 
 impl Huffman {
-    /// The table of `counts` codes of each length from 1 to 16, for
-    /// `symbols` in order.
+    /**
+    The table of `counts` codes of each length from 1 to 16, for
+    `symbols` in order.
+    */
     fn new(counts: &[u8], symbols: &[u8]) -> Result<Huffman, HostError> {
         let mut table = Huffman {
             fast: vec![0; 1 << FAST_BITS],
@@ -188,9 +202,11 @@ impl Huffman {
     }
 }
 
-/// The bits of a scan's coded data, first to last, without the zero bytes
-/// stuffed after each 0xFF. From a marker, or the end of the data, on, it
-/// gives zeros.
+/**
+The bits of a scan's coded data, first to last, without the zero bytes
+stuffed after each 0xFF. From a marker, or the end of the data, on, it
+gives zeros.
+*/
 struct Reader<'a> {
     data: &'a [u8],
     position: usize,
@@ -210,7 +226,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Takes whole bytes until more than 56 bits wait.
+    /** Takes whole bytes until more than 56 bits wait. */
     fn fill(&mut self) {
         while self.count <= 56 {
             let mut byte = 0;
@@ -236,7 +252,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// The next `count` bits, 1 to 16 of them, without taking them.
+    /** The next `count` bits, 1 to 16 of them, without taking them. */
     fn peek(&mut self, count: u32) -> u32 {
         if self.count < count {
             self.fill();
@@ -262,7 +278,7 @@ impl<'a> Reader<'a> {
         self.bits(1) == 1
     }
 
-    /// A number of `size` bits, made signed as T.81's EXTEND does.
+    /** A number of `size` bits, made signed as T.81's EXTEND does. */
     fn signed(&mut self, size: u32) -> i32 {
         if size == 0 {
             return 0;
@@ -275,7 +291,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// The next symbol of a Huffman table.
+    /** The next symbol of a Huffman table. */
     fn symbol(&mut self, table: &Huffman) -> Result<u8, HostError> {
         let entry = table.fast[self.peek(FAST_BITS) as usize];
         if entry != 0 {
@@ -298,7 +314,7 @@ impl<'a> Reader<'a> {
         Err(damaged())
     }
 
-    /// Goes past a restart marker, dropping the bits left before it.
+    /** Goes past a restart marker, dropping the bits left before it. */
     fn restart(&mut self) {
         self.bits = 0;
         self.count = 0;
@@ -323,15 +339,19 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// A component of a frame: its id and sampling factors, its quantization
-/// table, and the coefficients of its blocks, in whole MCUs.
+/**
+A component of a frame: its id and sampling factors, its quantization
+table, and the coefficients of its blocks, in whole MCUs.
+*/
 struct Component {
     id: u8,
     h: usize,
     v: usize,
     table: usize,
-    /// The quantization table, row by row, as it was when the component's
-    /// first scan began.
+    /**
+    The quantization table, row by row, as it was when the component's
+    first scan began.
+    */
     quantization: Option<[i32; 64]>,
     blocks_wide: usize,
     blocks_high: usize,
@@ -351,8 +371,10 @@ struct Frame {
 }
 
 impl Frame {
-    /// How many of a component's blocks hold the image, across and down, as
-    /// a scan of that component alone goes through them.
+    /**
+    How many of a component's blocks hold the image, across and down, as
+    a scan of that component alone goes through them.
+    */
     fn blocks(&self, component: &Component) -> (usize, usize) {
         (
             (self.width * component.h).div_ceil(self.h_most).div_ceil(8),
@@ -363,9 +385,11 @@ impl Frame {
     }
 }
 
-/// A scan being decoded: its band of coefficients, from `first` to `last`
-/// in zigzag order, and its successive approximation, bits `high` to
-/// `low`; and how many more blocks end their band at once, by an EOB run.
+/**
+A scan being decoded: its band of coefficients, from `first` to `last`
+in zigzag order, and its successive approximation, bits `high` to
+`low`; and how many more blocks end their band at once, by an EOB run.
+*/
 struct Scan<'a> {
     reader: Reader<'a>,
     progressive: bool,
@@ -413,8 +437,10 @@ impl Scan<'_> {
         }
     }
 
-    /// A block of a sequential scan: its DC difference and every AC
-    /// coefficient.
+    /**
+    A block of a sequential scan: its DC difference and every AC
+    coefficient.
+    */
     fn whole(
         &mut self,
         block: &mut [i16],
@@ -449,7 +475,7 @@ impl Scan<'_> {
         Ok(())
     }
 
-    /// The first scan of a band of AC coefficients: their high bits.
+    /** The first scan of a band of AC coefficients: their high bits. */
     fn first_ac(&mut self, block: &mut [i16], ac: &Huffman) -> Result<(), HostError> {
         if self.run > 0 {
             self.run -= 1;
@@ -477,8 +503,10 @@ impl Scan<'_> {
         Ok(())
     }
 
-    /// A later scan of a band of AC coefficients: a bit more of each that
-    /// is not zero, and the coefficients that become so by this bit.
+    /**
+    A later scan of a band of AC coefficients: a bit more of each that
+    is not zero, and the coefficients that become so by this bit.
+    */
     fn refine_ac(&mut self, block: &mut [i16], ac: &Huffman) -> Result<(), HostError> {
         let bit: i16 = 1 << self.low;
         let mut k = self.first;
@@ -490,7 +518,7 @@ impl Scan<'_> {
                 if size == 0 {
                     if zeros < 15 {
                         self.run = (1 << zeros) + self.reader.bits(zeros as u32);
-                        // The rest of the band is refined, then it ends.
+                        /* The rest of the band is refined, then it ends. */
                         zeros = 64;
                     }
                 } else {
@@ -534,7 +562,7 @@ impl Scan<'_> {
     }
 }
 
-/// A coefficient with one more bit of its size.
+/** A coefficient with one more bit of its size. */
 fn refined(coefficient: i16, bit: i16) -> i16 {
     if coefficient >= 0 {
         coefficient.wrapping_add(bit)
@@ -670,8 +698,10 @@ impl Decoder {
         Ok(())
     }
 
-    /// Decodes a scan whose coded data starts at `start`, and gives where
-    /// that data ends.
+    /**
+    Decodes a scan whose coded data starts at `start`, and gives where
+    that data ends.
+    */
     fn scan(&mut self, segment: &[u8], bytes: &[u8], start: usize) -> Result<usize, HostError> {
         let Some(frame) = self.frame.as_mut() else {
             return Err(fail("the JPEG image has a scan before its frame"));
@@ -743,7 +773,7 @@ impl Decoder {
         let interval = self.interval;
         let mut done = 0;
         if count == 1 {
-            // A scan of one component goes through its blocks row by row.
+            /* A scan of one component goes through its blocks row by row. */
             let (position, dc, ac) = members[0];
             let (wide, high) = frame.blocks(&frame.components[position]);
             let component = &mut frame.components[position];
@@ -813,7 +843,7 @@ impl Decoder {
         let components = &frame.components;
         let rgb = components.len() == 3
             && (self.transform == Some(0) || components.iter().map(|c| c.id).eq(*b"RGB"));
-        // Each component's sample for each column and row of the image.
+        /* Each component's sample for each column and row of the image. */
         let columns: Vec<Vec<usize>> = components
             .iter()
             .map(|c| (0..width).map(|x| x * c.h / frame.h_most).collect())
@@ -861,13 +891,13 @@ impl Decoder {
     }
 }
 
-/// `a` times `b` over 255, rounded, for inks of Adobe's inverted CMYK.
+/** `a` times `b` over 255, rounded, for inks of Adobe's inverted CMYK. */
 fn times(a: i32, b: i32) -> u8 {
     let product = a * b + 128;
     ((product + (product >> 8)) >> 8) as u8
 }
 
-/// YCbCr to RGB, as JFIF defines it and libjpeg rounds it.
+/** YCbCr to RGB, as JFIF defines it and libjpeg rounds it. */
 fn to_rgb(y: i32, cb: i32, cr: i32) -> [u8; 3] {
     let (cb, cr) = (cb - 128, cr - 128);
     let red = y + ((91881 * cr + 32768) >> 16);
@@ -876,8 +906,10 @@ fn to_rgb(y: i32, cb: i32, cr: i32) -> [u8; 3] {
     [red, green, blue].map(|value| value.clamp(0, 255) as u8)
 }
 
-/// A component's samples, row by row, its blocks through the inverse DCT;
-/// blocks no scan reached, and padding, stay gray.
+/**
+A component's samples, row by row, its blocks through the inverse DCT;
+blocks no scan reached, and padding, stay gray.
+*/
 fn plane(frame: &Frame, component: &Component) -> Vec<u8> {
     let stride = component.blocks_wide * 8;
     let mut samples = vec![128; stride * component.blocks_high * 8];
@@ -895,7 +927,7 @@ fn plane(frame: &Frame, component: &Component) -> Vec<u8> {
     samples
 }
 
-/// `value` over 2^bits, rounded.
+/** `value` over 2^bits, rounded. */
 fn descale(value: i64, bits: u32) -> i64 {
     (value + (1 << (bits - 1))) >> bits
 }
@@ -904,8 +936,10 @@ fn clamp_sample(value: i64) -> u8 {
     (value + 128).clamp(0, 255) as u8
 }
 
-/// One dimension of libjpeg's accurate integer inverse DCT (jidctint.c):
-/// eight inputs to eight outputs, scaled up by 2^13.
+/**
+One dimension of libjpeg's accurate integer inverse DCT (jidctint.c):
+eight inputs to eight outputs, scaled up by 2^13.
+*/
 fn butterfly(x: [i64; 8]) -> [i64; 8] {
     let z1 = (x[2] + x[6]) * 4433;
     let even2 = z1 + x[6] * -15137;
@@ -935,7 +969,7 @@ fn butterfly(x: [i64; 8]) -> [i64; 8] {
     ]
 }
 
-/// A block's quantized coefficients to samples, written `stride` apart.
+/** A block's quantized coefficients to samples, written `stride` apart. */
 fn idct(block: &[i16], table: &[i32; 64], out: &mut [u8], stride: usize) {
     const BITS: u32 = 13;
     const PASS: u32 = 2;
@@ -967,7 +1001,7 @@ fn idct(block: &[i16], table: &[i32; 64], out: &mut [u8], stride: usize) {
     }
 }
 
-/// An image turned and mirrored as an EXIF orientation says, 1 to 8.
+/** An image turned and mirrored as an EXIF orientation says, 1 to 8. */
 fn orient(image: Image, orientation: u8) -> Image {
     if !(2..=8).contains(&orientation) {
         return image;
@@ -997,7 +1031,7 @@ fn orient(image: Image, orientation: u8) -> Image {
     }
 }
 
-/// Decodes a JPEG image of at most `most` pixels.
+/** Decodes a JPEG image of at most `most` pixels. */
 pub fn decode(bytes: &[u8], most: usize) -> Result<Image, HostError> {
     if !is_jpeg(bytes) {
         return Err(fail("the data is not a JPEG image"));
@@ -1055,9 +1089,11 @@ pub fn decode(bytes: &[u8], most: usize) -> Result<Image, HostError> {
 mod tests {
     use super::*;
 
-    // Made by scripts/jpeg_fixtures.sayon with libjpeg-turbo: a picture of
-    // 45 by 29 pixels in each sampling and kind of color, and the pixels
-    // `djpeg -nosmooth -dct int` decodes each to.
+    /*
+    Made by scripts/jpeg_fixtures.sayon with libjpeg-turbo: a picture of
+    45 by 29 pixels in each sampling and kind of color, and the pixels
+    `djpeg -nosmooth -dct int` decodes each to.
+    */
     const J420: &[u8] = include_bytes!("../tests/jpeg/420.jpg");
     const J444: &[u8] = include_bytes!("../tests/jpeg/444.jpg");
     const GRAY: &[u8] = include_bytes!("../tests/jpeg/gray.jpg");
@@ -1082,7 +1118,7 @@ mod tests {
         ),
     ];
 
-    /// The size and the red, green, and blue of a binary PPM or PGM file.
+    /** The size and the red, green, and blue of a binary PPM or PGM file. */
     fn netpbm(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
         let mut fields = Vec::new();
         let mut at = 0;
@@ -1163,8 +1199,10 @@ mod tests {
         }
     }
 
-    /// A JPEG image with an EXIF segment right after its start, giving an
-    /// orientation, in either byte order, as cameras write it.
+    /**
+    A JPEG image with an EXIF segment right after its start, giving an
+    orientation, in either byte order, as cameras write it.
+    */
     fn oriented(jpeg: &[u8], orientation: u8, big: bool) -> Vec<u8> {
         let mut exif = b"Exif\0\0".to_vec();
         if big {
@@ -1185,9 +1223,11 @@ mod tests {
     fn photos_are_turned_as_their_orientation_says() {
         let plain = decode(J444, usize::MAX).unwrap();
         let (w, h) = (plain.width, plain.height);
-        // Where the top left pixel shown, and the one right of it, are kept,
-        // by EXIF's description of each orientation: which side the first
-        // row kept is shown at, and which the first column.
+        /*
+        Where the top left pixel shown, and the one right of it, are kept,
+        by EXIF's description of each orientation: which side the first
+        row kept is shown at, and which the first column.
+        */
         let corners = [
             ((0, 0), (1, 0)),
             ((w - 1, 0), (w - 2, 0)),

@@ -1,12 +1,16 @@
-# Parameters that borrow their arguments: what a function reads through
-# one stays as it was while the function writes elsewhere, and a cell,
-# which changes even through a read-only borrow, is seen to change through
-# every borrow of it.
+##
+Parameters that borrow their arguments: what a function reads through
+one stays as it was while the function writes elsewhere, and a cell,
+which changes even through a read-only borrow, is seen to change through
+every borrow of it.
+##
 
 type Counter = [name: string, hits: Cell<integer>]
 
-# The same counter, borrowed twice: setting its cell through one borrow
-# shows through the other.
+##
+The same counter, borrowed twice: setting its cell through one borrow
+shows through the other.
+##
 function bump(first: Counter, second: Counter) -> integer
     first.hits.set(first.hits.get() + 1)
     return second.hits.get()

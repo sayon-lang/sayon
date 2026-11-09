@@ -1,10 +1,12 @@
-//! Unification with bounded inference variables.
-//!
-//! Variables can carry a literal kind (an unsuffixed integer literal may become
-//! any integer type, a `u` literal any unsigned type, a float literal any float
-//! type) and a set of operation traits required by the code that uses them.
-//! Remaining literal kinds are defaulted; remaining variables in a function
-//! signature are generalized together with their bounds.
+/*!
+Unification with bounded inference variables.
+
+Variables can carry a literal kind (an unsuffixed integer literal may become
+any integer type, a `u` literal any unsigned type, a float literal any float
+type) and a set of operation traits required by the code that uses them.
+Remaining literal kinds are defaulted; remaining variables in a function
+signature are generalized together with their bounds.
+*/
 
 use crate::types::{FloatType, IntType, NamedType, TyVar, Type, Wrapper};
 use sayon_target::Target;
@@ -43,7 +45,7 @@ impl LiteralKind {
         }
     }
 
-    /// Combines two literal kinds that must describe the same type.
+    /** Combines two literal kinds that must describe the same type. */
     fn merge(self, other: LiteralKind) -> Option<LiteralKind> {
         use LiteralKind::*;
         match (self, other) {
@@ -54,35 +56,39 @@ impl LiteralKind {
     }
 }
 
-/// Operations a type must support.
+/** Operations a type must support. */
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Traits(u16);
 
 impl Traits {
     pub const NONE: Traits = Traits(0);
-    /// `+`: numbers and strings.
+    /** `+`: numbers and strings. */
     pub const ADD: Traits = Traits(1);
-    /// `-`, `*`, `/`, `%`: numbers.
+    /** `-`, `*`, `/`, `%`: numbers. */
     pub const ARITHMETIC: Traits = Traits(2);
-    /// `<`, `>`, `<=`, `>=`: numbers and strings.
+    /** `<`, `>`, `<=`, `>=`: numbers and strings. */
     pub const ORDER: Traits = Traits(4);
-    /// `==`, `!=`.
+    /** `==`, `!=`. */
     pub const EQUALITY: Traits = Traits(8);
-    /// `length`: strings, arrays, dictionaries.
+    /** `length`: strings, arrays, dictionaries. */
     pub const LENGTH: Traits = Traits(16);
-    /// Unary `-`: signed integers and floats.
+    /** Unary `-`: signed integers and floats. */
     pub const NEGATE: Traits = Traits(32);
-    /// Numeric conversion targets and sources.
+    /** Numeric conversion targets and sources. */
     pub const NUMERIC: Traits = Traits(64);
-    /// `clone`: every type but open resources and what holds them.
+    /** `clone`: every type but open resources and what holds them. */
     pub const CLONE: Traits = Traits(128);
-    /// Reading from and writing to JSON (`json.decode`, `json.to_json`).
+    /** Reading from and writing to JSON (`json.decode`, `json.to_json`). */
     pub const JSON: Traits = Traits(256);
-    /// Reading from and writing to raw memory (`standard/memory`'s `read`
-    /// and `write`): numbers and pointers.
+    /**
+    Reading from and writing to raw memory (`standard/memory`'s `read`
+    and `write`): numbers and pointers.
+    */
     pub const RAW: Traits = Traits(512);
-    /// Being sent to a task on another thread: values that share nothing
-    /// with the thread they leave, or share it only through a `Mutex`.
+    /**
+    Being sent to a task on another thread: values that share nothing
+    with the thread they leave, or share it only through a `Mutex`.
+    */
     pub const SEND: Traits = Traits(1024);
 
     pub fn contains(self, other: Traits) -> bool {
@@ -93,7 +99,7 @@ impl Traits {
         Traits(self.0 | other.0)
     }
 
-    /// The traits of `self` that `other` does not have.
+    /** The traits of `self` that `other` does not have. */
     pub fn difference(self, other: Traits) -> Traits {
         Traits(self.0 & !other.0)
     }
@@ -147,8 +153,10 @@ impl Bounds {
         }
     }
 
-    /// Whether only numbers satisfy these bounds, which makes every value
-    /// of the type Copy.
+    /**
+    Whether only numbers satisfy these bounds, which makes every value
+    of the type Copy.
+    */
     pub fn only_numbers(&self) -> bool {
         self.literal.is_some()
             || [Traits::ARITHMETIC, Traits::NEGATE, Traits::NUMERIC]
@@ -161,12 +169,12 @@ impl Bounds {
 pub enum UnifyError {
     Mismatch(Type, Type),
     Infinite,
-    /// The type does not support an operation required of it.
+    /** The type does not support an operation required of it. */
     Unsupported {
         ty: Type,
         traits: Traits,
     },
-    /// A literal cannot have this type.
+    /** A literal cannot have this type. */
     Literal {
         ty: Type,
         kind: LiteralKind,
@@ -200,28 +208,36 @@ struct VarState {
 #[derive(Default)]
 pub struct Unifier {
     vars: Vec<VarState>,
-    /// Every field type of each declared structure or enum, in terms of its
-    /// type parameters; used to decide which operations it supports.
+    /**
+    Every field type of each declared structure or enum, in terms of its
+    type parameters; used to decide which operations it supports.
+    */
     pub field_types: Vec<Vec<Type>>,
-    /// Named types whose equality support is being decided, so that a type
-    /// reaching itself through a collection does not recurse forever.
+    /**
+    Named types whose equality support is being decided, so that a type
+    reaching itself through a collection does not recurse forever.
+    */
     in_progress: Vec<Type>,
-    /// The explicit type parameters of the function being checked whose
-    /// values its body clones or converts to or from JSON; callers must
-    /// then give types that support it.
+    /**
+    The explicit type parameters of the function being checked whose
+    values its body clones or converts to or from JSON; callers must
+    then give types that support it.
+    */
     pub param_traits: HashMap<u32, Traits>,
-    /// The declared types that are enums.
+    /** The declared types that are enums. */
     pub enum_types: HashSet<u32>,
-    /// The declared types that are C structures (`foreign type`).
+    /** The declared types that are C structures (`foreign type`). */
     pub foreign_types: HashSet<u32>,
-    /// The declared structures destroyed by a `finally function`.
+    /** The declared structures destroyed by a `finally function`. */
     pub finally_types: HashSet<u32>,
-    /// `standard/json`'s `Json`, which stands for any JSON value.
+    /** `standard/json`'s `Json`, which stands for any JSON value. */
     pub json_type: Option<u32>,
 }
 
-// The kinds of JSON value a type is read from, for telling the members of
-// a union apart.
+/*
+The kinds of JSON value a type is read from, for telling the members of
+a union apart.
+*/
 const JSON_NULL: u8 = 1;
 const JSON_FLAG: u8 = 2;
 const JSON_INTEGER: u8 = 4;
@@ -240,10 +256,6 @@ impl Unifier {
         self.vars.len() as u32
     }
 
-    pub fn fresh(&mut self) -> Type {
-        self.fresh_bounded(Bounds::default())
-    }
-
     pub fn fresh_bounded(&mut self, bounds: Bounds) -> Type {
         let var = TyVar(self.vars.len() as u32);
         self.vars.push(VarState {
@@ -257,7 +269,7 @@ impl Unifier {
         self.vars[var.0 as usize].bounds
     }
 
-    /// Follows variable bindings at the top level only.
+    /** Follows variable bindings at the top level only. */
     pub fn shallow(&self, ty: &Type) -> Type {
         let mut current = ty.clone();
         while let Type::Var(var) = current {
@@ -269,7 +281,7 @@ impl Unifier {
         current
     }
 
-    /// Resolves every bound variable inside a type.
+    /** Resolves every bound variable inside a type. */
     pub fn resolve(&self, ty: &Type) -> Type {
         match self.shallow(ty) {
             Type::Array(element) => Type::array(self.resolve(&element)),
@@ -286,8 +298,10 @@ impl Unifier {
         }
     }
 
-    /// Like `resolve`, but shows unresolved literal variables as the type they
-    /// would default to, for diagnostics.
+    /**
+    Like `resolve`, but shows unresolved literal variables as the type they
+    would default to, for diagnostics.
+    */
     pub fn resolve_for_display(&self, ty: &Type) -> Type {
         match self.shallow(ty) {
             Type::Var(var) => match self.vars[var.0 as usize].bounds.literal {
@@ -319,7 +333,7 @@ impl Unifier {
         }
     }
 
-    /// Binds a variable without checks; used for defaulting and generalization.
+    /** Binds a variable without checks; used for defaulting and generalization. */
     pub fn force_bind(&mut self, var: TyVar, ty: Type) {
         self.vars[var.0 as usize].binding = Some(ty);
     }
@@ -396,7 +410,7 @@ impl Unifier {
                     self.record_param_trait(*index, one);
                     true
                 }
-                // Function values have no meaningful equality.
+                /* Function values have no meaningful equality. */
                 Type::Range
                 | Type::Function(_)
                 | Type::View(..)
@@ -416,18 +430,22 @@ impl Unifier {
                     }
                     return Ok(());
                 }
-                // A copy would be destroyed again.
+                /* A copy would be destroyed again. */
                 Type::Named(named) if self.finally_types.contains(&named.id.0) => false,
                 Type::Named(named) => return self.fields_support(named, &ty, one),
-                // An open file is closed once, so it has one owner, and a
-                // C string's buffer is released once.
+                /*
+                An open file is closed once, so it has one owner, and a
+                C string's buffer is released once.
+                */
                 Type::Stream | Type::CString => false,
-                // A cell is cloned with its value; a shared handle is
-                // retained.
+                /*
+                A cell is cloned with its value; a shared handle is
+                retained.
+                */
                 Type::Wrapper(Wrapper::Cell, inner) => {
                     return self.require_trait(inner, Traits::CLONE);
                 }
-                // A task has one owner, which joins it once.
+                /* A task has one owner, which joins it once. */
                 Type::Wrapper(Wrapper::Task, _) => false,
                 Type::Param(index) => {
                     self.record_param_trait(*index, one);
@@ -440,7 +458,7 @@ impl Unifier {
                     true
                 }
                 Type::Array(element) => return self.require_trait(element, Traits::JSON),
-                // Object keys are text.
+                /* Object keys are text. */
                 Type::Dict(key, value) => {
                     let (key, value) = ((**key).clone(), (**value).clone());
                     if self.unify(&key, &Type::String).is_err() {
@@ -453,7 +471,7 @@ impl Unifier {
                     for member in &members {
                         self.require_trait(member, Traits::JSON)?;
                     }
-                    // Each kind of JSON value must belong to one member.
+                    /* Each kind of JSON value must belong to one member. */
                     let mut seen = 0u8;
                     for member in &members {
                         let kinds = self.json_kinds(member);
@@ -494,14 +512,18 @@ impl Unifier {
                     return Ok(());
                 }
                 Type::Named(named) => return self.fields_support(named, &ty, one),
-                // Mutexes and channels are shared between threads by
-                // design, and a cell goes with its value.
+                /*
+                Mutexes and channels are shared between threads by
+                design, and a cell goes with its value.
+                */
                 Type::Wrapper(Wrapper::Mutex | Wrapper::Channel | Wrapper::Cell, inner) => {
                     return self.require_trait(inner, Traits::SEND);
                 }
-                // Shared handles and tasks belong to the tasks of one
-                // thread; views borrow from it, and a function value may
-                // have captured any of them.
+                /*
+                Shared handles and tasks belong to the tasks of one
+                thread; views borrow from it, and a function value may
+                have captured any of them.
+                */
                 Type::Wrapper(..) | Type::View(..) | Type::Function(_) => false,
                 Type::Param(index) => {
                     self.record_param_trait(*index, one);
@@ -523,8 +545,10 @@ impl Unifier {
         *traits = traits.union(one);
     }
 
-    /// The kinds of JSON value a type is read from: an enum is read from
-    /// text (a variant without fields) or an object, and `Json` from any.
+    /**
+    The kinds of JSON value a type is read from: an enum is read from
+    text (a variant without fields) or an object, and `Json` from any.
+    */
     fn json_kinds(&self, ty: &Type) -> u8 {
         match self.shallow(ty) {
             Type::Nothing => JSON_NULL,
@@ -541,8 +565,10 @@ impl Unifier {
         }
     }
 
-    /// A structure or enum supports equality or cloning when every field
-    /// does; a type reached again through its own fields is assumed to.
+    /**
+    A structure or enum supports equality or cloning when every field
+    does; a type reached again through its own fields is assumed to.
+    */
     fn fields_support(
         &mut self,
         named: &NamedType,
@@ -618,8 +644,10 @@ impl Unifier {
                 if xs.len() != ys.len() {
                     return Err(self.mismatch(&a, &b));
                 }
-                // Members are sorted; unresolved members sort together, so a
-                // pairwise match handles the common `T or nothing` shapes.
+                /*
+                Members are sorted; unresolved members sort together, so a
+                pairwise match handles the common `T or nothing` shapes.
+                */
                 for (x, y) in xs.iter().zip(ys) {
                     self.unify(x, y).map_err(|e| self.within(e, &a, &b))?;
                 }
@@ -658,10 +686,12 @@ impl Unifier {
         UnifyError::Mismatch(self.resolve_for_display(a), self.resolve_for_display(b))
     }
 
-    /// The error for types `a` and `b` that failed to unify in a part: a
-    /// part lacking an operation, such as a structure that cannot be cloned
-    /// inside an array, is reported as such, and anything else as a
-    /// mismatch of the whole types.
+    /**
+    The error for types `a` and `b` that failed to unify in a part: a
+    part lacking an operation, such as a structure that cannot be cloned
+    inside an array, is reported as such, and anything else as a
+    mismatch of the whole types.
+    */
     fn within(&self, error: UnifyError, a: &Type, b: &Type) -> UnifyError {
         match error {
             UnifyError::Unsupported { .. } => error,
@@ -669,8 +699,10 @@ impl Unifier {
         }
     }
 
-    /// Applies literal defaults to an unresolved variable. Returns false when
-    /// the variable has no literal kind to default from.
+    /**
+    Applies literal defaults to an unresolved variable. Returns false when
+    the variable has no literal kind to default from.
+    */
     pub fn default_var(&mut self, var: TyVar) -> bool {
         let state = &self.vars[var.0 as usize];
         if state.binding.is_some() {
@@ -685,7 +717,7 @@ impl Unifier {
         }
     }
 
-    /// Unresolved variables reachable from a type, in first-occurrence order.
+    /** Unresolved variables reachable from a type, in first-occurrence order. */
     pub fn free_vars(&self, ty: &Type, out: &mut Vec<TyVar>) {
         match self.shallow(ty) {
             Type::Var(var) => {
@@ -720,7 +752,7 @@ impl Unifier {
 }
 
 fn check_literal_traits(literal: LiteralKind, traits: Traits, ty: &Type) -> Result<(), UnifyError> {
-    // An unsigned literal cannot be negated.
+    /* An unsigned literal cannot be negated. */
     if literal == LiteralKind::Unsigned && traits.contains(Traits::NEGATE) {
         return Err(UnifyError::Unsupported {
             ty: ty.clone(),
@@ -730,9 +762,11 @@ fn check_literal_traits(literal: LiteralKind, traits: Traits, ty: &Type) -> Resu
     Ok(())
 }
 
-/// An integer type by name, including the C types of `target`, whose sizes
-/// C leaves to each platform: `long` is 32 bits on Windows and where
-/// addresses are 32 bits, and `size_t` is as wide as an address.
+/**
+An integer type by name, including the C types of `target`, whose sizes
+C leaves to each platform: `long` is 32 bits on Windows and where
+addresses are 32 bits, and `size_t` is as wide as an address.
+*/
 pub fn int_type_by_name(name: &str, target: &Target) -> Option<IntType> {
     let (long, unsigned_long) = if target.c_long_bits() == 32 {
         (IntType::I32, IntType::U32)
@@ -822,7 +856,7 @@ mod tests {
     #[test]
     fn occurs_check() {
         let mut unifier = Unifier::new();
-        let a = unifier.fresh();
+        let a = unifier.fresh_bounded(Bounds::default());
         assert!(matches!(
             unifier.unify(&a, &Type::array(a.clone())),
             Err(UnifyError::Infinite)
@@ -832,7 +866,7 @@ mod tests {
     #[test]
     fn unions_unify_member_wise() {
         let mut unifier = Unifier::new();
-        let a = unifier.fresh();
+        let a = unifier.fresh_bounded(Bounds::default());
         let generic = Type::union([a.clone(), Type::Nothing]);
         let concrete = Type::union([Type::String, Type::Nothing]);
         unifier.unify(&generic, &concrete).unwrap();

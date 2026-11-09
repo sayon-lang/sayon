@@ -1,5 +1,7 @@
-// Binary trees: build many complete binary trees, walk each one, and let
-// it go, while one long-lived tree stays.
+/*
+Binary trees: build many complete binary trees, walk each one, and let
+it go, while one long-lived tree stays.
+*/
 
 struct Tree {
     children: Option<(Box<Tree>, Box<Tree>)>,

@@ -1,13 +1,17 @@
-# Files, directories, and paths.
-#
-#     filesystem = import("standard/filesystem.sayon")
-#     for name in filesystem.list(".")
-#         print(name)
-#
-# Paths are text. Both `/` and, on Windows, `\` separate path components.
+##
+Files, directories, and paths.
 
-# Whether something is at `path`, following symbolic links. A path that
-# cannot be looked at, as for lack of permission, counts as there.
+    filesystem = import("standard/filesystem.sayon")
+    for name in filesystem.list(".")
+        print(name)
+
+Paths are text. Both `/` and, on Windows, `\` separate path components.
+##
+
+##
+Whether something is at `path`, following symbolic links. A path that
+cannot be looked at, as for lack of permission, counts as there.
+##
 function exists(path: string) -> boolean
     return host_path_kind(path) != "missing"
 
@@ -23,10 +27,12 @@ function is_directory(path: string) -> boolean
 function list(path: string) -> Array<string>
     return host_list_directory(path)
 
-# Every file and directory below a directory, as paths relative to it joined
-# with "/", such as "docs/notes.txt". Each directory comes just before what
-# it holds, and the entries of a directory are sorted by name. A symbolic
-# link is listed but not followed, so a walk always ends.
+##
+Every file and directory below a directory, as paths relative to it joined
+with "/", such as "docs/notes.txt". Each directory comes just before what
+it holds, and the entries of a directory are sorted by name. A symbolic
+link is listed but not followed, so a walk always ends.
+##
 function walk(path: string) -> Array<string>
     return host_walk(path)
 
@@ -70,22 +76,26 @@ function name(path: string) -> string
         return ""
     return last
 
-# The path without its last component: `parent("docs/notes.txt")` is "docs".
-# A path from a root keeps it: `parent("/home/ada")` is "/home", and
-# `parent("/home")` is "/"; on Windows `parent("C:\Users")` is "C:/".
+##
+The path without its last component: `parent("docs/notes.txt")` is "docs".
+A path from a root keeps it: `parent("/home/ada")` is "/home", and
+`parent("/home")` is "/"; on Windows `parent("C:\Users")` is "C:/".
+##
 function parent(path: string) -> string
     parts = split_path(path)
     pop(parts.components)
     return parts.root + host_join(parts.components, "/")
 
-# The path written plainly, without looking at the filesystem: one `/`
-# between components, no `.` components, and each `..` taking away the
-# component before it. `normalize("docs/./drafts/../notes.txt")` is
-# "docs/notes.txt". A `..` at the start of a relative path stays, and one at
-# a root goes: `normalize("../notes")` is "../notes", and `normalize("/..")`
-# is "/". A relative path that comes to nothing is ".". When the component
-# before a `..` is a symbolic link, the path can lead elsewhere than the
-# normalized one does; `canonical` follows links.
+##
+The path written plainly, without looking at the filesystem: one `/`
+between components, no `.` components, and each `..` taking away the
+component before it. `normalize("docs/./drafts/../notes.txt")` is
+"docs/notes.txt". A `..` at the start of a relative path stays, and one at
+a root goes: `normalize("../notes")` is "../notes", and `normalize("/..")`
+is "/". A relative path that comes to nothing is ".". When the component
+before a `..` is a symbolic link, the path can lead elsewhere than the
+normalized one does; `canonical` follows links.
+##
 function normalize(path: string) -> string
     parts = split_path(path)
     kept: Array<string> = []
@@ -104,8 +114,10 @@ function normalize(path: string) -> string
         return "."
     return written
 
-# The path from a root, without looking at the filesystem: a relative path
-# joined to the current directory, then normalized as `normalize` does.
+##
+The path from a root, without looking at the filesystem: a relative path
+joined to the current directory, then normalized as `normalize` does.
+##
 function absolute(path: string) -> string
     parts = split_path(path)
     if parts.root == ""
@@ -116,16 +128,20 @@ function absolute(path: string) -> string
         return normalize(here.root + path)
     return normalize(path)
 
-# The name the system knows a file or directory by, as it writes it: the
-# path from the root with every symbolic link followed, and on Windows with
-# `\` and each name's letter case as it is on disk. Under WASI it is the path
-# the program sees, from the root of the directories it was given. Fails
-# with IOError when nothing is at `path`.
+##
+The name the system knows a file or directory by, as it writes it: the
+path from the root with every symbolic link followed, and on Windows with
+`\` and each name's letter case as it is on disk. Under WASI it is the path
+the program sees, from the root of the directories it was given. Fails
+with IOError when nothing is at `path`.
+##
 function canonical(path: string) -> string
     return host_canonical(path)
 
-# The extension of the last component, without the dot, or "" when there is
-# none: `extension("notes.txt")` is "txt", and `extension(".profile")` is "".
+##
+The extension of the last component, without the dot, or "" when there is
+none: `extension("notes.txt")` is "txt", and `extension(".profile")` is "".
+##
 function extension(path: string) -> string
     pieces = host_split(name(path), ".")
     if length(pieces) < 2
@@ -142,14 +158,18 @@ private function ends_with_separator(path: string) -> boolean
         return true
     return host_platform() == "windows" and host_ends_with(path, "\\")
 
-# A path taken apart: what it starts from when it starts at a root, which
-# `..` cannot leave, and its other non-empty components.
+##
+A path taken apart: what it starts from when it starts at a root, which
+`..` cannot leave, and its other non-empty components.
+##
 private type PathParts = [root: string, components: Array<string>]
 
-# Takes a path apart. Its root is "/" for a path from the root, and "" for a
-# relative path; on Windows it is also a drive's root, as "C:/" for `C:\`,
-# or a network share, as "//server/share/" for `\\server\share`. A drive
-# without a separator after it, as in `C:notes.txt`, is a component.
+##
+Takes a path apart. Its root is "/" for a path from the root, and "" for a
+relative path; on Windows it is also a drive's root, as "C:/" for `C:\`,
+or a network share, as "//server/share/" for `\\server\share`. A drive
+without a separator after it, as in `C:notes.txt`, is a component.
+##
 private function split_path(path: string) -> PathParts
     windows = host_platform() == "windows"
     normalized = clone(path)

@@ -1,21 +1,23 @@
-//! Dependencies: resolving a project's packages, the lock file `sayon.lock`,
-//! package digests, and the cache of fetched sources.
-//!
-//! `sayon install` chooses a version of each registry package the graph
-//! reaches, resolves the graph declared by the manifests, fetches Git and
-//! registry sources into the cache, and writes the lock. Every other command
-//! reads the lock, checks that it still matches the manifests and that
-//! cached sources are intact, and neither fetches nor changes anything.
-//!
-//! A package's identity is its source: `path:<directory>`, relative to the
-//! root package and written with `/`, `git:<url>#<commit>`, or
-//! `registry:<address>#<name>@<version>`. Packages from local directories
-//! are used as they are; Git and registry sources are locked to a digest of
-//! their contents.
-//!
-//! A graph has one version of each registry package: the latest that every
-//! range asking for it accepts, or, while it still does, the version the
-//! previous lock chose, so that installing again changes nothing.
+/*!
+Dependencies: resolving a project's packages, the lock file `sayon.lock`,
+package digests, and the cache of fetched sources.
+
+`sayon install` chooses a version of each registry package the graph
+reaches, resolves the graph declared by the manifests, fetches Git and
+registry sources into the cache, and writes the lock. Every other command
+reads the lock, checks that it still matches the manifests and that
+cached sources are intact, and neither fetches nor changes anything.
+
+A package's identity is its source: `path:<directory>`, relative to the
+root package and written with `/`, `git:<url>#<commit>`, or
+`registry:<address>#<name>@<version>`. Packages from local directories
+are used as they are; Git and registry sources are locked to a digest of
+their contents.
+
+A graph has one version of each registry package: the latest that every
+range asking for it accepts, or, while it still does, the version the
+previous lock chose, so that installing again changes nothing.
+*/
 
 use crate::manifest::{self, Dependency, Manifest, Source, Value};
 use crate::registry::{Index, Published};
@@ -29,7 +31,7 @@ pub const LOCK_FILE: &str = "sayon.lock";
 const SCHEMA: i64 = 1;
 const DIGEST_DOMAIN: &[u8] = b"sayon-package-digest-1\0";
 
-/// A problem with the dependencies, and what to do about it.
+/** A problem with the dependencies, and what to do about it. */
 #[derive(Debug, Clone, PartialEq)]
 pub struct PackageError {
     pub message: String,
@@ -54,37 +56,41 @@ fn install_hint(error: PackageError) -> PackageError {
     error.help("run `sayon install` to bring sayon.lock up to date")
 }
 
-/// One package of the graph, as the lock records it.
+/** One package of the graph, as the lock records it. */
 #[derive(Debug, Clone, PartialEq)]
 pub struct Package {
     pub source: String,
     pub name: String,
     pub version: String,
-    /// The digest of a Git source's contents; empty for a local directory.
+    /** The digest of a Git source's contents; empty for a local directory. */
     pub digest: String,
-    /// `(alias, source)` for each dependency, sorted by alias.
+    /** `(alias, source)` for each dependency, sorted by alias. */
     pub dependencies: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Lock {
-    /// The root package's dependencies, `(alias, source)` sorted by alias.
+    /** The root package's dependencies, `(alias, source)` sorted by alias. */
     pub dependencies: Vec<(String, String)>,
     pub dev_dependencies: Vec<(String, String)>,
-    /// Every package of the graph, sorted by source.
+    /** Every package of the graph, sorted by source. */
     pub packages: Vec<Package>,
 }
 
-/// Which package directories an import of `dependencies/<alias>/...` from
-/// each package reaches. Keys are canonical package directories.
+/**
+Which package directories an import of `dependencies/<alias>/...` from
+each package reaches. Keys are canonical package directories.
+*/
 #[derive(Debug, Clone, Default)]
 pub struct Packages {
     pub aliases: HashMap<PathBuf, HashMap<String, PathBuf>>,
 }
 
 impl Packages {
-    /// The directory of the package that `alias` names for the package at
-    /// `root`.
+    /**
+    The directory of the package that `alias` names for the package at
+    `root`.
+    */
     pub fn find(&self, root: &Path, alias: &str) -> Option<&PathBuf> {
         self.aliases.get(&canonical(root))?.get(alias)
     }
@@ -94,8 +100,10 @@ fn canonical(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// The relative path from `from` to `to`, with `/`, or `to` itself when
-/// they share no root (such as different drives).
+/**
+The relative path from `from` to `to`, with `/`, or `to` itself when
+they share no root (such as different drives).
+*/
 fn relative(from: &Path, to: &Path) -> String {
     let from: Vec<Component> = from.components().collect();
     let to_parts: Vec<Component> = to.components().collect();
@@ -120,9 +128,9 @@ fn relative(from: &Path, to: &Path) -> String {
     }
 }
 
-// ----- the cache of fetched sources ----------------------------------------------
+/* ----- the cache of fetched sources ---------------------------------------------- */
 
-/// Where fetched sources are kept: `SAYON_CACHE`, or the user's cache folder.
+/** Where fetched sources are kept: `SAYON_CACHE`, or the user's cache folder. */
 pub fn cache_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("SAYON_CACHE") {
         return PathBuf::from(dir);
@@ -141,8 +149,10 @@ pub fn cache_dir() -> PathBuf {
     }
 }
 
-/// The cache folder of one commit of a repository. The name is short, so
-/// that paths inside the repository stay within Windows' path limits.
+/**
+The cache folder of one commit of a repository. The name is short, so
+that paths inside the repository stay within Windows' path limits.
+*/
 fn git_dir(url: &str, revision: &str) -> PathBuf {
     let mut hasher = Sha256::default();
     hasher.update(url.as_bytes());
@@ -170,8 +180,10 @@ fn git(args: &[&str], dir: Option<&Path>) -> Result<String, PackageError> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-/// Clones a repository at one commit into the cache, through a temporary
-/// directory so that an interrupted fetch leaves nothing behind.
+/**
+Clones a repository at one commit into the cache, through a temporary
+directory so that an interrupted fetch leaves nothing behind.
+*/
 fn fetch(url: &str, revision: &str, dir: &Path) -> Result<(), PackageError> {
     let parent = dir.parent().expect("cache directory");
     std::fs::create_dir_all(parent).map_err(|e| {
@@ -208,7 +220,7 @@ fn fetch(url: &str, revision: &str, dir: &Path) -> Result<(), PackageError> {
     result
 }
 
-/// The cache folder of one version of a registry package.
+/** The cache folder of one version of a registry package. */
 fn registry_dir(address: &str, name: &str, version: &Version) -> PathBuf {
     let mut hasher = Sha256::default();
     hasher.update(address.as_bytes());
@@ -218,20 +230,22 @@ fn registry_dir(address: &str, name: &str, version: &Version) -> PathBuf {
         .join(format!("{name}-{version}"))
 }
 
-/// A registry package's identity.
+/** A registry package's identity. */
 fn registry_source(address: &str, name: &str, version: &Version) -> String {
     format!("registry:{address}#{name}@{version}")
 }
 
-/// The registry, name, and version a registry package's identity names.
+/** The registry, name, and version a registry package's identity names. */
 fn registry_parts(source: &str) -> Option<(&str, &str, Version)> {
     let (address, package) = source.strip_prefix("registry:")?.rsplit_once('#')?;
     let (name, version) = package.split_once('@')?;
     Some((address, name, Version::parse(version)?))
 }
 
-/// Writes an archive's files into the cache, through a temporary directory
-/// so that an interrupted fetch leaves nothing behind.
+/**
+Writes an archive's files into the cache, through a temporary directory
+so that an interrupted fetch leaves nothing behind.
+*/
 fn store(archive: &[u8], dir: &Path) -> Result<(), PackageError> {
     let parent = dir.parent().expect("cache directory");
     std::fs::create_dir_all(parent).map_err(|e| {
@@ -249,7 +263,7 @@ fn store(archive: &[u8], dir: &Path) -> Result<(), PackageError> {
     let result = crate::archive::unpack(archive, &temporary)
         .map_err(PackageError::new)
         .and_then(|()| match std::fs::rename(&temporary, dir) {
-            // Another `sayon install` stored it first.
+            /* Another `sayon install` stored it first. */
             Err(_) if dir.is_dir() => remove_tree(&temporary),
             other => other.map_err(|e| {
                 PackageError::new(format!("cannot store {} in the cache: {e}", dir.display()))
@@ -261,8 +275,10 @@ fn store(archive: &[u8], dir: &Path) -> Result<(), PackageError> {
     result
 }
 
-/// Removes a directory and everything in it, including files Git marks
-/// read-only.
+/**
+Removes a directory and everything in it, including files Git marks
+read-only.
+*/
 fn remove_tree(dir: &Path) -> Result<(), PackageError> {
     fn writable(path: &Path) {
         if let Ok(entries) = std::fs::read_dir(path) {
@@ -287,12 +303,14 @@ fn remove_tree(dir: &Path) -> Result<(), PackageError> {
         .map_err(|e| PackageError::new(format!("cannot remove {}: {e}", dir.display())))
 }
 
-// ----- digests ---------------------------------------------------------------------
+/* ----- digests --------------------------------------------------------------------- */
 
-/// The digest of a package's contents: every file under its directory except
-/// hidden entries (such as `.git`), `target`, and `sayon.lock`, in order of
-/// their paths. Each file contributes its path and its bytes, each preceded
-/// by its length, so that no two different packages hash the same input.
+/**
+The digest of a package's contents: every file under its directory except
+hidden entries (such as `.git`), `target`, and `sayon.lock`, in order of
+their paths. Each file contributes its path and its bytes, each preceded
+by its length, so that no two different packages hash the same input.
+*/
 pub fn digest(dir: &Path) -> Result<String, PackageError> {
     let mut files = Vec::new();
     collect_files(dir, "", &mut files)?;
@@ -343,45 +361,42 @@ fn collect_files(
     Ok(())
 }
 
-// ----- resolving ---------------------------------------------------------------------
+/* ----- resolving --------------------------------------------------------------------- */
 
-/// Whether resolving may fetch Git and registry sources that are not in the
-/// cache, and ask registries for their packages' versions.
+/**
+Whether resolving may fetch Git and registry sources that are not in the
+cache, and ask registries for their packages' versions.
+*/
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Fetch {
     Allowed,
     Offline,
 }
 
-/// A resolved graph: the lock, and the directory of every package.
-pub struct Resolved {
-    pub lock: Lock,
-    pub dirs: HashMap<String, PathBuf>,
-}
-
-/// A registry package: its registry's address and its name.
+/** A registry package: its registry's address and its name. */
 type Key = (String, String);
 
-/// What asked for a version of a registry package: the range, and who.
+/** What asked for a version of a registry package: the range, and who. */
 type Wanted = BTreeMap<Key, Vec<(String, String)>>;
 
 struct Resolver<'i> {
     root: PathBuf,
     fetch: Fetch,
     packages: BTreeMap<String, Package>,
-    dirs: HashMap<String, PathBuf>,
-    /// Sources being resolved, to find cycles.
+    /** Sources being resolved, to find cycles. */
     chain: Vec<String>,
-    /// The digests the previous lock recorded, by source.
+    /** The digests the previous lock recorded, by source. */
     known: HashMap<String, String>,
-    /// The registries, while fetching is allowed.
+    /** The registries, while fetching is allowed. */
     index: Option<&'i mut dyn Index>,
-    /// The version of each registry package the graph has.
+    /** The version of each registry package the graph has. */
     choices: HashMap<Key, Version>,
-    /// What registries said of their packages' versions.
+    /** What registries said of their packages' versions. */
     published: HashMap<Key, Vec<Published>>,
-    /// The registry of dependencies that name none, but those of registry
-    /// packages, which come from their package's registry.
+    /**
+    The registry of dependencies that name none, but those of registry
+    packages, which come from their package's registry.
+    */
     default: String,
 }
 
@@ -417,7 +432,6 @@ impl Resolver<'_> {
             root,
             fetch,
             packages: BTreeMap::new(),
-            dirs: HashMap::new(),
             chain: Vec::new(),
             known: HashMap::new(),
             index,
@@ -427,7 +441,7 @@ impl Resolver<'_> {
         }
     }
 
-    /// Takes the registry packages' versions and the digests a lock has.
+    /** Takes the registry packages' versions and the digests a lock has. */
     fn remember(&mut self, lock: &Lock) {
         for package in &lock.packages {
             if !package.digest.is_empty() {
@@ -441,14 +455,16 @@ impl Resolver<'_> {
         }
     }
 
-    /// The registry that the dependencies of the package `source` come from
-    /// when they name none.
+    /**
+    The registry that the dependencies of the package `source` come from
+    when they name none.
+    */
     fn home(&self, source: &str) -> String {
         registry_parts(source)
             .map_or_else(|| self.default.clone(), |(address, ..)| address.to_string())
     }
 
-    /// The versions a registry has of a package.
+    /** The versions a registry has of a package. */
     fn versions(&mut self, key: &Key) -> Result<Vec<Published>, PackageError> {
         if let Some(found) = self.published.get(key) {
             return Ok(found.clone());
@@ -465,7 +481,7 @@ impl Resolver<'_> {
         Ok(found)
     }
 
-    /// What the registry says of one version of a package.
+    /** What the registry says of one version of a package. */
     fn version(&mut self, key: &Key, version: &Version) -> Result<Published, PackageError> {
         self.versions(key)?
             .into_iter()
@@ -476,8 +492,10 @@ impl Resolver<'_> {
             })
     }
 
-    /// The dependencies of one version of a registry package: from its
-    /// manifest when it is in the cache, or else from its registry.
+    /**
+    The dependencies of one version of a registry package: from its
+    manifest when it is in the cache, or else from its registry.
+    */
     fn registry_dependencies(
         &mut self,
         key: &Key,
@@ -490,9 +508,11 @@ impl Resolver<'_> {
         Ok(self.version(key, version)?.dependencies)
     }
 
-    /// Chooses the version of each registry package the graph reaches. Each
-    /// round walks the graph with the versions chosen so far and chooses
-    /// again for the ranges it found, until nothing changes.
+    /**
+    Chooses the version of each registry package the graph reaches. Each
+    round walks the graph with the versions chosen so far and chooses
+    again for the ranges it found, until nothing changes.
+    */
     fn select(&mut self, manifest: &Manifest) -> Result<(), PackageError> {
         for _ in 0..100 {
             let mut wanted = Wanted::new();
@@ -546,8 +566,10 @@ impl Resolver<'_> {
         .help("name narrower ranges in sayon.toml, such as \"=1.2.3\", for the packages involved"))
     }
 
-    /// Notes the ranges asked for by the dependencies of the package at
-    /// `dir`, and walks on into the packages they reach.
+    /**
+    Notes the ranges asked for by the dependencies of the package at
+    `dir`, and walks on into the packages they reach.
+    */
     fn gather(
         &mut self,
         dir: &Path,
@@ -599,8 +621,10 @@ impl Resolver<'_> {
         Ok(())
     }
 
-    /// The identity and directory of a dependency of the package at `from`,
-    /// whose dependencies come from the registry `home` when they name none.
+    /**
+    The identity and directory of a dependency of the package at `from`,
+    whose dependencies come from the registry `home` when they name none.
+    */
     fn locate(
         &mut self,
         from: &Path,
@@ -626,7 +650,7 @@ impl Resolver<'_> {
             Source::Git { url, revision } => {
                 let dir = git_dir(url, revision);
                 let source = format!("git:{url}#{revision}");
-                // A cached copy that no longer matches the lock is fetched again.
+                /* A cached copy that no longer matches the lock is fetched again. */
                 if dir.is_dir()
                     && let Some(expected) = self.known.get(&source)
                     && digest(&dir)? != *expected
@@ -713,8 +737,10 @@ impl Resolver<'_> {
         }
     }
 
-    /// Resolves the dependencies of the package at `dir`, returning their
-    /// `(alias, source)` pairs.
+    /**
+    Resolves the dependencies of the package at `dir`, returning their
+    `(alias, source)` pairs.
+    */
     fn dependencies(
         &mut self,
         dir: &Path,
@@ -754,7 +780,6 @@ impl Resolver<'_> {
             } else {
                 String::new()
             };
-            self.dirs.insert(source.clone(), package_dir);
             self.packages.insert(
                 source.clone(),
                 Package {
@@ -771,11 +796,13 @@ impl Resolver<'_> {
     }
 }
 
-/// The error for a registry package no version of which every range
-/// asking for it accepts.
+/**
+The error for a registry package no version of which every range
+asking for it accepts.
+*/
 fn conflict(key: &Key, ranges: &[(String, String)], versions: &[Published]) -> PackageError {
     let (address, name) = key;
-    // The project's own range first, then the packages' by name.
+    /* The project's own range first, then the packages' by name. */
     let mut ranges = ranges.to_vec();
     ranges.sort_by_key(|(range, by)| (by != "this project", by.clone(), range.clone()));
     ranges.dedup();
@@ -810,17 +837,19 @@ fn conflict(key: &Key, ranges: &[(String, String)], versions: &[Published]) -> P
     PackageError::new(message).help(help)
 }
 
-/// Resolves the whole dependency graph of the package at `root`.
-/// `previous` is the lock being replaced: cached sources must still match
-/// its digests, and its versions of registry packages are kept while the
-/// ranges accept them. `index` reaches the registries; offline, none is.
+/**
+Resolves the whole dependency graph of the package at `root` into its
+lock. `previous` is the lock being replaced: cached sources must still
+match its digests, and its versions of registry packages are kept while
+the ranges accept them. `index` reaches the registries; offline, none is.
+*/
 pub fn resolve(
     root: &Path,
     manifest: &Manifest,
     fetch: Fetch,
     previous: Option<&Lock>,
     index: &mut dyn Index,
-) -> Result<Resolved, PackageError> {
+) -> Result<Lock, PackageError> {
     let root = canonical(root);
     let index = (fetch == Fetch::Allowed).then_some(index);
     let mut resolver = Resolver::new(root.clone(), fetch, index);
@@ -832,17 +861,14 @@ pub fn resolve(
     let home = resolver.default.clone();
     let dependencies = resolver.dependencies(&root, &home, &manifest.dependencies)?;
     let dev_dependencies = resolver.dependencies(&root, &home, &manifest.dev_dependencies)?;
-    Ok(Resolved {
-        lock: Lock {
-            dependencies,
-            dev_dependencies,
-            packages: resolver.packages.into_values().collect(),
-        },
-        dirs: resolver.dirs,
+    Ok(Lock {
+        dependencies,
+        dev_dependencies,
+        packages: resolver.packages.into_values().collect(),
     })
 }
 
-// ----- the lock file -----------------------------------------------------------------
+/* ----- the lock file ----------------------------------------------------------------- */
 
 fn edges_text(edges: &[(String, String)]) -> String {
     let items: Vec<String> = edges
@@ -856,7 +882,7 @@ fn escape(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// The lock as text. The same graph always gives the same text.
+/** The lock as text. The same graph always gives the same text. */
 pub fn render(lock: &Lock) -> String {
     let mut out = String::new();
     out.push_str("# sayon.lock: the exact packages this project depends on.\n");
@@ -897,7 +923,7 @@ fn parse_edges(items: &[String]) -> Result<Vec<(String, String)>, String> {
         .collect()
 }
 
-/// Reads a lock file written by `render`.
+/** Reads a lock file written by `render`. */
 pub fn parse_lock(text: &str) -> Result<Lock, String> {
     let mut lock = Lock::default();
     let mut current: Option<Package> = None;
@@ -956,8 +982,10 @@ pub fn parse_lock(text: &str) -> Result<Lock, String> {
     }
 }
 
-/// Writes the lock through a temporary file, so that it is never left half
-/// written.
+/**
+Writes the lock through a temporary file, so that it is never left half
+written.
+*/
 fn write_lock(root: &Path, text: &str) -> Result<(), PackageError> {
     let path = root.join(LOCK_FILE);
     let temporary = root.join(format!("{LOCK_FILE}.tmp"));
@@ -966,16 +994,18 @@ fn write_lock(root: &Path, text: &str) -> Result<(), PackageError> {
         .map_err(|e| PackageError::new(format!("cannot write {}: {e}", path.display())))
 }
 
-// ----- commands ------------------------------------------------------------------------
+/* ----- commands ------------------------------------------------------------------------ */
 
-/// What `sayon install` did.
+/** What `sayon install` did. */
 pub struct Installed {
     pub packages: usize,
     pub changed: bool,
 }
 
-/// `sayon install`: resolves and fetches the graph, and writes the lock.
-/// With `locked`, the lock must already describe the graph exactly.
+/**
+`sayon install`: resolves and fetches the graph, and writes the lock.
+With `locked`, the lock must already describe the graph exactly.
+*/
 pub fn install(
     root: &Path,
     manifest: &Manifest,
@@ -989,8 +1019,8 @@ pub fn install(
             .help("run `sayon install` without `--locked` to write it"));
     }
     let previous = existing.as_deref().and_then(|text| parse_lock(text).ok());
-    let resolved = resolve(root, manifest, fetch, previous.as_ref(), index)?;
-    let text = render(&resolved.lock);
+    let lock = resolve(root, manifest, fetch, previous.as_ref(), index)?;
+    let text = render(&lock);
     let changed = existing.as_deref() != Some(text.as_str());
     if changed && locked {
         return Err(PackageError::new(match existing {
@@ -1003,14 +1033,16 @@ pub fn install(
         write_lock(root, &text)?;
     }
     Ok(Installed {
-        packages: resolved.lock.packages.len(),
+        packages: lock.packages.len(),
         changed,
     })
 }
 
-/// The packages a build of the project at `root` uses, from its lock. The
-/// lock must match the manifests, and cached Git sources their digests.
-/// `tests` includes the root package's development dependencies.
+/**
+The packages a build of the project at `root` uses, from its lock. The
+lock must match the manifests, and cached Git sources their digests.
+`tests` includes the root package's development dependencies.
+*/
 pub fn load(root: &Path, manifest: &Manifest, tests: bool) -> Result<Packages, PackageError> {
     if manifest.dependencies.is_empty() && manifest.dev_dependencies.is_empty() {
         return Ok(Packages::default());
@@ -1026,9 +1058,11 @@ pub fn load(root: &Path, manifest: &Manifest, tests: bool) -> Result<Packages, P
         )))
     })?;
 
-    // The sources each manifest names must be the ones locked. Checking
-    // never fetches, so a Git or registry source must already be in the
-    // cache; its digest is checked below.
+    /*
+    The sources each manifest names must be the ones locked. Checking
+    never fetches, so a Git or registry source must already be in the
+    cache; its digest is checked below.
+    */
     let mut checker = Resolver::new(root.clone(), Fetch::Offline, None);
     for package in &lock.packages {
         if let Some((address, name, version)) = registry_parts(&package.source) {

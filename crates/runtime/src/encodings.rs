@@ -1,25 +1,29 @@
-//! Text encodings other than UTF-8, which Sayon's strings use, for
-//! `strings.encode`, `strings.decode`, and files opened with an encoding.
+/*!
+Text encodings other than UTF-8, which Sayon's strings use, for
+`strings.encode`, `strings.decode`, and files opened with an encoding.
+*/
 
 use crate::host::HostError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Encoding {
     Utf8,
-    /// UTF-16 in the byte order a byte-order mark gives, or little-endian
-    /// without one; written little-endian, after a byte-order mark.
+    /**
+    UTF-16 in the byte order a byte-order mark gives, or little-endian
+    without one; written little-endian, after a byte-order mark.
+    */
     Utf16,
     Utf16Le,
     Utf16Be,
-    /// ISO 8859-1: each byte is the character of the same code.
+    /** ISO 8859-1: each byte is the character of the same code. */
     Latin1,
     Ascii,
-    /// Latin-1 with letters and signs in 0x80 to 0x9F instead of controls.
+    /** Latin-1 with letters and signs in 0x80 to 0x9F instead of controls. */
     Windows1252,
 }
 
 impl Encoding {
-    /// An encoding by its name, in any letter case.
+    /** An encoding by its name, in any letter case. */
     pub fn by_name(name: &str) -> Result<Encoding, HostError> {
         Ok(match name.to_ascii_lowercase().as_str() {
             "utf-8" | "utf8" => Encoding::Utf8,
@@ -53,8 +57,10 @@ impl Encoding {
     }
 }
 
-/// The characters Windows-1252 has in 0x80 to 0x9F, or 0 for the five
-/// codes it leaves undefined.
+/**
+The characters Windows-1252 has in 0x80 to 0x9F, or 0 for the five
+codes it leaves undefined.
+*/
 const WINDOWS_1252: [u32; 32] = [
     0x20AC, 0, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039,
     0x0152, 0, 0x017D, 0, 0, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC,
@@ -70,7 +76,7 @@ fn unencodable(character: char, encoding: Encoding) -> HostError {
     )
 }
 
-/// Text in an encoding.
+/** Text in an encoding. */
 pub fn encode(text: &str, encoding: Encoding) -> Result<Vec<u8>, HostError> {
     let mut bytes = Vec::with_capacity(text.len());
     match encoding {
@@ -129,8 +135,10 @@ fn invalid(encoding: Encoding, position: usize) -> HostError {
     )
 }
 
-/// Bytes of an encoding as text. Bytes that are not valid are an error,
-/// or with `lossy` the replacement character.
+/**
+Bytes of an encoding as text. Bytes that are not valid are an error,
+or with `lossy` the replacement character.
+*/
 pub fn decode(bytes: &[u8], encoding: Encoding, lossy: bool) -> Result<String, HostError> {
     let mut decoder = Decoder::new(encoding, lossy);
     let mut text = decoder.feed(bytes)?;
@@ -138,16 +146,18 @@ pub fn decode(bytes: &[u8], encoding: Encoding, lossy: bool) -> Result<String, H
     Ok(text)
 }
 
-/// Decodes bytes that come a part at a time, keeping a character cut in
-/// two by a part until the next one.
+/**
+Decodes bytes that come a part at a time, keeping a character cut in
+two by a part until the next one.
+*/
 pub struct Decoder {
     encoding: Encoding,
     lossy: bool,
-    /// Bytes of a character not yet complete.
+    /** Bytes of a character not yet complete. */
     pending: Vec<u8>,
-    /// For UTF-16: the byte order, once the first bytes have shown it.
+    /** For UTF-16: the byte order, once the first bytes have shown it. */
     big_endian: Option<bool>,
-    /// Bytes decoded so far, for the position in messages.
+    /** Bytes decoded so far, for the position in messages. */
     consumed: usize,
 }
 
@@ -167,7 +177,7 @@ impl Decoder {
         }
     }
 
-    /// The text of the next part of the bytes.
+    /** The text of the next part of the bytes. */
     pub fn feed(&mut self, bytes: &[u8]) -> Result<String, HostError> {
         let mut data = std::mem::take(&mut self.pending);
         data.extend_from_slice(bytes);
@@ -188,8 +198,10 @@ impl Decoder {
         Ok(text)
     }
 
-    /// The end of the bytes: a character still incomplete is an error, or
-    /// with `lossy` the replacement character.
+    /**
+    The end of the bytes: a character still incomplete is an error, or
+    with `lossy` the replacement character.
+    */
     pub fn finish(&mut self) -> Result<String, HostError> {
         if self.pending.is_empty() {
             return Ok(String::new());
@@ -241,7 +253,7 @@ impl Decoder {
             if data.len() < 2 {
                 return Ok(0);
             }
-            // A byte-order mark says the order, and is not text.
+            /* A byte-order mark says the order, and is not text. */
             self.big_endian = Some(match (data[0], data[1]) {
                 (0xFE, 0xFF) => {
                     start = 2;
@@ -289,11 +301,11 @@ impl Decoder {
     }
 }
 
-/// Reads a file in an encoding as UTF-8, for the stream table's readers.
+/** Reads a file in an encoding as UTF-8, for the stream table's readers. */
 pub struct DecodeReader<R> {
     inner: R,
     decoder: Decoder,
-    /// Decoded bytes not yet read.
+    /** Decoded bytes not yet read. */
     out: Vec<u8>,
     ended: bool,
 }

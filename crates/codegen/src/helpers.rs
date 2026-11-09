@@ -1,12 +1,14 @@
-//! Per-type helper functions: destruction, deep copy, equality, and display.
-//!
-//! - `drop(ptr)` releases what a value owns and leaves the place zeroed.
-//! - `clone(ptr src, ptr dst)` initializes `dst` with an independent copy.
-//! - `eq(ptr, ptr) -> i1` compares contents.
-//! - `display(ptr builder, ptr value, i1 nested)` appends the `tostring` text.
-//! - `envdrop(ptr block)` destroys a closure environment and frees its block.
-//! - `envclone(ptr block) -> ptr` returns a new block with a deep copy.
-//! - `hash(ptr) -> i64` hashes a dictionary key, consistently with `eq`.
+/*!
+Per-type helper functions: destruction, deep copy, equality, and display.
+
+- `drop(ptr)` releases what a value owns and leaves the place zeroed.
+- `clone(ptr src, ptr dst)` initializes `dst` with an independent copy.
+- `eq(ptr, ptr) -> i1` compares contents.
+- `display(ptr builder, ptr value, i1 nested)` appends the `tostring` text.
+- `envdrop(ptr block)` destroys a closure environment and frees its block.
+- `envclone(ptr block) -> ptr` returns a new block with a deep copy.
+- `hash(ptr) -> i64` hashes a dictionary key, consistently with `eq`.
+*/
 
 use crate::emit::{Body, Codegen, Helper, MEMCPY};
 use crate::layout::SHARED_HEADER;
@@ -74,8 +76,10 @@ impl<'m> Codegen<'m> {
         tag
     }
 
-    /// Branches on an enum value's tag; `case` runs for each listed variant
-    /// and must end its block.
+    /**
+    Branches on an enum value's tag; `case` runs for each listed variant
+    and must end its block.
+    */
     fn enum_switch(
         &mut self,
         body: &mut Body,
@@ -103,8 +107,10 @@ impl<'m> Codegen<'m> {
         body.start(&done);
     }
 
-    /// The fields of a structure, or of one variant of an enum: their types
-    /// and byte offsets within the whole value.
+    /**
+    The fields of a structure, or of one variant of an enum: their types
+    and byte offsets within the whole value.
+    */
     fn parts(&self, named: &NamedType, variant: Option<u32>) -> Vec<(Type, u64)> {
         match variant {
             None => structure_fields(&self.module.types, named)
@@ -127,7 +133,7 @@ impl<'m> Codegen<'m> {
         self.module.types[named.id.0 as usize].variants().len() as u32
     }
 
-    /// Drops the fields that own something.
+    /** Drops the fields that own something. */
     fn drop_parts(&mut self, body: &mut Body, pointer: &str, parts: &[(Type, u64)]) {
         for (ty, offset) in parts {
             if needs_drop(ty) {
@@ -138,7 +144,7 @@ impl<'m> Codegen<'m> {
         }
     }
 
-    /// Replaces the shallow copies of owning fields in `%dst` with clones.
+    /** Replaces the shallow copies of owning fields in `%dst` with clones. */
     fn clone_parts(&mut self, body: &mut Body, parts: &[(Type, u64)]) {
         for (ty, offset) in parts {
             if needs_drop(ty) {
@@ -150,8 +156,10 @@ impl<'m> Codegen<'m> {
         }
     }
 
-    /// Compares fields in order, branching to `different` at the first
-    /// unequal pair.
+    /**
+    Compares fields in order, branching to `different` at the first
+    unequal pair.
+    */
     fn eq_parts(&mut self, body: &mut Body, parts: &[(Type, u64)], different: &str) {
         for (ty, offset) in parts {
             let eq = self.helper(Helper::Eq, ty);
@@ -165,7 +173,7 @@ impl<'m> Codegen<'m> {
         }
     }
 
-    /// Member types of a union with their program-wide tags.
+    /** Member types of a union with their program-wide tags. */
     fn tagged_members(&self, ty: &Type) -> Vec<(u32, Type)> {
         ty.union_members()
             .iter()
@@ -179,7 +187,7 @@ impl<'m> Codegen<'m> {
             .collect()
     }
 
-    /// Folds the hashes of the parts at the given offsets into `acc`.
+    /** Folds the hashes of the parts at the given offsets into `acc`. */
     fn hash_parts(&mut self, body: &mut Body, acc: &str, parts: &[(Type, u64)]) {
         for (ty, offset) in parts {
             let hash = self.helper(Helper::Hash, ty);
@@ -269,7 +277,7 @@ impl<'m> Codegen<'m> {
                 body.line(format!("{result} = load i64, ptr {acc}"));
                 body.line(format!("ret i64 {result}"));
             }
-            // `nothing`, and types the checker never accepts as keys.
+            /* `nothing`, and types the checker never accepts as keys. */
             _ => body.line("ret i64 0"),
         }
     }
@@ -410,7 +418,7 @@ impl<'m> Codegen<'m> {
                     body.line("ret void");
                     return;
                 };
-                // An empty place has nothing to destroy.
+                /* An empty place has nothing to destroy. */
                 let flag = offset_pointer(body, "%p", self.layouts.live_offset(named));
                 let live = body.tmp();
                 body.line(format!("{live} = load i8, ptr {flag}"));
@@ -433,8 +441,10 @@ impl<'m> Codegen<'m> {
         body.line("ret void");
     }
 
-    /// Calls a structure's finally function with the value at `%p`, which
-    /// cannot wait, and whose failure ends the program.
+    /**
+    Calls a structure's finally function with the value at `%p`, which
+    cannot wait, and whose failure ends the program.
+    */
     fn call_finally(&mut self, body: &mut Body, function: sayon_ir::FunctionId) {
         let result = body.alloca("i8");
         let err = body.alloca("ptr");
@@ -624,8 +634,10 @@ impl<'m> Codegen<'m> {
             Type::Boolean => scalar(body, "i1", "icmp eq"),
             Type::Pointer => scalar(body, "ptr", "icmp eq"),
             Type::Nothing | Type::Unknown => body.line("ret i1 true"),
-            // Function values, views, streams, C strings, and handles are
-            // never compared.
+            /*
+            Function values, views, streams, C strings, and handles are
+            never compared.
+            */
             Type::Function(_)
             | Type::View(..)
             | Type::Stream
@@ -844,7 +856,7 @@ impl<'m> Codegen<'m> {
             Type::CString => {
                 body.line("call void @sayon_builder_c_string(ptr %builder, ptr %value, i1 %nested)")
             }
-            // A shared value and a cell show their value.
+            /* A shared value and a cell show their value. */
             Type::Wrapper(Wrapper::Shared, inner) => {
                 let display = self.helper(Helper::Display, inner);
                 let block = body.tmp();
@@ -871,7 +883,7 @@ impl<'m> Codegen<'m> {
                 body.line("call void @sayon_builder_error(ptr %builder, ptr %value, i1 %nested)")
             }
             Type::Range => body.line("call void @sayon_builder_range(ptr %builder, ptr %value)"),
-            // A view has an array's first two fields, so it displays like one.
+            /* A view has an array's first two fields, so it displays like one. */
             Type::Array(element) | Type::View(element, _) => {
                 let display = self.helper(Helper::Display, element);
                 let element_llvm = self.llvm(element);
@@ -912,8 +924,10 @@ impl<'m> Codegen<'m> {
                 body.line(format!("{handle} = load ptr, ptr %value"));
                 let length = body.tmp();
                 body.line(format!("{length} = call i64 @sayon_dict_len(ptr {handle})"));
-                // The place of the next entry to show, stepping over the
-                // places of removed entries.
+                /*
+                The place of the next entry to show, stepping over the
+                places of removed entries.
+                */
                 let cursor = body.alloca("i64");
                 body.line(format!("store i64 0, ptr {cursor}"));
                 body.counted_loop(&length, |b, index| {
@@ -1004,7 +1018,7 @@ impl<'m> Codegen<'m> {
         body.line("ret void");
     }
 
-    /// Displays one field of `%value`, as a nested value.
+    /** Displays one field of `%value`, as a nested value. */
     fn display_part(&mut self, body: &mut Body, ty: &Type, offset: u64) {
         let display = self.helper(Helper::Display, ty);
         let address = offset_pointer(body, "%value", offset);
@@ -1022,7 +1036,7 @@ impl<'m> Codegen<'m> {
     }
 }
 
-/// Mixes a part's hash into a running hash.
+/** Mixes a part's hash into a running hash. */
 fn combine(body: &mut Body, running: &str, part: &str) -> String {
     let mixed = body.tmp();
     body.line(format!("{mixed} = xor i64 {running}, {part}"));
@@ -1031,7 +1045,7 @@ fn combine(body: &mut Body, running: &str, part: &str) -> String {
     result
 }
 
-/// `pointer + offset` bytes.
+/** `pointer + offset` bytes. */
 fn offset_pointer(body: &mut Body, pointer: &str, offset: u64) -> String {
     if offset == 0 {
         return pointer.to_string();

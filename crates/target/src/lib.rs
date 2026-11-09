@@ -1,58 +1,66 @@
-//! The targets Sayon builds for: their names, the platforms and processors
-//! they are for, and the capabilities each provides.
-//!
-//! The names are a published table: `windows` always means `windows-x64`,
-//! whatever a later release adds, so a build never changes its ABI or host
-//! without its command changing. A target records how far its support has
-//! come; only the targets this compiler can build are offered to `build`,
-//! but every target can be checked, which selects its platform branches and
-//! diagnoses the capabilities it lacks.
+/*!
+The targets Sayon builds for: their names, the platforms and processors
+they are for, and the capabilities each provides.
+
+The names are a published table: `windows` always means `windows-x64`,
+whatever a later release adds, so a build never changes its ABI or host
+without its command changing. A target records how far its support has
+come; only the targets this compiler can build are offered to `build`,
+but every target can be checked, which selects its platform branches and
+diagnoses the capabilities it lacks.
+*/
 
 use std::fmt;
 
-/// What a host can do for a program. Each operation of the standard library
-/// that needs the host needs one of these; the pure ones every target has.
+/**
+What a host can do for a program. Each operation of the standard library
+that needs the host needs one of these; the pure ones every target has.
+*/
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Capability {
-    /// Printing to standard output and standard errors.
+    /** Printing to standard output and standard errors. */
     Console,
-    /// Reading standard input.
+    /** Reading standard input. */
     Input,
-    /// Files and directories.
+    /** Files and directories. */
     Files,
-    /// Environment variables, the current directory, and the program's
-    /// arguments.
+    /**
+    Environment variables, the current directory, and the program's
+    arguments.
+    */
     Environment,
-    /// Starting other programs.
+    /** Starting other programs. */
     Processes,
-    /// TCP and UDP sockets, and resolving host names.
+    /** TCP and UDP sockets, and resolving host names. */
     Network,
-    /// The HTTP client of `standard/network`.
+    /** The HTTP client of `standard/network`. */
     Http,
-    /// Secure connections: `network.connect_secure` and `connection.secure`.
+    /** Secure connections: `network.connect_secure` and `connection.secure`. */
     Tls,
-    /// Windows and the screen: `standard/graphics`'s `open`. Drawing on a
-    /// canvas needs none.
+    /**
+    Windows and the screen: `standard/graphics`'s `open`. Drawing on a
+    canvas needs none.
+    */
     Graphics,
-    /// Tasks and channels: `spawn`, `sleep`, `select`, and their kin.
+    /** Tasks and channels: `spawn`, `sleep`, `select`, and their kin. */
     Tasks,
-    /// Tasks on threads of their own: `spawn_parallel`, and mutexes.
+    /** Tasks on threads of their own: `spawn_parallel`, and mutexes. */
     Threads,
-    /// C functions of `foreign` blocks.
+    /** C functions of `foreign` blocks. */
     Foreign,
-    /// IANA time zones of `standard/time`.
+    /** IANA time zones of `standard/time`. */
     TimeZones,
-    /// Clocks and dates.
+    /** Clocks and dates. */
     Clock,
-    /// Random numbers.
+    /** Random numbers. */
     Random,
-    /// `standard/json`.
+    /** `standard/json`. */
     Json,
-    /// `standard/math`.
+    /** `standard/math`. */
     Math,
-    /// Strings, text, and encodings.
+    /** Strings, text, and encodings. */
     Text,
-    /// Arrays, dictionaries, and the collections of `standard/collections`.
+    /** Arrays, dictionaries, and the collections of `standard/collections`. */
     Collections,
 }
 
@@ -79,7 +87,7 @@ impl Capability {
         Capability::Collections,
     ];
 
-    /// The name programs and manifests use.
+    /** The name programs and manifests use. */
     pub fn name(self) -> &'static str {
         match self {
             Capability::Console => "console",
@@ -104,8 +112,10 @@ impl Capability {
         }
     }
 
-    /// What the capability lets a program do, for messages such as "web
-    /// programs cannot start other programs".
+    /**
+    What the capability lets a program do, for messages such as "web
+    programs cannot start other programs".
+    */
     pub fn description(self) -> &'static str {
         match self {
             Capability::Console => "print to a console",
@@ -143,16 +153,20 @@ impl fmt::Display for Capability {
     }
 }
 
-/// How far support for a target has come (DESIGN's platform support
-/// states). Each state includes the ones before it.
+/**
+How far support for a target has come (DESIGN's platform support
+states). Each state includes the ones before it.
+*/
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum State {
-    /// Its ABI, capabilities, packaging, and tests are described; programs
-    /// can be checked for it.
+    /**
+    Its ABI, capabilities, packaging, and tests are described; programs
+    can be checked for it.
+    */
     Specified,
-    /// The compiler builds programs for it.
+    /** The compiler builds programs for it. */
     Buildable,
-    /// Programs built for it have run the conformance tests on it.
+    /** Programs built for it have run the conformance tests on it. */
     Executed,
 }
 
@@ -166,22 +180,24 @@ impl State {
     }
 }
 
-/// A target: a platform and processor, with the ABI its programs use.
+/** A target: a platform and processor, with the ABI its programs use. */
 #[derive(Debug, PartialEq, Eq)]
 pub struct Target {
-    /// Its name, such as `linux-x64`.
+    /** Its name, such as `linux-x64`. */
     pub name: &'static str,
-    /// Its LLVM target triple.
+    /** Its LLVM target triple. */
     pub triple: &'static str,
-    /// What `platform` is in its programs: `windows`, `linux`, `macos`,
-    /// `android`, `ios`, `web`, or `wasi`.
+    /**
+    What `platform` is in its programs: `windows`, `linux`, `macos`,
+    `android`, `ios`, `web`, or `wasi`.
+    */
     pub platform: &'static str,
-    /// What `processor` is in its programs: `x64`, `arm64`, or `wasm32`.
+    /** What `processor` is in its programs: `x64`, `arm64`, or `wasm32`. */
     pub processor: &'static str,
-    /// The size of an address, in bytes.
+    /** The size of an address, in bytes. */
     pub pointer_size: u64,
     pub state: State,
-    /// When support for it is to come further, for messages.
+    /** When support for it is to come further, for messages. */
     pub planned: &'static str,
     pub capabilities: &'static [Capability],
 }
@@ -191,7 +207,7 @@ impl Target {
         self.capabilities.contains(&capability)
     }
 
-    /// The capabilities it lacks, in the order of [`Capability::ALL`].
+    /** The capabilities it lacks, in the order of [`Capability::ALL`]. */
     pub fn lacks(&self) -> Vec<Capability> {
         Capability::ALL
             .iter()
@@ -200,8 +216,10 @@ impl Target {
             .collect()
     }
 
-    /// The bits of C's `long`, which C leaves to each platform: 32 on
-    /// Windows and where addresses are 32 bits, 64 elsewhere.
+    /**
+    The bits of C's `long`, which C leaves to each platform: 32 on
+    Windows and where addresses are 32 bits, 64 elsewhere.
+    */
     pub fn c_long_bits(&self) -> u32 {
         if self.platform == "windows" || self.pointer_size == 4 {
             32
@@ -210,7 +228,7 @@ impl Target {
         }
     }
 
-    /// The suffix of the programs built for it.
+    /** The suffix of the programs built for it. */
     pub fn executable_suffix(&self) -> &'static str {
         match self.platform {
             "windows" => ".exe",
@@ -220,29 +238,33 @@ impl Target {
         }
     }
 
-    /// Whether this is the target the running compiler was built for.
+    /** Whether this is the target the running compiler was built for. */
     pub fn is_host(&self) -> bool {
         std::ptr::eq(self, host())
     }
 
-    /// Whether the compiler builds programs for it on any computer, not
-    /// only on a computer of the target itself: a buildable WebAssembly
-    /// target, whose programs are the same wherever they are built, or
-    /// Android, whose SDK builds on each desktop system.
+    /**
+    Whether the compiler builds programs for it on any computer, not
+    only on a computer of the target itself: a buildable WebAssembly
+    target, whose programs are the same wherever they are built, or
+    Android, whose SDK builds on each desktop system.
+    */
     pub fn built_anywhere(&self) -> bool {
         self.state >= State::Buildable && (self.processor == "wasm32" || self.platform == "android")
     }
 
-    /// Whether the compiler builds programs for it on its own system with
-    /// another processor, given the C library of the target's processor: a
-    /// buildable Linux target on Linux, from the system's cross packages,
-    /// and a buildable Windows target on Windows, with Visual Studio's
-    /// libraries for its processor.
+    /**
+    Whether the compiler builds programs for it on its own system with
+    another processor, given the C library of the target's processor: a
+    buildable Linux target on Linux, from the system's cross packages,
+    and a buildable Windows target on Windows, with Visual Studio's
+    libraries for its processor.
+    */
     pub fn built_across_processors(&self) -> bool {
         self.state >= State::Buildable && matches!(self.platform, "linux" | "windows")
     }
 
-    /// Whether the running compiler builds programs for it.
+    /** Whether the running compiler builds programs for it. */
     pub fn builds_here(&self) -> bool {
         self.is_host()
             || self.built_anywhere()
@@ -258,7 +280,7 @@ impl fmt::Display for Target {
 
 use Capability::*;
 
-/// What every desktop system provides.
+/** What every desktop system provides. */
 const DESKTOP: &[Capability] = &[
     Console,
     Input,
@@ -281,9 +303,11 @@ const DESKTOP: &[Capability] = &[
     Collections,
 ];
 
-/// What a phone's application can use: its own files, the network and the
-/// platform's TLS, threads, its screen, and the system's time zones, but no
-/// console input, environment, or other programs.
+/**
+What a phone's application can use: its own files, the network and the
+platform's TLS, threads, its screen, and the system's time zones, but no
+console input, environment, or other programs.
+*/
 const MOBILE: &[Capability] = &[
     Console,
     Files,
@@ -303,9 +327,11 @@ const MOBILE: &[Capability] = &[
     Collections,
 ];
 
-/// What a page can use: the console, the event loop for tasks, HTTP
-/// through the browser's `fetch`, and a canvas of the page to show.
-/// Sockets, files, other programs, and C are not a page's.
+/**
+What a page can use: the console, the event loop for tasks, HTTP
+through the browser's `fetch`, and a canvas of the page to show.
+Sockets, files, other programs, and C are not a page's.
+*/
 const WEB: &[Capability] = &[
     Console,
     Http,
@@ -319,10 +345,12 @@ const WEB: &[Capability] = &[
     Collections,
 ];
 
-/// What WASI preview 1 offers: the console, preopened files, the
-/// environment, and the C library compiled to WebAssembly; no sockets,
-/// threads, or other programs. Tasks take turns there through functions
-/// lowered to coroutines, since WebAssembly has no fibers.
+/**
+What WASI preview 1 offers: the console, preopened files, the
+environment, and the C library compiled to WebAssembly; no sockets,
+threads, or other programs. Tasks take turns there through functions
+lowered to coroutines, since WebAssembly has no fibers.
+*/
 const WASI: &[Capability] = &[
     Console,
     Input,
@@ -338,7 +366,7 @@ const WASI: &[Capability] = &[
     Collections,
 ];
 
-/// Every target, in the order `sayon target list` shows them.
+/** Every target, in the order `sayon target list` shows them. */
 pub static TARGETS: &[Target] = &[
     Target {
         name: "windows-x64",
@@ -406,7 +434,7 @@ pub static TARGETS: &[Target] = &[
         platform: "windows",
         processor: "arm64",
         pointer_size: 8,
-        // Its programs run on GitHub's ARM64 runners (.github/workflows).
+        /* Its programs run on GitHub's ARM64 runners (.github/workflows). */
         state: State::Executed,
         planned: "M5",
         capabilities: DESKTOP,
@@ -417,8 +445,10 @@ pub static TARGETS: &[Target] = &[
         platform: "linux",
         processor: "arm64",
         pointer_size: 8,
-        // Its programs run on GitHub's ARM64 runners (.github/workflows),
-        // and under QEMU on Linux x64.
+        /*
+        Its programs run on GitHub's ARM64 runners (.github/workflows),
+        and under QEMU on Linux x64.
+        */
         state: State::Executed,
         planned: "M5",
         capabilities: DESKTOP,
@@ -465,7 +495,7 @@ pub static TARGETS: &[Target] = &[
     },
 ];
 
-/// Short names, each for one target for good.
+/** Short names, each for one target for good. */
 pub const ALIASES: &[(&str, &str)] = &[
     ("windows", "windows-x64"),
     ("linux", "linux-x64"),
@@ -474,47 +504,31 @@ pub const ALIASES: &[(&str, &str)] = &[
     ("ios", "ios-arm64"),
 ];
 
-/// Every value `platform` can have.
+/** Every value `platform` can have. */
 pub const PLATFORMS: &[&str] = &["windows", "linux", "macos", "android", "ios", "web", "wasi"];
 
-/// Every value `processor` can have.
+/** Every value `processor` can have. */
 pub const PROCESSORS: &[&str] = &["x64", "arm64", "wasm32"];
 
-/// The targets `all` means when a project names none.
+/** The targets `all` means when a project names none. */
 pub const DEFAULT_SET: &[&str] = &["windows-x64", "linux-x64"];
 
-/// The version of the capability manifest: the capabilities by their names,
-/// and the platform, processor, and capabilities of each target by its
-/// name. It goes up with any change to these, never with a target's state
-/// or a description's wording, so that a project can name the manifest it
-/// was written against (`capability_manifest` in its `[compiler]` table)
-/// and a compiler tell one it does not know. `sayon target manifest`
-/// prints it.
+/**
+The version of the capability manifest: the capabilities by their names,
+and the platform, processor, and capabilities of each target by its
+name. It goes up with any change to these, never with a target's state
+or a description's wording, so that a project can name the manifest it
+was written against (`capability_manifest` in its `[compiler]` table)
+and a compiler tell one it does not know. `sayon target manifest`
+prints it.
+*/
 pub const CAPABILITY_MANIFEST: u32 = 1;
 
-/// What the version stands for, one line for each capability and target:
-/// a change to it is a new version.
-pub fn manifest_text() -> String {
-    let mut text = String::new();
-    for capability in Capability::ALL {
-        text.push_str(&format!("capability {}\n", capability.name()));
-    }
-    for target in TARGETS {
-        let provides: Vec<&str> = target.capabilities.iter().map(|c| c.name()).collect();
-        text.push_str(&format!(
-            "target {} {} {} {}\n",
-            target.name,
-            target.platform,
-            target.processor,
-            provides.join(",")
-        ));
-    }
-    text
-}
-
-/// The capability manifest as JSON: its version, each capability with what
-/// it lets a program do, and each target with its platform, processor,
-/// state, and the capabilities it provides.
+/**
+The capability manifest as JSON: its version, each capability with what
+it lets a program do, and each target with its platform, processor,
+state, and the capabilities it provides.
+*/
 pub fn manifest_json() -> String {
     let quote = |text: &str| format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""));
     let capabilities: Vec<String> = Capability::ALL
@@ -549,7 +563,7 @@ pub fn manifest_json() -> String {
     )
 }
 
-/// The target the running compiler was built for, which `native` names.
+/** The target the running compiler was built for, which `native` names. */
 pub fn host() -> &'static Target {
     let triple = if cfg!(all(windows, target_arch = "x86_64")) {
         "x86_64-pc-windows-msvc"
@@ -570,10 +584,12 @@ pub fn host() -> &'static Target {
         .expect("the host is a target")
 }
 
-/// What a program in the sandbox (`sayon run --sandbox`) may use: the
-/// console, tasks, clocks, random numbers, and the library's pure parts.
-/// Nothing reaches files, the environment, input, other programs, the
-/// network, windows, threads, C, or time zones.
+/**
+What a program in the sandbox (`sayon run --sandbox`) may use: the
+console, tasks, clocks, random numbers, and the library's pure parts.
+Nothing reaches files, the environment, input, other programs, the
+network, windows, threads, C, or time zones.
+*/
 pub const SANDBOX: &[Capability] = &[
     Capability::Console,
     Capability::Tasks,
@@ -585,9 +601,11 @@ pub const SANDBOX: &[Capability] = &[
     Capability::Collections,
 ];
 
-/// This computer's target as the sandbox has it: the host's platform and
-/// processor, so that a program's platform branches are the ones that run,
-/// with only the capabilities of [`SANDBOX`].
+/**
+This computer's target as the sandbox has it: the host's platform and
+processor, so that a program's platform branches are the ones that run,
+with only the capabilities of [`SANDBOX`].
+*/
 pub fn sandbox() -> &'static Target {
     static SANDBOXED: std::sync::OnceLock<Target> = std::sync::OnceLock::new();
     SANDBOXED.get_or_init(|| {
@@ -612,14 +630,16 @@ pub fn sandbox() -> &'static Target {
 }
 
 impl Target {
-    /// Whether this is [`sandbox`]'s target.
+    /** Whether this is [`sandbox`]'s target. */
     pub fn is_sandbox(&self) -> bool {
         std::ptr::eq(self, sandbox())
     }
 }
 
-/// The target a name means: `native`, a target's name, an alias, or a
-/// triple.
+/**
+The target a name means: `native`, a target's name, an alias, or a
+triple.
+*/
 pub fn find(name: &str) -> Option<&'static Target> {
     if name == "native" {
         return Some(host());
@@ -631,7 +651,7 @@ pub fn find(name: &str) -> Option<&'static Target> {
     TARGETS.iter().find(|t| t.name == name || t.triple == name)
 }
 
-/// Like [`find`], with a message that lists the names for one that is not.
+/** Like [`find`], with a message that lists the names for one that is not. */
 pub fn resolve(name: &str) -> Result<&'static Target, String> {
     find(name).ok_or_else(|| {
         let names: Vec<&str> = TARGETS.iter().map(|t| t.name).collect();
@@ -651,16 +671,40 @@ pub fn resolve(name: &str) -> Result<&'static Target, String> {
 mod tests {
     use super::*;
 
-    /// FNV-1a, 64 bits.
+    /** FNV-1a, 64 bits. */
     fn digest(text: &str) -> u64 {
         text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
             (hash ^ byte as u64).wrapping_mul(0x0100_0000_01b3)
         })
     }
 
-    /// The capability manifest is what its version was recorded with: a
-    /// change to the capabilities or to what a target provides needs a new
-    /// version, and its digest here.
+    /**
+    What the manifest's version stands for, one line for each capability
+    and target: a change to it is a new version.
+    */
+    fn manifest_text() -> String {
+        let mut text = String::new();
+        for capability in Capability::ALL {
+            text.push_str(&format!("capability {}\n", capability.name()));
+        }
+        for target in TARGETS {
+            let provides: Vec<&str> = target.capabilities.iter().map(|c| c.name()).collect();
+            text.push_str(&format!(
+                "target {} {} {} {}\n",
+                target.name,
+                target.platform,
+                target.processor,
+                provides.join(",")
+            ));
+        }
+        text
+    }
+
+    /**
+    The capability manifest is what its version was recorded with: a
+    change to the capabilities or to what a target provides needs a new
+    version, and its digest here.
+    */
     #[test]
     fn the_capability_manifest_keeps_its_version() {
         assert_eq!(

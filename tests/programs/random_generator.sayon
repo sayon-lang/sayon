@@ -1,8 +1,10 @@
 math = import("standard/math.sayon")
 
-# MRG32k3a's numbers as Rosetta Code's task gives them: each recurrence
-# starts with 1234567 as its newest number, and its integers are the
-# generator's numbers plus 1.
+##
+MRG32k3a's numbers as Rosetta Code's task gives them: each recurrence
+starts with 1234567 as its newest number, and its integers are the
+generator's numbers plus 1.
+##
 reference = math.Generator(state = [0, 0, 1234567, 0, 0, 1234567])
 numbers: Array<integer> = []
 for _count in range(5)
@@ -32,8 +34,10 @@ for _count in range(100)
         different = true
 print(same, different)
 
-# Numbers stay in their ranges, and each face of a die comes up about as
-# often as the others.
+##
+Numbers stay in their ranges, and each face of a die comes up about as
+often as the others.
+##
 dice = math.new_generator(2026)
 faces = [0, 0, 0, 0, 0, 0]
 within = true

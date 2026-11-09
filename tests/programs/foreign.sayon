@@ -16,8 +16,10 @@ foreign "c"
     function strtol(text: c_string, end: pointer, base: c_int) -> c_long
     function atoi(text: c_string) -> c_int
 
-# A safe function made of unsafe parts: it vouches for its C calls once,
-# and its callers need no `unsafe`.
+##
+A safe function made of unsafe parts: it vouches for its C calls once,
+and its callers need no `unsafe`.
+##
 function upper(text: string) -> string
     source = c_string(text)
     count = integer(unsafe strlen(source))

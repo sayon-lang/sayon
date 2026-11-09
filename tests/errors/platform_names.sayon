@@ -1,5 +1,7 @@
-# Misspelt platforms, processors, and capabilities would make a branch
-# silently never apply, so they are errors.
+##
+Misspelt platforms, processors, and capabilities would make a branch
+silently never apply, so they are errors.
+##
 if platform == "windos"
     print("never")
 if processor != "x86"

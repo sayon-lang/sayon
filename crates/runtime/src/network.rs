@@ -1,20 +1,22 @@
-//! Sockets for `standard/network`: TCP connections and listeners, and UDP
-//! sockets. They are entries of the stream table, beside files, so that a
-//! connection is read and written like one.
-//!
-//! Every socket is non-blocking. An operation that cannot finish yet
-//! returns the error `Blocked`, after recording what it waits for (see
-//! [`take_blocked`]); the scheduler of the interpreter or of compiled
-//! programs runs other tasks until the socket is ready, then runs the
-//! operation again. So each operation is written to be run again: a read
-//! takes data only when it gives it out, and a write adds its bytes to the
-//! connection's output only once, when there is room. The output goes out as
-//! the socket takes it, on every operation of the connection and whenever
-//! the scheduler waits.
-//!
-//! Making a connection blocks, to find the host's addresses and then to
-//! connect, so it runs on a thread of its own, which wakes the scheduler
-//! when it is done.
+/*!
+Sockets for `standard/network`: TCP connections and listeners, and UDP
+sockets. They are entries of the stream table, beside files, so that a
+connection is read and written like one.
+
+Every socket is non-blocking. An operation that cannot finish yet
+returns the error `Blocked`, after recording what it waits for (see
+[`take_blocked`]); the scheduler of the interpreter or of compiled
+programs runs other tasks until the socket is ready, then runs the
+operation again. So each operation is written to be run again: a read
+takes data only when it gives it out, and a write adds its bytes to the
+connection's output only once, when there is room. The output goes out as
+the socket takes it, on every operation of the connection and whenever
+the scheduler waits.
+
+Making a connection blocks, to find the host's addresses and then to
+connect, so it runs on a thread of its own, which wakes the scheduler
+when it is done.
+*/
 
 use crate::clock::Instant;
 use crate::host::HostError;
@@ -24,13 +26,13 @@ use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs, UdpS
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-/// The code of the error an operation returns when it must wait.
+/** The code of the error an operation returns when it must wait. */
 pub const BLOCKED_CODE: &str = "Blocked";
 
-/// Output a connection holds before a write waits for some of it to go.
+/** Output a connection holds before a write waits for some of it to go. */
 const OUTPUT_LIMIT: usize = 1 << 20;
 
-/// What an operation that returned `Blocked` waits for, and for how long.
+/** What an operation that returned `Blocked` waits for, and for how long. */
 pub struct Blocked {
     pub wait: IoWait,
     pub timeout: Option<Duration>,
@@ -38,15 +40,19 @@ pub struct Blocked {
 
 #[derive(Clone)]
 pub enum IoWait {
-    /// A socket to have data to read, or room to write.
+    /** A socket to have data to read, or room to write. */
     Socket { raw: u64, read: bool, write: bool },
-    /// Work a thread of the runtime does, such as making a connection or
-    /// reading a pipe: ready when it says so.
+    /**
+    Work a thread of the runtime does, such as making a connection or
+    reading a pipe: ready when it says so.
+    */
     Background(Arc<dyn Background>),
 }
 
-/// Work a thread of the runtime does while tasks wait for it. The thread
-/// calls [`wake`] when what it did may let a task go on.
+/**
+Work a thread of the runtime does while tasks wait for it. The thread
+calls [`wake`] when what it did may let a task go on.
+*/
 pub trait Background: Send + Sync {
     fn ready(&self) -> bool;
 }
@@ -56,7 +62,7 @@ thread_local! {
 }
 
 pub(crate) fn blocked(wait: IoWait, timeout: Option<Duration>) -> HostError {
-    // The thread that waits for work of another is woken by it.
+    /* The thread that waits for work of another is woken by it. */
     if matches!(wait, IoWait::Background(_)) {
         prepare_waking();
     }
@@ -64,12 +70,12 @@ pub(crate) fn blocked(wait: IoWait, timeout: Option<Duration>) -> HostError {
     (BLOCKED_CODE, String::new())
 }
 
-/// What the operation that last returned `Blocked` waits for.
+/** What the operation that last returned `Blocked` waits for. */
 pub fn take_blocked() -> Option<Blocked> {
     BLOCKED.with(|cell| cell.borrow_mut().take())
 }
 
-/// Whether what a task waits for has come.
+/** Whether what a task waits for has come. */
 pub fn ready(wait: &IoWait) -> bool {
     match wait {
         IoWait::Socket { raw, read, write } => {
@@ -80,8 +86,10 @@ pub fn ready(wait: &IoWait) -> bool {
     }
 }
 
-/// Waits until one of `waits` may be ready, or `timeout` passes, sending the
-/// output connections hold as their sockets take it.
+/**
+Waits until one of `waits` may be ready, or `timeout` passes, sending the
+output connections hold as their sockets take it.
+*/
 pub fn wait_any(waits: &[IoWait], timeout: Option<Duration>) {
     crate::streams::send_output();
     let mut fds = Vec::new();
@@ -100,7 +108,7 @@ pub fn wait_any(waits: &[IoWait], timeout: Option<Duration>) {
     if waking {
         match waker_socket() {
             Some(raw) => fds.push(platform::entry(raw, true, false)),
-            // Without a way to be woken, look again soon.
+            /* Without a way to be woken, look again soon. */
             None => {
                 let soon = Duration::from_millis(10);
                 timeout = Some(timeout.map_or(soon, |t| t.min(soon)));
@@ -119,8 +127,10 @@ pub fn wait_any(waits: &[IoWait], timeout: Option<Duration>) {
     }
 }
 
-/// The message of the error for an operation that waited longer than its
-/// timeout.
+/**
+The message of the error for an operation that waited longer than its
+timeout.
+*/
 pub fn timeout_message(timeout: Duration) -> String {
     let milliseconds = timeout.as_millis();
     if milliseconds < 1000 {
@@ -136,7 +146,7 @@ pub fn timeout_message(timeout: Duration) -> String {
     }
 }
 
-/// The error for an operating-system failure while doing `what`.
+/** The error for an operating-system failure while doing `what`. */
 fn failure(error: &std::io::Error, what: &str) -> HostError {
     match error.kind() {
         ErrorKind::ConnectionRefused => (
@@ -186,7 +196,7 @@ fn addresses(host: &str, port: u16) -> Result<Vec<SocketAddr>, HostError> {
     Ok(found)
 }
 
-/// The addresses of a host, as text, in the order the system gives them.
+/** The addresses of a host, as text, in the order the system gives them. */
 pub fn resolve(host: &str) -> Result<Vec<String>, HostError> {
     let mut found: Vec<String> = Vec::new();
     for address in addresses(host, 0)? {
@@ -198,7 +208,7 @@ pub fn resolve(host: &str) -> Result<Vec<String>, HostError> {
     Ok(found)
 }
 
-/// An address and port as text: `127.0.0.1:80`, or `[::1]:80`.
+/** An address and port as text: `127.0.0.1:80`, or `[::1]:80`. */
 fn address_text(address: SocketAddr) -> String {
     address.to_string()
 }
@@ -212,22 +222,24 @@ fn utf8(bytes: Vec<u8>, name: &str) -> Result<String, HostError> {
     })
 }
 
-// ----- connections ---------------------------------------------------------------------------
+/* ----- connections --------------------------------------------------------------------------- */
 
 pub struct Connection {
     stream: TcpStream,
-    /// What has arrived and not been read yet.
+    /** What has arrived and not been read yet. */
     input: Vec<u8>,
-    /// What was written and has not gone yet.
+    /** What was written and has not gone yet. */
     output: Vec<u8>,
-    /// The other side has finished sending.
+    /** The other side has finished sending. */
     ended: bool,
     pub(crate) timeout: Option<Duration>,
-    /// The other side's address, for messages.
+    /** The other side's address, for messages. */
     pub(crate) name: String,
-    /// The TLS session the connection's bytes go through, once it has one:
-    /// then `input` holds what was decrypted, and `output` what was
-    /// encrypted.
+    /**
+    The TLS session the connection's bytes go through, once it has one:
+    then `input` holds what was decrypted, and `output` what was
+    encrypted.
+    */
     tls: Option<Box<crate::tls::Session>>,
 }
 
@@ -249,9 +261,11 @@ impl Connection {
         }
     }
 
-    /// Makes the connection go through TLS with the server named `server`,
-    /// whose certificate the system must trust and must be for that name.
-    /// Runs again where it left off after waiting for the socket.
+    /**
+    Makes the connection go through TLS with the server named `server`,
+    whose certificate the system must trust and must be for that name.
+    Runs again where it left off after waiting for the socket.
+    */
     pub fn secure(&mut self, server: &str) -> Result<(), HostError> {
         if self.tls.is_none() {
             if !self.input.is_empty() {
@@ -269,7 +283,7 @@ impl Connection {
                 return Ok(());
             }
             if let crate::tls::Step::Done = session.handshake(&mut self.output)? {
-                // What came after the handshake can be read.
+                /* What came after the handshake can be read. */
                 if let crate::tls::Read::Closed =
                     session.decrypt(&mut self.input, &mut self.output)?
                 {
@@ -302,7 +316,7 @@ impl Connection {
         format!("the connection with {}", self.name)
     }
 
-    /// Sends what the socket takes of the output.
+    /** Sends what the socket takes of the output. */
     pub(crate) fn send_some(&mut self) -> Result<(), HostError> {
         while !self.output.is_empty() {
             match self.stream.write(&self.output) {
@@ -318,8 +332,10 @@ impl Connection {
         Ok(())
     }
 
-    /// Takes in what has arrived, decrypting it on a TLS connection. False
-    /// when nothing has, yet.
+    /**
+    Takes in what has arrived, decrypting it on a TLS connection. False
+    when nothing has, yet.
+    */
     fn receive(&mut self) -> Result<bool, HostError> {
         let mut buffer = [0u8; 16 * 1024];
         let count = match self.stream.read(&mut buffer) {
@@ -336,7 +352,7 @@ impl Connection {
             None => self.input.extend_from_slice(&buffer[..count]),
             Some(session) => {
                 session.incoming.extend_from_slice(&buffer[..count]);
-                // During the handshake, `secure` gives SChannel what came.
+                /* During the handshake, `secure` gives SChannel what came. */
                 if session.established()
                     && let crate::tls::Read::Closed =
                         session.decrypt(&mut self.input, &mut self.output)?
@@ -366,8 +382,10 @@ impl Connection {
         blocked(wait, self.timeout)
     }
 
-    /// The next line without its line ending, or `None` once the other side
-    /// has finished sending.
+    /**
+    The next line without its line ending, or `None` once the other side
+    has finished sending.
+    */
     pub fn read_line(&mut self, limit: usize) -> Result<Option<String>, HostError> {
         self.send_some()?;
         let too_long = |name: &str| {
@@ -404,8 +422,10 @@ impl Connection {
         }
     }
 
-    /// Up to `count` bytes, as many as have arrived; none once the other
-    /// side has finished sending.
+    /**
+    Up to `count` bytes, as many as have arrived; none once the other
+    side has finished sending.
+    */
     pub fn read_bytes(&mut self, count: usize) -> Result<Vec<u8>, HostError> {
         self.send_some()?;
         if count == 0 {
@@ -425,8 +445,10 @@ impl Connection {
         }
     }
 
-    /// `count` bytes, waiting until they have all arrived; fewer only once
-    /// the other side has finished sending.
+    /**
+    `count` bytes, waiting until they have all arrived; fewer only once
+    the other side has finished sending.
+    */
     pub fn read_exactly(&mut self, count: usize) -> Result<Vec<u8>, HostError> {
         self.send_some()?;
         while self.input.len() < count && !self.ended {
@@ -438,7 +460,7 @@ impl Connection {
         Ok(self.input.drain(..take).collect())
     }
 
-    /// Everything the other side sends until it finishes, as text.
+    /** Everything the other side sends until it finishes, as text. */
     pub fn read_rest(&mut self) -> Result<String, HostError> {
         self.send_some()?;
         while !self.ended {
@@ -463,7 +485,7 @@ impl Connection {
         self.send_some()
     }
 
-    /// Waits until the output has gone to the system.
+    /** Waits until the output has gone to the system. */
     pub fn flush(&mut self) -> Result<(), HostError> {
         self.send_some()?;
         if self.has_output() {
@@ -472,8 +494,10 @@ impl Connection {
         Ok(())
     }
 
-    /// Finishes sending, after the output has gone; the other side's reads
-    /// then end.
+    /**
+    Finishes sending, after the output has gone; the other side's reads
+    then end.
+    */
     pub fn finish_sending(&mut self) -> Result<(), HostError> {
         if let Some(session) = &mut self.tls {
             session.close(&mut self.output);
@@ -501,8 +525,10 @@ impl Connection {
 }
 
 impl Connection {
-    /// Sends the rest of the output, waiting a little for the other side
-    /// to take it, when the connection is about to close.
+    /**
+    Sends the rest of the output, waiting a little for the other side
+    to take it, when the connection is about to close.
+    */
     pub(crate) fn send_rest(&mut self) {
         if self.has_output() && self.stream.set_nonblocking(false).is_ok() {
             let _ = self.stream.set_write_timeout(Some(Duration::from_secs(2)));
@@ -522,7 +548,7 @@ impl Drop for Connection {
     }
 }
 
-// ----- listeners and making connections -----------------------------------------------------
+/* ----- listeners and making connections ----------------------------------------------------- */
 
 pub struct Listener {
     listener: TcpListener,
@@ -543,7 +569,7 @@ impl Listener {
         })
     }
 
-    /// The next connection made to the listener.
+    /** The next connection made to the listener. */
     pub fn accept(&mut self) -> Result<Connection, HostError> {
         loop {
             match self.listener.accept() {
@@ -563,8 +589,10 @@ impl Listener {
                     return Err(blocked(wait, self.timeout));
                 }
                 Err(e) if e.kind() == ErrorKind::Interrupted => {}
-                // A connection that failed before it was accepted does not
-                // stop the listener.
+                /*
+                A connection that failed before it was accepted does not
+                stop the listener.
+                */
                 Err(e) if e.kind() == ErrorKind::ConnectionAborted => {}
                 Err(e) => return Err(failure(&e, "cannot accept a connection")),
             }
@@ -579,7 +607,7 @@ impl Listener {
     }
 }
 
-/// A connection being made on a thread of its own.
+/** A connection being made on a thread of its own. */
 pub struct Job {
     result: Mutex<Option<Result<TcpStream, HostError>>>,
 }
@@ -599,13 +627,15 @@ pub struct Connecting {
 }
 
 impl Connecting {
-    /// Starts connecting to a host, on the first of its addresses that
-    /// answers within `timeout`.
+    /**
+    Starts connecting to a host, on the first of its addresses that
+    answers within `timeout`.
+    */
     pub fn start(host: &str, port: u16, timeout: Option<Duration>) -> Connecting {
         let job = Arc::new(Job {
             result: Mutex::new(None),
         });
-        // Made before the thread can need it.
+        /* Made before the thread can need it. */
         prepare_waking();
         let host = host.to_string();
         let shared = job.clone();
@@ -623,8 +653,10 @@ impl Connecting {
         Connecting { job, timeout }
     }
 
-    /// The connection once it is made, its error if it could not be, or
-    /// `Blocked` while it is being made.
+    /**
+    The connection once it is made, its error if it could not be, or
+    `Blocked` while it is being made.
+    */
     pub fn finish(&self) -> Result<Connection, HostError> {
         let mut result = self.job.result.lock().unwrap_or_else(|e| e.into_inner());
         match result.take() {
@@ -638,14 +670,16 @@ impl Connecting {
     }
 }
 
-/// How long an attempt to connect has before the next address is tried too.
+/** How long an attempt to connect has before the next address is tried too. */
 const STAGGER: Duration = Duration::from_millis(250);
 
-/// Connects to the first of a host's addresses that answers, within
-/// `timeout` in all. Attempts start a quarter of a second apart, going back
-/// and forth between IPv6 and IPv4 addresses, so that a family of addresses
-/// that does not work here costs little ("Happy Eyeballs", RFC 8305). The
-/// attempts that lose end on their own.
+/**
+Connects to the first of a host's addresses that answers, within
+`timeout` in all. Attempts start a quarter of a second apart, going back
+and forth between IPv6 and IPv4 addresses, so that a family of addresses
+that does not work here costs little ("Happy Eyeballs", RFC 8305). The
+attempts that lose end on their own.
+*/
 fn connect(host: &str, port: u16, timeout: Option<Duration>) -> Result<TcpStream, HostError> {
     let what = format!("cannot connect to {host}:{port}");
     let ordered = by_turns(addresses(host, port)?);
@@ -715,7 +749,7 @@ fn connect(host: &str, port: u16, timeout: Option<Duration>) -> Result<TcpStream
     })
 }
 
-/// The addresses in turns of their families, starting with the first's.
+/** The addresses in turns of their families, starting with the first's. */
 fn by_turns(found: Vec<SocketAddr>) -> Vec<SocketAddr> {
     let Some(first) = found.first() else {
         return found;
@@ -731,12 +765,12 @@ fn by_turns(found: Vec<SocketAddr>) -> Vec<SocketAddr> {
     ordered
 }
 
-// ----- datagrams ---------------------------------------------------------------------------------
+/* ----- datagrams --------------------------------------------------------------------------------- */
 
 pub struct Datagrams {
     socket: UdpSocket,
     pub(crate) timeout: Option<Duration>,
-    /// Where the last datagram received came from.
+    /** Where the last datagram received came from. */
     sender: String,
 }
 
@@ -764,7 +798,7 @@ impl Datagrams {
         blocked(wait, self.timeout)
     }
 
-    /// Sends one datagram to a host.
+    /** Sends one datagram to a host. */
     pub fn send(&mut self, bytes: &[u8], host: &str, port: u16) -> Result<(), HostError> {
         let what = format!("cannot send to {host}:{port}");
         let ipv6 = self
@@ -788,7 +822,7 @@ impl Datagrams {
         }
     }
 
-    /// The next datagram, up to `size` bytes of it.
+    /** The next datagram, up to `size` bytes of it. */
     pub fn receive(&mut self, size: usize) -> Result<Vec<u8>, HostError> {
         let mut buffer = vec![0u8; size.max(1)];
         loop {
@@ -800,8 +834,10 @@ impl Datagrams {
                 }
                 Err(e) if e.kind() == ErrorKind::WouldBlock => return Err(self.wait(true)),
                 Err(e) if e.kind() == ErrorKind::Interrupted => {}
-                // Windows reports a datagram that did not arrive elsewhere,
-                // or one larger than the buffer, which is cut to its size.
+                /*
+                Windows reports a datagram that did not arrive elsewhere,
+                or one larger than the buffer, which is cut to its size.
+                */
                 Err(e) if e.kind() == ErrorKind::ConnectionReset => {}
                 Err(e) if platform::truncated(&e) => {
                     buffer.truncate(size);
@@ -824,12 +860,14 @@ impl Datagrams {
     }
 }
 
-// ----- waking the scheduler ----------------------------------------------------------------------
+/* ----- waking the scheduler ---------------------------------------------------------------------- */
 
-/// A socket of a thread whose scheduler waits, which threads of the runtime
-/// (and of other tasks) send a byte to when they have done something a task
-/// may wait for. Each thread has its own, so that a wake reaches every
-/// scheduler that waits; it is registered while the thread lives.
+/**
+A socket of a thread whose scheduler waits, which threads of the runtime
+(and of other tasks) send a byte to when they have done something a task
+may wait for. Each thread has its own, so that a wake reaches every
+scheduler that waits; it is registered while the thread lives.
+*/
 struct Waker {
     socket: UdpSocket,
     address: SocketAddr,
@@ -864,14 +902,14 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// The addresses of the wakers of the threads alive.
+/** The addresses of the wakers of the threads alive. */
 static WAKERS: Mutex<Vec<SocketAddr>> = Mutex::new(Vec::new());
 
 thread_local! {
     static WAKER: std::cell::OnceCell<Option<Waker>> = const { std::cell::OnceCell::new() };
 }
 
-/// The socket wakes are sent from.
+/** The socket wakes are sent from. */
 fn sender() -> Option<&'static UdpSocket> {
     static SENDER: OnceLock<Option<UdpSocket>> = OnceLock::new();
     SENDER
@@ -879,8 +917,10 @@ fn sender() -> Option<&'static UdpSocket> {
         .as_ref()
 }
 
-/// Wakes the schedulers that wait, for a thread that has done something a
-/// task may wait for.
+/**
+Wakes the schedulers that wait, for a thread that has done something a
+task may wait for.
+*/
 pub fn wake() {
     let addresses = lock(&WAKERS).clone();
     if let Some(sender) = sender() {
@@ -890,20 +930,22 @@ pub fn wake() {
     }
 }
 
-/// Makes this thread's waker, before anything can need to wake it.
+/** Makes this thread's waker, before anything can need to wake it. */
 pub fn prepare_waking() {
     WAKER.with(|cell| {
         cell.get_or_init(Waker::new);
     });
 }
 
-/// Whether this thread has a waker, so that its waits should end when it
-/// is woken.
+/**
+Whether this thread has a waker, so that its waits should end when it
+is woken.
+*/
 pub fn has_waker() -> bool {
     WAKER.with(|cell| cell.get().is_some_and(|waker| waker.is_some()))
 }
 
-/// This thread's waker's socket, made when first needed.
+/** This thread's waker's socket, made when first needed. */
 fn waker_socket() -> Option<u64> {
     WAKER.with(|cell| cell.get_or_init(Waker::new).as_ref().map(Waker::raw))
 }
@@ -916,7 +958,7 @@ fn drain_waker() {
     });
 }
 
-// ----- the system's poll --------------------------------------------------------------------------
+/* ----- the system's poll -------------------------------------------------------------------------- */
 
 #[cfg(windows)]
 mod platform {
@@ -958,7 +1000,7 @@ mod platform {
     }
 
     pub fn poll(fds: &mut [Entry], timeout: Option<Duration>) -> i32 {
-        // SAFETY: the entries name open sockets.
+        /* SAFETY: the entries name open sockets. */
         unsafe {
             WSAPoll(
                 fds.as_mut_ptr(),
@@ -968,14 +1010,14 @@ mod platform {
         }
     }
 
-    /// Windows fails a receive into a buffer smaller than the datagram.
+    /** Windows fails a receive into a buffer smaller than the datagram. */
     pub fn truncated(error: &std::io::Error) -> bool {
         const WSAEMSGSIZE: i32 = 10040;
         error.raw_os_error() == Some(WSAEMSGSIZE)
     }
 }
 
-// WASI's C library has `poll` too, for the files it has; it has no sockets.
+/* WASI's C library has `poll` too, for the files it has; it has no sockets. */
 #[cfg(any(unix, target_os = "wasi"))]
 mod platform {
     use std::os::fd::AsRawFd;
@@ -1016,7 +1058,7 @@ mod platform {
     }
 
     pub fn poll(fds: &mut [Entry], timeout: Option<Duration>) -> i32 {
-        // SAFETY: the entries name open sockets.
+        /* SAFETY: the entries name open sockets. */
         unsafe {
             system_poll(
                 fds.as_mut_ptr(),
@@ -1026,14 +1068,16 @@ mod platform {
         }
     }
 
-    /// Other systems cut a datagram to the buffer without failing.
+    /** Other systems cut a datagram to the buffer without failing. */
     pub fn truncated(_error: &std::io::Error) -> bool {
         false
     }
 }
 
-/// A web page has no sockets: its programs lack the `network` capability,
-/// so none of this is reached there.
+/**
+A web page has no sockets: its programs lack the `network` capability,
+so none of this is reached there.
+*/
 #[cfg(not(any(windows, unix, target_os = "wasi")))]
 mod platform {
     use std::time::Duration;
@@ -1059,8 +1103,10 @@ mod platform {
     }
 }
 
-/// A timeout for the system's poll: whole milliseconds, rounded up so that
-/// a wait never ends early, or -1 for none.
+/**
+A timeout for the system's poll: whole milliseconds, rounded up so that
+a wait never ends early, or -1 for none.
+*/
 #[cfg_attr(not(any(windows, unix, target_os = "wasi")), allow(dead_code))]
 fn milliseconds(timeout: Option<Duration>) -> i32 {
     match timeout {

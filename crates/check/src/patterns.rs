@@ -1,11 +1,13 @@
-//! `match`: checking patterns, and working out which values the arms cover
-//! so that a match handles every value and every arm can be reached.
-//!
-//! Coverage uses the usual pattern-matrix method: a pattern is *useful*
-//! after some rows when at least one value matches it and none of the rows.
-//! A match is exhaustive when a wildcard is no longer useful after its
-//! unguarded arms; an arm is unreachable when its pattern is not useful
-//! after the unguarded arms above it.
+/*!
+`match`: checking patterns, and working out which values the arms cover
+so that a match handles every value and every arm can be reached.
+
+Coverage uses the usual pattern-matrix method: a pattern is *useful*
+after some rows when at least one value matches it and none of the rows.
+A match is exhaustive when a wildcard is no longer useful after its
+unguarded arms; an arm is unreachable when its pattern is not useful
+after the unguarded arms above it.
+*/
 
 use crate::checker::{Checker, FnCtx, Item, Scope};
 use crate::hir::{self, ExprKind, LocalId, LocalKind, Pattern, StmtKind, Usage};
@@ -14,41 +16,43 @@ use crate::types::{Type, structure_fields, variant_fields};
 use sayon_syntax::ast::{self, Ident, PatternKind};
 use sayon_syntax::{Diagnostic, Span};
 
-/// The values a pattern matches, for coverage analysis.
+/** The values a pattern matches, for coverage analysis. */
 #[derive(Clone, Debug)]
 enum Space {
     Any,
     Ctor(Ctor, Vec<Space>),
-    /// Any of these.
+    /** Any of these. */
     Or(Vec<Space>),
 }
 
-/// One way a value can be built.
+/** One way a value can be built. */
 #[derive(Clone, Debug, PartialEq)]
 enum Ctor {
     Variant(u32),
-    /// The one way to build a structure.
+    /** The one way to build a structure. */
     Record,
-    /// A union holding this member type.
+    /** A union holding this member type. */
     Member(Type),
     Bool(bool),
     Nothing,
-    /// A number or string; there are always more of these.
+    /** A number or string; there are always more of these. */
     Literal(String),
 }
 
 type Row = Vec<Space>;
 
-/// The names a pattern binds. While checking an alternative after the first
-/// of an `or` pattern, `rebind` lists the names the first one bound, with
-/// whether this alternative has bound each yet.
+/**
+The names a pattern binds. While checking an alternative after the first
+of an `or` pattern, `rebind` lists the names the first one bound, with
+whether this alternative has bound each yet.
+*/
 #[derive(Default)]
 struct Bound {
     names: Vec<(String, Span)>,
     rebind: Option<Vec<(String, LocalId, bool)>>,
 }
 
-/// Rows whose first pattern is an `or` become one row per alternative.
+/** Rows whose first pattern is an `or` become one row per alternative. */
 fn expand(rows: &[Row]) -> Vec<Row> {
     let mut out = Vec::new();
     for row in rows {
@@ -106,7 +110,7 @@ fn head_ctors(rows: &[Row]) -> Vec<Ctor> {
     out
 }
 
-/// Whether the expression names storage the match can read in place.
+/** Whether the expression names storage the match can read in place. */
 fn is_place(value: &hir::Expr) -> bool {
     match &value.kind {
         ExprKind::Local { .. } | ExprKind::Constant(_) => true,
@@ -116,7 +120,7 @@ fn is_place(value: &hir::Expr) -> bool {
     }
 }
 
-/// `move(value)`.
+/** `move(value)`. */
 fn is_moved(value: &hir::Expr) -> bool {
     match &value.kind {
         ExprKind::Local { usage, .. } => *usage == Usage::Move,
@@ -143,7 +147,7 @@ impl<'a> Checker<'a> {
             let mut bound = Bound::default();
             let errors_before = self.diagnostics.error_count();
             let pattern = self.check_pattern(cx, &arm.pattern, &ty, Some(&rows), &mut bound);
-            // A pattern with errors says nothing reliable about coverage.
+            /* A pattern with errors says nothing reliable about coverage. */
             let pattern_failed = self.diagnostics.error_count() > errors_before;
             invalid |= pattern_failed;
             let guard = arm.guard.as_ref().map(|guard| {
@@ -175,8 +179,10 @@ impl<'a> Checker<'a> {
             } else if let (Space::Or(alternatives), PatternKind::Or(written)) =
                 (&space, &arm.pattern.kind)
             {
-                // An alternative that the cases above, or the alternatives
-                // before it, already cover.
+                /*
+                An alternative that the cases above, or the alternatives
+                before it, already cover.
+                */
                 let mut covered = rows.clone();
                 for (alternative, source) in alternatives.iter().zip(written) {
                     let vector = std::slice::from_ref(alternative);
@@ -238,9 +244,11 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Checks a pattern against the type it matches, declaring its bindings.
-    /// `prior` holds the unguarded arms above, for a pattern at the top of an
-    /// arm: a binding there takes only the union members still possible.
+    /**
+    Checks a pattern against the type it matches, declaring its bindings.
+    `prior` holds the unguarded arms above, for a pattern at the top of an
+    arm: a binding there takes only the union members still possible.
+    */
     fn check_pattern(
         &mut self,
         cx: &mut FnCtx,
@@ -473,8 +481,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// `a or b`: the first alternative declares the names it binds, and
-    /// every other alternative must bind the same names, with the same types.
+    /**
+    `a or b`: the first alternative declares the names it binds, and
+    every other alternative must bind the same names, with the same types.
+    */
     fn or_pattern(
         &mut self,
         cx: &mut FnCtx,
@@ -484,8 +494,10 @@ impl<'a> Checker<'a> {
     ) -> Pattern {
         let mut checked = Vec::new();
         if let Some(rebind) = &bound.rebind {
-            // Inside a later alternative of an enclosing `or`: each of these
-            // alternatives must bind the same names as the others.
+            /*
+            Inside a later alternative of an enclosing `or`: each of these
+            alternatives must bind the same names as the others.
+            */
             let start: Vec<bool> = rebind.iter().map(|entry| entry.2).collect();
             let mut result: Option<Vec<bool>> = None;
             for alternative in alternatives {
@@ -557,8 +569,10 @@ impl<'a> Checker<'a> {
         );
     }
 
-    /// `Name(field = pattern, ...)`: the named fields of a variant or a
-    /// structure; the others match anything.
+    /**
+    `Name(field = pattern, ...)`: the named fields of a variant or a
+    structure; the others match anything.
+    */
     #[allow(clippy::too_many_arguments)]
     fn fields_pattern(
         &mut self,
@@ -663,8 +677,10 @@ impl<'a> Checker<'a> {
         fields
     }
 
-    /// Checks that `Enum.variant` names the enum the variant belongs to, and
-    /// that `module.Enum.variant` names an imported module.
+    /**
+    Checks that `Enum.variant` names the enum the variant belongs to, and
+    that `module.Enum.variant` names an imported module.
+    */
     fn check_qualifier(&mut self, cx: &FnCtx, qualifier: &[Ident], owner: &Type, name: &Ident) {
         let (Some(last), Type::Named(named)) = (qualifier.last(), owner) else {
             return;
@@ -695,9 +711,11 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The structure a pattern name refers to, given the type it matches: the
-    /// type itself, or the member of a union that is that structure. A
-    /// qualifier names the module that declares it.
+    /**
+    The structure a pattern name refers to, given the type it matches: the
+    type itself, or the member of a union that is that structure. A
+    qualifier names the module that declares it.
+    */
     fn pattern_structure(
         &mut self,
         cx: &FnCtx,
@@ -843,10 +861,12 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The enum and variant a pattern name refers to, given the type it
-    /// matches: a variant of that enum, or of the one enum member of a union
-    /// that has it (returned as the member). For a value whose type is not
-    /// known yet, the only enum of the module with that variant.
+    /**
+    The enum and variant a pattern name refers to, given the type it
+    matches: a variant of that enum, or of the one enum member of a union
+    that has it (returned as the member). For a value whose type is not
+    known yet, the only enum of the module with that variant.
+    */
     fn pattern_variant(
         &mut self,
         cx: &FnCtx,
@@ -926,8 +946,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The type a binding at the top of an arm receives: the members of a
-    /// union that the arms above have not fully handled.
+    /**
+    The type a binding at the top of an arm receives: the members of a
+    union that the arms above have not fully handled.
+    */
     fn remaining_type(&mut self, ty: &Type, rows: &[Row]) -> Type {
         let resolved = self.unifier.resolve(ty);
         let Type::Union(members) = &resolved else {
@@ -948,7 +970,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    // ----- coverage -----------------------------------------------------------
+    /* ----- coverage ----------------------------------------------------------- */
 
     fn space(&self, pattern: &Pattern) -> Space {
         match pattern {
@@ -986,7 +1008,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Every constructor of a type, or `None` when there are too many to list.
+    /** Every constructor of a type, or `None` when there are too many to list. */
     fn constructors(&self, ty: &Type) -> Option<Vec<Ctor>> {
         match ty {
             Type::Named(named) if self.type_def(named.id).is_enum() => Some(
@@ -1002,7 +1024,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The types of a constructor's parts.
+    /** The types of a constructor's parts. */
     fn ctor_types(&self, ty: &Type, ctor: &Ctor) -> Vec<Type> {
         match (ctor, ty) {
             (Ctor::Variant(variant), Type::Named(_)) => self.variant_field_types(ty, *variant),
@@ -1050,7 +1072,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// A combination of values that no row matches, if there is one.
+    /** A combination of values that no row matches, if there is one. */
     fn witness(&self, rows: &[Row], types: &[Type]) -> Option<Vec<Space>> {
         let rows = &expand(rows);
         let Some(ty) = types.first() else {
@@ -1089,8 +1111,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Descriptions of the values the rows leave unmatched: one per missing
-    /// constructor of the matched type.
+    /**
+    Descriptions of the values the rows leave unmatched: one per missing
+    constructor of the matched type.
+    */
     fn missing_cases(&self, rows: &[Row], ty: &Type) -> Vec<String> {
         let rows = &expand(rows);
         if !self.useful(rows, &[Space::Any], std::slice::from_ref(ty)) {

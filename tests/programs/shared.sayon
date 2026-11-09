@@ -64,8 +64,10 @@ function dropped() -> Weak<string>
 gone = dropped()
 print(gone.upgrade() == nothing, gone)
 
-# A tree whose children point back to their parent with weak handles, so
-# that it is freed when the last outside handle goes.
+##
+A tree whose children point back to their parent with weak handles, so
+that it is freed when the last outside handle goes.
+##
 type Node = [label: string, parent: Cell<Weak<Node> or nothing>, children: Cell<Array<Shared<Node>>>]
 
 function node(label: string) -> Shared<Node>

@@ -1,20 +1,23 @@
-//! Text rules shared by the interpreter and compiled programs, so both
-//! execution modes print and parse identically.
+/*!
+Text rules shared by the interpreter and compiled programs, so both
+execution modes print and parse identically.
+*/
 
-
-/// The longest start of `bytes`, up to `limit` bytes, that ends between
-/// two UTF-8 characters: a character cut by the limit, or by the end of
-/// `bytes`, is left out.
+/**
+The longest start of `bytes`, up to `limit` bytes, that ends between
+two UTF-8 characters: a character cut by the limit, or by the end of
+`bytes`, is left out.
+*/
 pub fn char_boundary(bytes: &[u8], limit: usize) -> usize {
     let mut end = limit.min(bytes.len());
-    // Back to the start of a character cut by the limit.
+    /* Back to the start of a character cut by the limit. */
     while end > 0 && end < bytes.len() && bytes[end] & 0xC0 == 0x80 {
         end -= 1;
     }
     if end < bytes.len() {
         return end;
     }
-    // A last character that the bytes end inside of is left out too.
+    /* A last character that the bytes end inside of is left out too. */
     let mut start = end;
     while start > 0 && end - start < 4 && bytes[start - 1] & 0xC0 == 0x80 {
         start -= 1;
@@ -36,8 +39,10 @@ pub fn char_boundary(bytes: &[u8], limit: usize) -> usize {
     }
 }
 
-/// How `print` and `tostring` show a `pointer`: without its address, which
-/// is the process's own business.
+/**
+How `print` and `tostring` show a `pointer`: without its address, which
+is the process's own business.
+*/
 pub fn pointer_text(address: usize) -> String {
     if address == 0 {
         "null_pointer".to_string()
@@ -90,8 +95,10 @@ pub fn format_f32(value: f32) -> String {
     }
 }
 
-/// Writes `text` as a Sayon string literal, as strings appear when displayed
-/// inside a collection.
+/**
+Writes `text` as a Sayon string literal, as strings appear when displayed
+inside a collection.
+*/
 pub fn quote(text: &str, out: &mut impl std::fmt::Write) {
     let _ = out.write_char('"');
     for c in text.chars() {
@@ -111,15 +118,17 @@ pub fn quote(text: &str, out: &mut impl std::fmt::Write) {
     let _ = out.write_char('"');
 }
 
-/// A number parsed by `tonumber`.
+/** A number parsed by `tonumber`. */
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Number {
     Integer(i64),
     Float(f64),
 }
 
-/// Parses `tonumber` input. The whole text must be a decimal integer or a
-/// decimal/exponent float; there is no trimming and no locale.
+/**
+Parses `tonumber` input. The whole text must be a decimal integer or a
+decimal/exponent float; there is no trimming and no locale.
+*/
 pub fn parse_number(text: &str) -> Result<Number, (&'static str, String)> {
     let digits = text.strip_prefix(['-', '+']).unwrap_or(text);
     if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
@@ -149,9 +158,11 @@ pub fn parse_number(text: &str) -> Result<Number, (&'static str, String)> {
     }
 }
 
-/// Number of values `range(start, end, step)` yields, computed without overflow.
-/// The message for view bounds outside an array or view of `length` elements.
-/// The message of a `split_view` that asks for more elements than the view has.
+/**
+Number of values `range(start, end, step)` yields, computed without overflow.
+The message for view bounds outside an array or view of `length` elements.
+The message of a `split_view` that asks for more elements than the view has.
+*/
 pub fn split_bounds_message(count: i128, length: usize) -> String {
     format!("cannot split {count} elements off a view of {length}")
 }
@@ -164,8 +175,10 @@ pub fn view_bounds_message(start: i128, end: i128, length: usize) -> String {
     }
 }
 
-/// The message for a string position outside a string of `length`
-/// characters.
+/**
+The message for a string position outside a string of `length`
+characters.
+*/
 pub fn position_error(position: i128, length: usize) -> String {
     if length == 0 {
         format!("position {position} is out of bounds: the string is empty")
@@ -190,8 +203,10 @@ pub fn range_length(start: i64, end: i64, step: i64) -> i64 {
     count as i64
 }
 
-/// Canonical names of the integer types, indexed by the code generator's
-/// integer type codes.
+/**
+Canonical names of the integer types, indexed by the code generator's
+integer type codes.
+*/
 pub const INTEGER_TYPE_NAMES: [&str; 8] = [
     "integer8",
     "integer16",
@@ -203,7 +218,7 @@ pub const INTEGER_TYPE_NAMES: [&str; 8] = [
     "unsigned",
 ];
 
-/// The inclusive range of an integer type code, as i128.
+/** The inclusive range of an integer type code, as i128. */
 pub fn integer_type_range(code: u32) -> (i128, i128) {
     match code {
         0 => (i8::MIN as i128, i8::MAX as i128),
@@ -223,7 +238,7 @@ mod tests {
 
     #[test]
     fn character_boundaries() {
-        let text = "aé☕".as_bytes(); // 1, 2, and 3 bytes
+        let text = "aé☕".as_bytes(); /* 1, 2, and 3 bytes */
         assert_eq!(char_boundary(text, 0), 0);
         assert_eq!(char_boundary(text, 1), 1);
         assert_eq!(char_boundary(text, 2), 1);
@@ -231,7 +246,7 @@ mod tests {
         assert_eq!(char_boundary(text, 5), 3);
         assert_eq!(char_boundary(text, 6), 6);
         assert_eq!(char_boundary(text, 99), 6);
-        // Bytes that end inside their last character leave it out.
+        /* Bytes that end inside their last character leave it out. */
         assert_eq!(char_boundary(&text[..5], 5), 3);
         assert_eq!(char_boundary(&text[..2], 2), 1);
         assert_eq!(char_boundary(b"plain", 3), 3);

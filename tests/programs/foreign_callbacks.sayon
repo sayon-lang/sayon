@@ -52,8 +52,10 @@ unsafe
     )
     print(numbers_at(numbers, 10), numbers_at(pairs, 2))
 
-    # The first failure ends the work: C gets 0 from then on, and the call
-    # of the C function fails once C returns.
+    ##
+    The first failure ends the work: C gets 0 from then on, and the call
+    of the C function fails once C returns.
+    ##
     calls = share(cell(0))
     failed = try qsort(numbers, 10, 4, function(a: pointer, b: pointer) -> c_int
         calls.value.set(calls.value.get() + 1)

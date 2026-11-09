@@ -1,12 +1,14 @@
-// Text: format many lines into one string, split it back into an array of
-// lines, and look through them, counting characters as Sayon's `length`
-// does.
+/*
+Text: format many lines into one string, split it back into an array of
+lines, and look through them, counting characters as Sayon's `length`
+does.
+*/
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <vector>
 
-// The characters in UTF-8 text: every byte but those that continue one.
+/* The characters in UTF-8 text: every byte but those that continue one. */
 static long characters_in(const std::string& text) {
     long count = 0;
     for (unsigned char byte : text) {

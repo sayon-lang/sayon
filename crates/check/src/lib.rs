@@ -1,5 +1,7 @@
-//! Semantic analysis for Sayon: name resolution, type inference with
-//! flow-sensitive union narrowing, and ownership checking.
+/*!
+Semantic analysis for Sayon: name resolution, type inference with
+flow-sensitive union narrowing, and ownership checking.
+*/
 
 pub mod builtins;
 mod checker;
@@ -19,27 +21,25 @@ mod structures;
 pub mod types;
 pub mod usage;
 
-use checker::{Checker, ModuleInfo};
+use checker::{CheckOutput, Checker, ModuleId, ModuleInfo};
 use sayon_syntax::ast;
 use sayon_syntax::{Diagnostics, Span};
 use std::collections::HashMap;
 
-pub use checker::{CheckOutput, ModuleId};
-
-/// One parsed source file of a program, with its imports already resolved.
+/** One parsed source file of a program, with its imports already resolved. */
 pub struct ModuleSource<'a> {
     pub ast: &'a ast::Module,
-    /// The import path or file name used in messages.
+    /** The import path or file name used in messages. */
     pub name: String,
-    /// `(alias, alias span, index of the imported module)` for each import.
+    /** `(alias, alias span, index of the imported module)` for each import. */
     pub imports: Vec<(String, Span, usize)>,
-    /// Standard library modules may use host primitives.
+    /** Standard library modules may use host primitives. */
     pub standard: bool,
-    /// Part of a dependency package, which `sayon lint` leaves alone.
+    /** Part of a dependency package, which `sayon lint` leaves alone. */
     pub dependency: bool,
 }
 
-/// Checks a single-file program.
+/** Checks a single-file program. */
 pub fn check_module(module: &ast::Module, span: Span) -> CheckOutput {
     let source = ModuleSource {
         ast: module,
@@ -51,9 +51,11 @@ pub fn check_module(module: &ast::Module, span: Span) -> CheckOutput {
     check_program(&[source], 0, span, sayon_target::host())
 }
 
-/// Checks a program made of several modules for `target`; `entry` is the
-/// index of the module that runs. The target decides `platform`,
-/// `processor`, and `supports`, and so which platform branches are checked.
+/**
+Checks a program made of several modules for `target`; `entry` is the
+index of the module that runs. The target decides `platform`,
+`processor`, and `supports`, and so which platform branches are checked.
+*/
 pub fn check_program(
     modules: &[ModuleSource],
     entry: usize,
@@ -63,8 +65,10 @@ pub fn check_program(
     check_program_indexed(modules, entry, span, target, false)
 }
 
-/// Checks a program as [`check_program`] does, and with `index` also gives
-/// what its names refer to ([`index::Index`]), errors or not.
+/**
+Checks a program as [`check_program`] does, and with `index` also gives
+what its names refer to ([`index::Index`]), errors or not.
+*/
 pub fn check_program_indexed(
     modules: &[ModuleSource],
     entry: usize,
@@ -165,7 +169,7 @@ pub fn check_program_indexed(
     }
 }
 
-/// Convenience used by tests and tools: parse and check one source text.
+/** Convenience used by tests and tools: parse and check one source text. */
 pub fn check_source(file: sayon_syntax::FileId, text: &str) -> (Option<hir::Program>, Diagnostics) {
     let parsed = sayon_syntax::parser::parse_source(file, text);
     let mut diagnostics = Diagnostics::new();

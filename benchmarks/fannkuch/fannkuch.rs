@@ -1,5 +1,7 @@
-// Fannkuch-redux: flip a stack of pancakes, numbered 1 to n, for every
-// order they can start in, and count the most flips any order needs.
+/*
+Fannkuch-redux: flip a stack of pancakes, numbered 1 to n, for every
+order they can start in, and count the most flips any order needs.
+*/
 
 fn main() {
     let n: usize = std::env::args().nth(1).and_then(|a| a.parse().ok()).unwrap_or(10);

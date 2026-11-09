@@ -1,32 +1,36 @@
-//! What the text before a place says about it, for completion and signature
-//! help: whether it is in a comment or a string, and which calls' arguments
-//! hold it. The text is read from its start, as the lexer reads it, so that
-//! brackets in strings and comments do not count.
+/*!
+What the text before a place says about it, for completion and signature
+help: whether it is in a comment or a string, and which calls' arguments
+hold it. The text is read from its start, as the lexer reads it, so that
+brackets in strings and comments do not count.
+*/
 
-/// A call whose arguments hold a place.
+/** A call whose arguments hold a place. */
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Call {
-    /// What is called, as written before `(`: a name, or names joined by
-    /// dots.
+    /**
+    What is called, as written before `(`: a name, or names joined by
+    dots.
+    */
     pub callee: String,
-    /// Where that ends.
+    /** Where that ends. */
     pub callee_end: usize,
-    /// Which argument holds the place, counting from 0.
+    /** Which argument holds the place, counting from 0. */
     pub argument: usize,
-    /// The fields the other arguments name, as in `Point(x = 1, ...)`.
+    /** The fields the other arguments name, as in `Point(x = 1, ...)`. */
     pub named: Vec<String>,
-    /// The field the place's own argument names, once `name =` is written.
+    /** The field the place's own argument names, once `name =` is written. */
     pub naming: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Context {
     pub comment: bool,
-    /// In a string's text, not in an interpolation.
+    /** In a string's text, not in an interpolation. */
     pub string: bool,
-    /// In the path of an `import("...")`: where the path starts.
+    /** In the path of an `import("...")`: where the path starts. */
     pub import_path: Option<usize>,
-    /// The calls whose arguments hold the place, innermost last.
+    /** The calls whose arguments hold the place, innermost last. */
     pub calls: Vec<Call>,
 }
 
@@ -45,7 +49,7 @@ enum Frame {
     Interpolation,
 }
 
-/// The name an argument gives itself, as `x` in `x = 1`.
+/** The name an argument gives itself, as `x` in `x = 1`. */
 fn argument_name(argument: &str) -> Option<String> {
     let argument = argument.trim_start();
     let end = argument
@@ -60,7 +64,7 @@ fn argument_name(argument: &str) -> Option<String> {
     (starts && rest.starts_with('=') && !rest.starts_with("==")).then(|| name.to_string())
 }
 
-/// The names joined by dots that end at `end`, as `graphics.canvas`.
+/** The names joined by dots that end at `end`, as `graphics.canvas`. */
 fn callee_before(text: &str, end: usize) -> (String, usize) {
     let before = &text[..end];
     let start = before
@@ -71,7 +75,7 @@ fn callee_before(text: &str, end: usize) -> (String, usize) {
     (before[start..].trim_matches('.').to_string(), end)
 }
 
-/// Whether each line is inside a block comment, its `##` lines among them.
+/** Whether each line is inside a block comment, its `##` lines among them. */
 fn block_lines(text: &str) -> Vec<bool> {
     let mut inside = false;
     text.split('\n')
@@ -88,7 +92,7 @@ fn block_lines(text: &str) -> Vec<bool> {
 pub fn context(text: &str, offset: usize) -> Context {
     let offset = offset.min(text.len());
     let blocks = block_lines(text);
-    // A place in a block comment, its `##` lines among it.
+    /* A place in a block comment, its `##` lines among it. */
     let line = text[..offset].bytes().filter(|b| *b == b'\n').count();
     if blocks.get(line).copied().unwrap_or(false) {
         return Context {
@@ -120,7 +124,7 @@ pub fn context(text: &str, offset: usize) -> Context {
         if byte == b'\n' {
             line += 1;
             line_start = true;
-            // A string ends with its line.
+            /* A string ends with its line. */
             if matches!(stack.last(), Some(Frame::String { .. })) {
                 stack.pop();
             }

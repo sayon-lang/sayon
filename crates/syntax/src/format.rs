@@ -1,15 +1,17 @@
-//! The source formatter.
-//!
-//! Single-line statements are printed from the syntax tree with canonical
-//! spacing; blocks are indented with four spaces. Literals keep their
-//! original spelling. Comments and blank lines between statements are kept:
-//! the gaps between statements contain only whitespace and comments, so they
-//! are carried over line by line, with runs of blank lines reduced to one.
-//! A statement that spans several lines or contains a comment keeps its own
-//! layout and is only re-indented.
-//!
-//! The result is parsed again and must have the same structure as the input;
-//! otherwise formatting fails and the file is left as it was.
+/*!
+The source formatter.
+
+Single-line statements are printed from the syntax tree with canonical
+spacing; blocks are indented with four spaces. Literals keep their
+original spelling. Comments and blank lines between statements are kept:
+the gaps between statements contain only whitespace and comments, so they
+are carried over line by line, with runs of blank lines reduced to one.
+A statement that spans several lines or contains a comment keeps its own
+layout and is only re-indented.
+
+The result is parsed again and must have the same structure as the input;
+otherwise formatting fails and the file is left as it was.
+*/
 
 use crate::ast::*;
 use crate::diagnostic::Diagnostic;
@@ -18,13 +20,13 @@ use crate::source::FileId;
 use std::fmt::Write as _;
 
 pub enum FormatError {
-    /// The source has syntax errors; it is left unchanged.
+    /** The source has syntax errors; it is left unchanged. */
     Invalid(Vec<Diagnostic>),
-    /// The formatted text would not mean the same thing (a formatter bug).
+    /** The formatted text would not mean the same thing (a formatter bug). */
     Changed,
 }
 
-/// Formats a source text.
+/** Formats a source text. */
 pub fn format_source(file: FileId, source: &str) -> Result<String, FormatError> {
     let source = source.strip_prefix('\u{FEFF}').unwrap_or(source);
     let normalized = source.replace("\r\n", "\n");
@@ -66,24 +68,24 @@ pub fn format_source(file: FileId, source: &str) -> Result<String, FormatError> 
 struct Printer<'s> {
     source: &'s str,
     out: String,
-    /// Positions of every comment in the source.
+    /** Positions of every comment in the source. */
     comments: Vec<(u32, u32)>,
 }
 
-/// Where a gap between statements sits.
+/** Where a gap between statements sits. */
 #[derive(Clone, Copy)]
 struct Gap<'a> {
-    /// Depth of the statements around the gap.
+    /** Depth of the statements around the gap. */
     depth: usize,
-    /// Column of the line after the gap.
+    /** Column of the line after the gap. */
     next_column: usize,
-    /// For the gap that ends a block: the column of the block's statements.
+    /** For the gap that ends a block: the column of the block's statements. */
     closing: Option<usize>,
-    /// The statement before the gap, if any.
+    /** The statement before the gap, if any. */
     previous: Option<&'a Stmt>,
 }
 
-/// The block a statement ends with, where trailing comments may belong.
+/** The block a statement ends with, where trailing comments may belong. */
 fn last_block(stmt: &Stmt) -> Option<&Block> {
     match &stmt.kind {
         StmtKind::If {
@@ -114,7 +116,7 @@ fn indent(depth: usize) -> String {
     " ".repeat(depth * 4)
 }
 
-/// Leading whitespace width, counting tabs as four columns.
+/** Leading whitespace width, counting tabs as four columns. */
 fn columns(line: &str) -> usize {
     line.chars()
         .take_while(|c| *c == ' ' || *c == '\t')
@@ -137,9 +139,11 @@ impl<'s> Printer<'s> {
         &self.source[start as usize..end as usize]
     }
 
-    /// Emits a run of statements, carrying comments and blank lines from the
-    /// gaps between them. `from` is where the gap before the first statement
-    /// begins and `to` where the gap after the last one ends.
+    /**
+    Emits a run of statements, carrying comments and blank lines from the
+    gaps between them. `from` is where the gap before the first statement
+    begins and `to` where the gap after the last one ends.
+    */
     fn statements(&mut self, stmts: &[Stmt], depth: usize, from: usize, to: usize) {
         let mut position = from;
         let column_of = |stmt: &Stmt| {
@@ -174,9 +178,11 @@ impl<'s> Printer<'s> {
         self.gap(position, to, gap);
     }
 
-    /// The depth of a comment indented deeper than the statements at
-    /// `depth`: inside the last blocks of the statement before it, as far
-    /// down as its column reaches.
+    /**
+    The depth of a comment indented deeper than the statements at
+    `depth`: inside the last blocks of the statement before it, as far
+    down as its column reaches.
+    */
     fn trailing_depth(&self, previous: Option<&Stmt>, depth: usize, column: usize) -> usize {
         let mut depth = depth;
         let mut current = previous;
@@ -195,8 +201,10 @@ impl<'s> Printer<'s> {
         depth
     }
 
-    /// Carries the comments and blank lines in `source[from..to]`. The first
-    /// partial line's comment trails the previous statement.
+    /**
+    Carries the comments and blank lines in `source[from..to]`. The first
+    partial line's comment trails the previous statement.
+    */
     fn gap(&mut self, from: usize, to: usize, gap: Gap) {
         let Gap {
             depth,
@@ -206,8 +214,10 @@ impl<'s> Printer<'s> {
         } = gap;
         let gap = &self.source[from..to];
         let mut lines = gap.split('\n');
-        // The gap's first line is the rest of the previous statement's line,
-        // except when the gap starts at the beginning of a line.
+        /*
+        The gap's first line is the rest of the previous statement's line,
+        except when the gap starts at the beginning of a line.
+        */
         let partial = from > 0 && !self.source[..from].ends_with('\n');
         let first_line = if partial { lines.next() } else { None };
         if let Some(first) = first_line {
@@ -223,7 +233,7 @@ impl<'s> Printer<'s> {
             }
         }
         let rest: Vec<&str> = lines.collect();
-        // The last element is the partial line before the next statement.
+        /* The last element is the partial line before the next statement. */
         let full = if rest.is_empty() {
             &rest[..]
         } else {
@@ -251,10 +261,12 @@ impl<'s> Printer<'s> {
                 self.out.push('\n');
             }
             blank_pending = false;
-            // A comment indented deeper than the following code belongs to
-            // the block that just ended. At the end of a block, a comment
-            // at the block's own column stays in it, and one no deeper than
-            // the next line (such as an `else`) belongs outside.
+            /*
+            A comment indented deeper than the following code belongs to
+            the block that just ended. At the end of a block, a comment
+            at the block's own column stays in it, and one no deeper than
+            the next line (such as an `else`) belongs outside.
+            */
             let column = columns(line);
             let comment_depth = match closing {
                 Some(own) if column > own => self.trailing_depth(previous, depth, column),
@@ -275,8 +287,10 @@ impl<'s> Printer<'s> {
         }
     }
 
-    /// Copies a statement's source, re-indented so its first line sits at
-    /// `depth` and later lines keep their relative indentation.
+    /**
+    Copies a statement's source, re-indented so its first line sits at
+    `depth` and later lines keep their relative indentation.
+    */
     fn verbatim(&mut self, stmt: &Stmt, depth: usize) {
         let start = line_start(self.source, stmt.span.start as usize);
         let base = columns(&self.source[start..]);
@@ -530,14 +544,16 @@ impl<'s> Printer<'s> {
         self.statements(&block.stmts, depth + 1, header_end, next.max(header_end));
     }
 
-    /// The start of the line holding the clause keyword before `offset`.
+    /** The start of the line holding the clause keyword before `offset`. */
     fn keyword_line_start(&self, offset: u32) -> usize {
         line_start(self.source, offset as usize)
     }
 
-    /// The nearest line above `before` that starts with `keyword`: its start
-    /// and the end of the keyword. Only blank and comment lines can separate
-    /// a clause keyword from its block.
+    /**
+    The nearest line above `before` that starts with `keyword`: its start
+    and the end of the keyword. Only blank and comment lines can separate
+    a clause keyword from its block.
+    */
     fn keyword_line(&self, before: u32, keyword: &str) -> (usize, usize) {
         let mut end = line_start(self.source, before as usize);
         while end > 0 {
@@ -628,7 +644,7 @@ impl<'s> Printer<'s> {
         }
     }
 
-    /// Prints an expression, parenthesized when its precedence is below `min`.
+    /** Prints an expression, parenthesized when its precedence is below `min`. */
     fn expr(&self, expr: &Expr, min: u8) -> String {
         let (text, precedence) = self.expr_inner(expr);
         if precedence < min {
@@ -740,8 +756,10 @@ impl<'s> Printer<'s> {
             ExprKind::Binary { op, lhs, rhs } => {
                 let precedence = binary_precedence(*op);
                 let comparison = op.is_comparison();
-                // Operands of `==` and `!=` that are themselves comparisons
-                // keep parentheses, for readability.
+                /*
+                Operands of `==` and `!=` that are themselves comparisons
+                keep parentheses, for readability.
+                */
                 let minimum = match op {
                     BinaryOp::Equal | BinaryOp::NotEqual => precedence + 2,
                     _ if comparison => precedence + 1,
@@ -870,10 +888,12 @@ fn contains_function_literal(stmt: &Stmt) -> bool {
     }
 }
 
-// ----- structural comparison ------------------------------------------------------
+/* ----- structural comparison ------------------------------------------------------ */
 
-/// A description of the program's structure without positions or layout,
-/// used to confirm that formatting did not change meaning.
+/**
+A description of the program's structure without positions or layout,
+used to confirm that formatting did not change meaning.
+*/
 pub fn fingerprint(module: &Module, source: &str) -> String {
     let mut out = String::new();
     for stmt in &module.stmts {
@@ -1054,7 +1074,7 @@ fn stmt_print(stmt: &Stmt, source: &str, out: &mut String) {
     out.push(';');
 }
 
-/// `a.b.name` for a qualified name in a pattern.
+/** `a.b.name` for a qualified name in a pattern. */
 fn qualified(qualifier: &[Ident], name: &Ident) -> String {
     qualifier
         .iter()

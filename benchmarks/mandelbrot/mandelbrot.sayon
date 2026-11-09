@@ -1,6 +1,8 @@
-# Mandelbrot: count the points of a size by size grid over the plane that
-# stay in the Mandelbrot set for 50 steps. Floating point math in a hot
-# loop with an early way out.
+##
+Mandelbrot: count the points of a size by size grid over the plane that
+stay in the Mandelbrot set for 50 steps. Floating point math in a hot
+loop with an early way out.
+##
 
 os = import("standard/os.sayon")
 strings = import("standard/strings.sayon")

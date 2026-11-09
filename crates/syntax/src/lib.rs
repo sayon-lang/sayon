@@ -1,5 +1,7 @@
-//! Front end of the Sayon toolchain: source management, diagnostics,
-//! tokenization, and parsing.
+/*!
+Front end of the Sayon toolchain: source management, diagnostics,
+tokenization, and parsing.
+*/
 
 pub mod ast;
 pub mod diagnostic;
@@ -10,4 +12,4 @@ pub mod source;
 pub mod token;
 
 pub use diagnostic::{Diagnostic, Diagnostics, Severity};
-pub use source::{FileId, SourceFile, SourceMap, Span};
+pub use source::{FileId, SourceMap, Span};

@@ -1,5 +1,7 @@
-# Values of an explicit type parameter compared with `<` and `==`: each call
-# is checked against the type it gives, and the function is made for it.
+##
+Values of an explicit type parameter compared with `<` and `==`: each call
+is checked against the type it gives, and the function is made for it.
+##
 
 function smallest<T>(items: Array<T>) -> T or nothing
     if length(items) == 0

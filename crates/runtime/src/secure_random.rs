@@ -1,16 +1,20 @@
-//! Random bytes from the system's secure source, for `standard/crypto`:
-//! `BCryptGenRandom` with the system's preferred generator on Windows,
-//! `/dev/urandom` on Linux and Android, `random_get` under WASI, and the
-//! browser's `crypto.getRandomValues` in a web page. Unlike `math.random`,
-//! they are fit for keys and tokens.
+/*!
+Random bytes from the system's secure source, for `standard/crypto`:
+`BCryptGenRandom` with the system's preferred generator on Windows,
+`/dev/urandom` on Linux and Android, `random_get` under WASI, and the
+browser's `crypto.getRandomValues` in a web page. Unlike `math.random`,
+they are fit for keys and tokens.
+*/
 
 use crate::host::HostError;
 
-/// The most bytes one call gives, so that a mistaken count cannot take
-/// all of memory.
+/**
+The most bytes one call gives, so that a mistaken count cannot take
+all of memory.
+*/
 pub const LARGEST: usize = 1 << 20;
 
-/// `count` random bytes.
+/** `count` random bytes. */
 pub fn bytes(count: i64) -> Result<Vec<u8>, HostError> {
     if count < 0 || count as u64 > LARGEST as u64 {
         return Err((
@@ -23,7 +27,7 @@ pub fn bytes(count: i64) -> Result<Vec<u8>, HostError> {
     Ok(out)
 }
 
-// A web page's source never fails.
+/* A web page's source never fails. */
 #[cfg_attr(all(target_family = "wasm", target_os = "unknown"), allow(dead_code))]
 fn failed(detail: impl std::fmt::Display) -> HostError {
     (
@@ -45,8 +49,10 @@ fn fill(bytes: &mut [u8]) -> Result<(), HostError> {
         ) -> i32;
     }
     for chunk in bytes.chunks_mut(u32::MAX as usize) {
-        // SAFETY: the chunk is writable for its length, and the system's
-        // preferred generator needs no algorithm handle.
+        /*
+        SAFETY: the chunk is writable for its length, and the system's
+        preferred generator needs no algorithm handle.
+        */
         let status = unsafe {
             BCryptGenRandom(
                 std::ptr::null_mut(),
@@ -76,7 +82,7 @@ fn fill(bytes: &mut [u8]) -> Result<(), HostError> {
     unsafe extern "C" {
         fn random_get(buffer: *mut u8, length: usize) -> u16;
     }
-    // SAFETY: the bytes are writable for their length.
+    /* SAFETY: the bytes are writable for their length. */
     let errno = unsafe { random_get(bytes.as_mut_ptr(), bytes.len()) };
     if errno != 0 {
         return Err(failed(format!("WASI error {errno}")));
@@ -86,7 +92,7 @@ fn fill(bytes: &mut [u8]) -> Result<(), HostError> {
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 fn fill(bytes: &mut [u8]) -> Result<(), HostError> {
-    // The browser gives 65536 bytes at most each time it is asked.
+    /* The browser gives 65536 bytes at most each time it is asked. */
     for chunk in bytes.chunks_mut(65536) {
         crate::console::web::random_bytes(chunk);
     }
@@ -103,7 +109,7 @@ mod tests {
         let first = bytes(32).unwrap();
         let second = bytes(32).unwrap();
         assert_eq!(first.len(), 32);
-        // Two draws of 256 bits are equal with probability 2^-256.
+        /* Two draws of 256 bits are equal with probability 2^-256. */
         assert_ne!(first, second);
         assert!(bytes(-1).is_err());
         assert!(bytes(LARGEST as i64 + 1).is_err());

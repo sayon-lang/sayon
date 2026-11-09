@@ -1,12 +1,14 @@
-//! Recursive-descent parser with indentation-sensitive layout.
-//!
-//! Layout rules:
-//! - A statement ends at the first token that starts a new physical line,
-//!   unless that token is inside parentheses or brackets.
-//! - A block is the run of lines indented deeper than the line that introduced
-//!   it; every line of the block shares the first line's indentation.
-//! - A function literal's body is a block even when the literal sits inside
-//!   delimiters, so a callback can be passed as an indented argument.
+/*!
+Recursive-descent parser with indentation-sensitive layout.
+
+Layout rules:
+- A statement ends at the first token that starts a new physical line,
+  unless that token is inside parentheses or brackets.
+- A block is the run of lines indented deeper than the line that introduced
+  it; every line of the block shares the first line's indentation.
+- A function literal's body is a block even when the literal sits inside
+  delimiters, so a callback can be passed as an indented argument.
+*/
 
 use crate::ast::*;
 use crate::diagnostic::Diagnostic;
@@ -22,16 +24,12 @@ pub fn parse(file: FileId, tokens: &[Token]) -> ParseOutput {
     let mut parser = Parser::new(file, tokens, 0);
     let stmts = parser.parse_module();
     ParseOutput {
-        module: Module {
-            file,
-            stmts,
-            expr_count: parser.next_expr,
-        },
+        module: Module { file, stmts },
         diagnostics: parser.diagnostics,
     }
 }
 
-/// Parses a whole source text. Lexer diagnostics come first.
+/** Parses a whole source text. Lexer diagnostics come first. */
 pub fn parse_source(file: FileId, source: &str) -> ParseOutput {
     let lexed = crate::lexer::lex(file, source);
     let mut output = parse(file, &lexed.tokens);
@@ -45,16 +43,18 @@ struct Parser<'t> {
     file: FileId,
     tokens: &'t [Token],
     pos: usize,
-    /// Depth of open parentheses/brackets; line breaks are insignificant inside them.
+    /** Depth of open parentheses/brackets; line breaks are insignificant inside them. */
     nesting: u32,
-    /// Indentation of the line on which the current statement started.
+    /** Indentation of the line on which the current statement started. */
     line_indent: u32,
     next_expr: u32,
     diagnostics: Vec<Diagnostic>,
-    /// Set after an error until the parser resynchronises at a new line.
+    /** Set after an error until the parser resynchronises at a new line. */
     panicking: bool,
-    /// Position of the first token of the current line-level construct; that
-    /// token starts a line but does not end the statement.
+    /**
+    Position of the first token of the current line-level construct; that
+    token starts a line but does not end the statement.
+    */
     line_head: usize,
 }
 
@@ -75,7 +75,7 @@ impl<'t> Parser<'t> {
         }
     }
 
-    // ----- token access -------------------------------------------------
+    /* ----- token access ------------------------------------------------- */
 
     fn peek(&self) -> &'t Token {
         &self.tokens[self.pos.min(self.tokens.len() - 1)]
@@ -97,7 +97,7 @@ impl<'t> Parser<'t> {
         self.peek().kind == TokenKind::EndOfFile
     }
 
-    /// True when the next token cannot continue the current statement.
+    /** True when the next token cannot continue the current statement. */
     fn at_line_break(&self) -> bool {
         let token = self.peek();
         token.kind == TokenKind::EndOfFile
@@ -204,8 +204,10 @@ impl<'t> Parser<'t> {
         self.new_expr(ExprKind::Error, span)
     }
 
-    /// Skips to the next line at the current statement's level, including any
-    /// lines indented under the failed statement.
+    /**
+    Skips to the next line at the current statement's level, including any
+    lines indented under the failed statement.
+    */
     fn recover(&mut self, statement_start: usize) {
         self.nesting = 0;
         if self.pos == statement_start && !self.at_eof() {
@@ -237,7 +239,7 @@ impl<'t> Parser<'t> {
         }
     }
 
-    // ----- layout --------------------------------------------------------
+    /* ----- layout -------------------------------------------------------- */
 
     fn parse_module(&mut self) -> Vec<Stmt> {
         let mut stmts = Vec::new();
@@ -265,7 +267,7 @@ impl<'t> Parser<'t> {
         stmts
     }
 
-    /// Parses an indented block following a header line.
+    /** Parses an indented block following a header line. */
     fn parse_block(&mut self, after: &str) -> Block {
         let saved_nesting = self.nesting;
         let saved_indent = self.line_indent;
@@ -348,14 +350,16 @@ impl<'t> Parser<'t> {
         Block { stmts, span }
     }
 
-    /// True when the next token starts a continuation line (such as `else`)
-    /// at the same indentation as the current statement.
+    /**
+    True when the next token starts a continuation line (such as `else`)
+    at the same indentation as the current statement.
+    */
     fn at_sibling_keyword(&self, keyword: Keyword) -> bool {
         let token = self.peek();
         token.line_start && token.indent == self.line_indent && token.is_keyword(keyword)
     }
 
-    /// Skips lines indented under the current statement.
+    /** Skips lines indented under the current statement. */
     fn skip_indented_lines(&mut self) {
         while !self.at_eof() && !(self.peek().line_start && self.peek().indent <= self.line_indent)
         {
@@ -363,7 +367,7 @@ impl<'t> Parser<'t> {
         }
     }
 
-    // ----- statements -----------------------------------------------------
+    /* ----- statements ----------------------------------------------------- */
 
     fn parse_statement(&mut self) -> Result<Stmt> {
         let token = self.peek();
@@ -478,7 +482,7 @@ impl<'t> Parser<'t> {
             {
                 StmtKind::Declare(self.parse_annotated_declaration()?)
             }
-            // `test "description"` is a test block; `test` is otherwise an ordinary name.
+            /* `test "description"` is a test block; `test` is otherwise an ordinary name. */
             TokenKind::Identifier(word)
                 if word == "test"
                     && matches!(self.peek_at(1).kind, TokenKind::String(_))
@@ -648,7 +652,7 @@ impl<'t> Parser<'t> {
             } else if self.at_sibling_keyword(Keyword::Else) {
                 let else_span = self.advance().span;
                 if self.check_keyword(Keyword::If) {
-                    // Keywords are single words; parse it as `elseif` to keep going.
+                    /* Keywords are single words; parse it as `elseif` to keep going. */
                     let if_span = self.advance().span;
                     self.report(
                         Diagnostic::error("E_SYNTAX", "`else if` is written as one word")
@@ -816,7 +820,7 @@ impl<'t> Parser<'t> {
         })
     }
 
-    /// `foreign "library"` and the indented signatures of its C functions.
+    /** `foreign "library"` and the indented signatures of its C functions. */
     fn parse_foreign(&mut self) -> Result<StmtKind> {
         self.expect_keyword(Keyword::Foreign)?;
         let token = self.peek();
@@ -951,8 +955,10 @@ impl<'t> Parser<'t> {
         })
     }
 
-    /// The body of a function literal written on its header's line, such as
-    /// `function(x) return x * 2`: one `return` or expression statement.
+    /**
+    The body of a function literal written on its header's line, such as
+    `function(x) return x * 2`: one `return` or expression statement.
+    */
     fn parse_inline_body(&mut self) -> Result<Block> {
         let token = self.peek();
         let start = token.span;
@@ -1252,7 +1258,7 @@ impl<'t> Parser<'t> {
         })
     }
 
-    // ----- types ----------------------------------------------------------
+    /* ----- types ---------------------------------------------------------- */
 
     fn parse_type(&mut self) -> Result<TypeExpr> {
         let first = self.parse_type_atom()?;
@@ -1321,7 +1327,7 @@ impl<'t> Parser<'t> {
         })
     }
 
-    /// `function(integer, own string) -> boolean`, the type of a function value.
+    /** `function(integer, own string) -> boolean`, the type of a function value. */
     fn parse_function_type(&mut self) -> Result<TypeExpr> {
         let start = self.expect_keyword(Keyword::Function)?;
         self.expect(&TokenKind::LeftParen, "`(`")?;
@@ -1342,8 +1348,10 @@ impl<'t> Parser<'t> {
         }
         self.expect(&TokenKind::RightParen, "`)`")?;
         self.nesting -= 1;
-        // `-> integer or nothing` is the result type; a function type that
-        // is itself a member of a union is written in parentheses.
+        /*
+        `-> integer or nothing` is the result type; a function type that
+        is itself a member of a union is written in parentheses.
+        */
         let ret = if self.eat(&TokenKind::Arrow) {
             Some(Box::new(self.parse_type()?))
         } else {
@@ -1355,8 +1363,10 @@ impl<'t> Parser<'t> {
         })
     }
 
-    /// Looks ahead from a `<` to decide whether it opens explicit generic
-    /// arguments of a call such as `wrap<integer>(42)`.
+    /**
+    Looks ahead from a `<` to decide whether it opens explicit generic
+    arguments of a call such as `wrap<integer>(42)`.
+    */
     fn generic_call_ahead(&self) -> bool {
         let mut depth = 0usize;
         let mut index = self.pos;
@@ -1377,10 +1387,12 @@ impl<'t> Parser<'t> {
                             && !(self.nesting == 0 && next.line_start);
                     }
                 }
-                // `or` directly inside the first `<` is a comparison, as in
-                // `a < b or c > (d)`; deeper, such as `Array<integer or
-                // string>`, it can only be a union, since comparisons do not
-                // chain.
+                /*
+                `or` directly inside the first `<` is a comparison, as in
+                `a < b or c > (d)`; deeper, such as `Array<integer or
+                string>`, it can only be a union, since comparisons do not
+                chain.
+                */
                 TokenKind::Keyword(Keyword::Or) if depth >= 2 => {}
                 TokenKind::Identifier(_)
                 | TokenKind::Comma
@@ -1392,7 +1404,7 @@ impl<'t> Parser<'t> {
         }
     }
 
-    // ----- expressions ----------------------------------------------------
+    /* ----- expressions ---------------------------------------------------- */
 
     pub(crate) fn parse_expr(&mut self) -> Result<Expr> {
         self.parse_or()
@@ -1635,13 +1647,13 @@ impl<'t> Parser<'t> {
         ))
     }
 
-    /// Whether the call's first argument is written `name = value`.
+    /** Whether the call's first argument is written `name = value`. */
     fn named_argument_ahead(&self) -> bool {
         matches!(self.peek().kind, TokenKind::Identifier(_))
             && self.peek_at(1).kind == TokenKind::Assign
     }
 
-    /// The arguments of `Point(x = 1.0, y = 2.0)`, after the `(`.
+    /** The arguments of `Point(x = 1.0, y = 2.0)`, after the `(`. */
     fn finish_construct(&mut self, callee: Expr, generic_args: Vec<TypeExpr>) -> Result<Expr> {
         let mut fields = Vec::new();
         while !self.check(&TokenKind::RightParen) {
@@ -1900,7 +1912,7 @@ mod tests {
             .collect()
     }
 
-    /// Renders expressions as fully parenthesised text for precedence tests.
+    /** Renders expressions as fully parenthesised text for precedence tests. */
     fn show(expr: &Expr) -> String {
         match &expr.kind {
             ExprKind::Integer { value, .. } => value.to_string(),
@@ -2138,7 +2150,7 @@ mod tests {
         let codes: Vec<&str> = output.diagnostics.iter().map(|d| d.code).collect();
         assert_eq!(codes, vec!["E_SYNTAX"]);
         assert!(output.diagnostics[0].message.contains("one word"));
-        // The rest of the chain still parses.
+        /* The rest of the chain still parses. */
         let StmtKind::If { branches, .. } = &output.module.stmts[0].kind else {
             panic!()
         };
@@ -2362,7 +2374,7 @@ mod tests {
         let StmtKind::Assign { value, .. } = &module.stmts[1].kind else {
             panic!()
         };
-        // `unsafe` covers one operand, like `try`.
+        /* `unsafe` covers one operand, like `try`. */
         assert!(
             matches!(&value.kind, ExprKind::Binary { lhs, .. } if matches!(lhs.kind, ExprKind::Unsafe(_)))
         );

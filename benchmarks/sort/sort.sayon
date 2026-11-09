@@ -1,5 +1,7 @@
-# Sort: fill an array with pseudo-random integers and sort it with the
-# standard library's sort. Mostly comparing and moving integers in memory.
+##
+Sort: fill an array with pseudo-random integers and sort it with the
+standard library's sort. Mostly comparing and moving integers in memory.
+##
 
 collections = import("standard/collections.sayon")
 os = import("standard/os.sayon")

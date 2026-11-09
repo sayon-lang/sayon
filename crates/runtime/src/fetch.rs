@@ -1,11 +1,13 @@
-//! HTTP in a web page, where the browser makes each request with its
-//! `fetch`, through the host functions of the import module `sayon` that the
-//! page's generated glue gives. There `standard/network`'s `request` calls
-//! `host_fetch` in place of its own client over sockets: the task waits while
-//! the browser fetches, and the other tasks run, then the response becomes a
-//! stream whose head and body `host_fetch_head` and `host_fetch_body` read.
+/*!
+HTTP in a web page, where the browser makes each request with its
+`fetch`, through the host functions of the import module `sayon` that the
+page's generated glue gives. There `standard/network`'s `request` calls
+`host_fetch` in place of its own client over sockets: the task waits while
+the browser fetches, and the other tasks run, then the response becomes a
+stream whose head and body `host_fetch_head` and `host_fetch_body` read.
+*/
 
-/// Whether the browser has settled a request. Nothing is fetched elsewhere.
+/** Whether the browser has settled a request. Nothing is fetched elsewhere. */
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub fn settled(_request: i32) -> bool {
     false
@@ -25,10 +27,12 @@ mod web {
 
     #[link(wasm_import_module = "sayon")]
     unsafe extern "C" {
-        /// Starts fetching a request and gives its number. `fields` holds the
-        /// address and length of each header's name and value in turn, `count`
-        /// strings in all. Each wait, for the response and then for each part
-        /// of its body, may last `timeout` milliseconds (zero for no limit).
+        /**
+        Starts fetching a request and gives its number. `fields` holds the
+        address and length of each header's name and value in turn, `count`
+        strings in all. Each wait, for the response and then for each part
+        of its body, may last `timeout` milliseconds (zero for no limit).
+        */
         fn host_fetch(
             method: *const u8,
             method_length: usize,
@@ -42,39 +46,43 @@ mod web {
             redirects: f64,
             limit: f64,
         ) -> i32;
-        /// [`WAITING`], [`ANSWERED`], or 2 once it failed.
+        /** [`WAITING`], [`ANSWERED`], or 2 once it failed. */
         fn host_fetch_state(request: i32) -> i32;
-        /// The response's status; for a failed request, why it failed.
+        /** The response's status; for a failed request, why it failed. */
         fn host_fetch_status(request: i32) -> i32;
-        /// The length in bytes of a part of the response, or of the failure.
+        /** The length in bytes of a part of the response, or of the failure. */
         fn host_fetch_length(request: i32, part: i32) -> usize;
-        /// Copies a part of the response, or of the failure, to `into`.
+        /** Copies a part of the response, or of the failure, to `into`. */
         fn host_fetch_copy(request: i32, part: i32, into: *mut u8);
-        /// Forgets the request, and stops fetching it if it has not settled.
+        /** Forgets the request, and stops fetching it if it has not settled. */
         fn host_fetch_close(request: i32);
     }
 
     const WAITING: i32 = 0;
     const ANSWERED: i32 = 1;
 
-    /// The parts of a response: its reason, its URL after any redirects, its
-    /// headers' lowercase names and values in turn, each ended by a line
-    /// break, and its body. A failure's one part is what went wrong.
+    /**
+    The parts of a response: its reason, its URL after any redirects, its
+    headers' lowercase names and values in turn, each ended by a line
+    break, and its body. A failure's one part is what went wrong.
+    */
     const REASON: i32 = 0;
     const URL: i32 = 1;
     const HEADERS: i32 = 2;
     const BODY: i32 = 3;
     const DETAIL: i32 = 0;
 
-    /// Why a request failed, besides the browser's being unable to fetch it
-    /// (0, told by the browser's message): a wait lasted longer than the
-    /// timeout, the body was longer than the limit (the part is then the
-    /// response's URL), or it was redirected when it was not to be.
+    /**
+    Why a request failed, besides the browser's being unable to fetch it
+    (0, told by the browser's message): a wait lasted longer than the
+    timeout, the body was longer than the limit (the part is then the
+    response's URL), or it was redirected when it was not to be.
+    */
     const TIMED_OUT: i32 = 1;
     const TOO_LONG: i32 = 2;
     const REDIRECTED: i32 = 3;
 
-    /// What a request's failure is told with.
+    /** What a request's failure is told with. */
     struct Request {
         url: String,
         timeout: Duration,
@@ -86,9 +94,11 @@ mod web {
         static REQUESTS: RefCell<HashMap<i32, Request>> = RefCell::new(HashMap::new());
     }
 
-    /// Starts fetching the request of `host_fetch`'s arguments: its method,
-    /// URL, headers' names and values in turn, body, timeout in nanoseconds,
-    /// redirects to follow, and the longest body to take.
+    /**
+    Starts fetching the request of `host_fetch`'s arguments: its method,
+    URL, headers' names and values in turn, body, timeout in nanoseconds,
+    redirects to follow, and the longest body to take.
+    */
     pub fn start(args: &[HostArg]) -> Result<i32, HostError> {
         let [
             HostArg::String(method),
@@ -107,8 +117,10 @@ mod web {
             .flat_map(|text| [text.as_ptr() as u32, text.len() as u32])
             .collect();
         let timeout = Duration::from_nanos((*timeout).max(0) as u64);
-        // SAFETY: each address is readable for its length during the call,
-        // in which the glue copies what it needs.
+        /*
+        SAFETY: each address is readable for its length during the call,
+        in which the glue copies what it needs.
+        */
         let request = unsafe {
             host_fetch(
                 method.as_ptr(),
@@ -134,26 +146,28 @@ mod web {
         Ok(request)
     }
 
-    /// Whether the browser has the response to a request, or has given up.
+    /** Whether the browser has the response to a request, or has given up. */
     pub fn settled(request: i32) -> bool {
-        // SAFETY: the glue only looks the request up.
+        /* SAFETY: the glue only looks the request up. */
         unsafe { host_fetch_state(request) != WAITING }
     }
 
-    /// The response to a settled request, as a new stream holding it, or
-    /// why there is none. Either way the request is done with.
+    /**
+    The response to a settled request, as a new stream holding it, or
+    why there is none. Either way the request is done with.
+    */
     pub fn finish(request: i32) -> Result<i64, HostError> {
         let details = REQUESTS
             .with(|requests| requests.borrow_mut().remove(&request))
             .expect("a request being fetched");
-        // SAFETY: the glue copies each part into a buffer of its length.
+        /* SAFETY: the glue copies each part into a buffer of its length. */
         let part = |index: i32| unsafe {
             let mut bytes = vec![0u8; host_fetch_length(request, index)];
             host_fetch_copy(request, index, bytes.as_mut_ptr());
             bytes
         };
         let text = |index: i32| String::from_utf8_lossy(&part(index)).into_owned();
-        // SAFETY: the glue only looks the request up.
+        /* SAFETY: the glue only looks the request up. */
         let (state, status) = unsafe { (host_fetch_state(request), host_fetch_status(request)) };
         let result = if state == ANSWERED {
             let url = text(URL);
@@ -183,15 +197,15 @@ mod web {
                 _ => ("NetworkError", format!("could not fetch {url}: {detail}")),
             })
         };
-        // SAFETY: the request is not used again.
+        /* SAFETY: the request is not used again. */
         unsafe { host_fetch_close(request) };
         result
     }
 
-    /// Stops fetching a request whose task no longer waits for it.
+    /** Stops fetching a request whose task no longer waits for it. */
     pub fn abandon(request: i32) {
         REQUESTS.with(|requests| requests.borrow_mut().remove(&request));
-        // SAFETY: the request is not used again.
+        /* SAFETY: the request is not used again. */
         unsafe { host_fetch_close(request) };
     }
 }

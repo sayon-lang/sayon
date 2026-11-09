@@ -1,5 +1,7 @@
-# A type parameter compared with `<` must be given numbers or strings, and
-# one compared with `==` a type whose values can be compared.
+##
+A type parameter compared with `<` must be given numbers or strings, and
+one compared with `==` a type whose values can be compared.
+##
 function less<T>(a: T, b: T) -> boolean
     return a < b
 

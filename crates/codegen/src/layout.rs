@@ -1,43 +1,45 @@
-//! Native representations of Sayon types.
-//!
-//! | Type | LLVM type | Size |
-//! |---|---|---|
-//! | integer widths | `i8` to `i64` | 1 to 8 |
-//! | float, float32 | `double`, `float` | 8, 4 |
-//! | boolean | `i1` | 1 |
-//! | nothing | `i8` (always 0) | 1 |
-//! | string | `%sayon.str = { ptr, i64 len, i64 cap }`, or on 64-bit targets up to 23 bytes of text inline, with the length in the last byte (see `sayon_runtime::ffi::SayonStr`) | 24 |
-//! | Array<T> | `%sayon.array = { ptr, i64 len, i64 cap }` | 24 |
-//! | Range | `%sayon.range = { i64, i64, i64 }` | 24 |
-//! | Dict, Error | `ptr` to a runtime object | P |
-//! | union | `{ i32 tag, [N x i64] payload }`, payload at offset 8 | 8 + 8N |
-//! | structure | `{ fields... }` in declaration order, naturally aligned | sum with padding |
-//! | enum | `{ i32 tag, [N x i64] payload }`; a variant's fields are laid out like a structure from offset 8 | 8 + 8N |
-//! | function value | `%sayon.func = { ptr code, ptr environment }`, environment at offset P | 2P |
-//! | View, MutableView | `%sayon.view = { ptr first, i64 length }`: the first two fields of an array | 16 |
-//!
-//! P is the size of an address on the target: 8, or 4 on WebAssembly. A
-//! 64-bit integer is aligned to 8 bytes everywhere, so a string's, an
-//! array's, and a view's length stays at offset 8 whatever P is.
-//!
-//! Every union places its payload at offset 8 and uses program-wide tags, so
-//! a reference to a union value is also a valid reference to any narrower
-//! union holding the same member. An enum's tag is its variant's position
-//! plus one. An all-zero value is "empty": dropping it does nothing, which is
-//! how moved-from places are represented.
-//!
-//! A closure's environment is a heap block: a pointer to its drop function
-//! at offset 0, a pointer to its clone function at offset 8, then the
-//! environment structure from offset 16, on every target. A named
-//! function's value has a null environment. The code
-//! receives a pointer to the environment structure before its arguments.
+/*!
+Native representations of Sayon types.
+
+| Type | LLVM type | Size |
+|---|---|---|
+| integer widths | `i8` to `i64` | 1 to 8 |
+| float, float32 | `double`, `float` | 8, 4 |
+| boolean | `i1` | 1 |
+| nothing | `i8` (always 0) | 1 |
+| string | `%sayon.str = { ptr, i64 len, i64 cap }`, or on 64-bit targets up to 23 bytes of text inline, with the length in the last byte (see `sayon_runtime::ffi::SayonStr`) | 24 |
+| `Array<T>` | `%sayon.array = { ptr, i64 len, i64 cap }` | 24 |
+| Range | `%sayon.range = { i64, i64, i64 }` | 24 |
+| Dict, Error | `ptr` to a runtime object | P |
+| union | `{ i32 tag, [N x i64] payload }`, payload at offset 8 | 8 + 8N |
+| structure | `{ fields... }` in declaration order, naturally aligned | sum with padding |
+| enum | `{ i32 tag, [N x i64] payload }`; a variant's fields are laid out like a structure from offset 8 | 8 + 8N |
+| function value | `%sayon.func = { ptr code, ptr environment }`, environment at offset P | 2P |
+| View, MutableView | `%sayon.view = { ptr first, i64 length }`: the first two fields of an array | 16 |
+
+P is the size of an address on the target: 8, or 4 on WebAssembly. A
+64-bit integer is aligned to 8 bytes everywhere, so a string's, an
+array's, and a view's length stays at offset 8 whatever P is.
+
+Every union places its payload at offset 8 and uses program-wide tags, so
+a reference to a union value is also a valid reference to any narrower
+union holding the same member. An enum's tag is its variant's position
+plus one. An all-zero value is "empty": dropping it does nothing, which is
+how moved-from places are represented.
+
+A closure's environment is a heap block: a pointer to its drop function
+at offset 0, a pointer to its clone function at offset 8, then the
+environment structure from offset 16, on every target. A named
+function's value has a null environment. The code
+receives a pointer to the environment structure before its arguments.
+*/
 
 use sayon_check::types::{
     Eightbyte, FloatType, IntType, NamedType, Type, TypeDef, Wrapper, aapcs64_floats, c_layout,
     c_size_align, structure_fields, sysv_eightbytes, variant_fields, win64_in_register,
 };
 
-/// The bytes before the value in a shared value's block.
+/** The bytes before the value in a shared value's block. */
 pub const SHARED_HEADER: u64 = sayon_runtime::ffi::SHARED_HEADER as u64;
 use sayon_ir::ForeignFunction;
 use sayon_target::Target;
@@ -60,12 +62,12 @@ impl Layouts {
         }
     }
 
-    /// The size of an address, P in the table above.
+    /** The size of an address, P in the table above. */
     pub fn pointer_size(&self) -> u64 {
         self.target.pointer_size
     }
 
-    /// The offset of a function value's environment: after its code.
+    /** The offset of a function value's environment: after its code. */
     pub fn environment_offset(&self) -> u64 {
         self.pointer_size()
     }
@@ -82,7 +84,7 @@ impl Layouts {
             Type::Range => "%sayon.range".to_string(),
             Type::Dict(..) | Type::Error | Type::Pointer | Type::CString => "ptr".to_string(),
             Type::Stream => "i64".to_string(),
-            // A cell is laid out like its value.
+            /* A cell is laid out like its value. */
             Type::Wrapper(Wrapper::Cell, inner) => self.llvm(inner),
             Type::Wrapper(..) => "ptr".to_string(),
             Type::Function(_) => "%sayon.func".to_string(),
@@ -110,7 +112,7 @@ impl Layouts {
         }
     }
 
-    /// `{ i32, [N x i64] }` for a union or an enum.
+    /** `{ i32, [N x i64] }` for a union or an enum. */
     fn tagged(&mut self, ty: &Type, kind: &str) -> String {
         if let Some(name) = self.names.get(ty) {
             return name.clone();
@@ -127,9 +129,11 @@ impl Layouts {
         self.types[named.id.0 as usize].is_enum()
     }
 
-    /// Whether a value of `ty` holds a cell in its own bytes, where it can
-    /// change while the value is borrowed read-only. The elements of arrays
-    /// and dictionaries, and what handles refer to, lie elsewhere.
+    /**
+    Whether a value of `ty` holds a cell in its own bytes, where it can
+    change while the value is borrowed read-only. The elements of arrays
+    and dictionaries, and what handles refer to, lie elsewhere.
+    */
     pub fn holds_cell(&self, ty: &Type) -> bool {
         self.holds_cell_inside(ty, &mut Vec::new())
     }
@@ -141,11 +145,13 @@ impl Layouts {
             Type::Named(named) => {
                 let definition = &self.types[named.id.0 as usize];
                 if definition.foreign {
-                    // C may change it.
+                    /* C may change it. */
                     return true;
                 }
-                // A type met again inside itself lies behind a pointer, and
-                // its own bytes are being looked through already.
+                /*
+                A type met again inside itself lies behind a pointer, and
+                its own bytes are being looked through already.
+                */
                 if open.contains(ty) {
                     return false;
                 }
@@ -169,19 +175,21 @@ impl Layouts {
         }
     }
 
-    /// Whether a structure has a finally function, and so a byte after its
-    /// fields that tells a value from an empty place: 1 from when the value
-    /// is made, and 0 once it has moved away or been destroyed.
+    /**
+    Whether a structure has a finally function, and so a byte after its
+    fields that tells a value from an empty place: 1 from when the value
+    is made, and 0 once it has moved away or been destroyed.
+    */
     pub fn is_finally(&self, named: &NamedType) -> bool {
         self.types[named.id.0 as usize].finally
     }
 
-    /// The offset of that byte.
+    /** The offset of that byte. */
     pub fn live_offset(&self, named: &NamedType) -> u64 {
         self.record_layout(&structure_fields(&self.types, named)).1
     }
 
-    /// The types a structure's memory holds: its fields, and that byte.
+    /** The types a structure's memory holds: its fields, and that byte. */
     fn stored_fields(&self, named: &NamedType) -> Vec<Type> {
         let mut fields = structure_fields(&self.types, named);
         if self.is_finally(named) {
@@ -209,7 +217,7 @@ impl Layouts {
         largest.div_ceil(8).max(1)
     }
 
-    /// Allocation size in bytes, matching LLVM's alloc size for the layout above.
+    /** Allocation size in bytes, matching LLVM's alloc size for the layout above. */
     pub fn size_of(&self, ty: &Type) -> u64 {
         match ty {
             Type::Int(int) => int.bits() as u64 / 8,
@@ -233,7 +241,7 @@ impl Layouts {
         }
     }
 
-    /// ABI alignment in bytes.
+    /** ABI alignment in bytes. */
     pub fn align_of(&self, ty: &Type) -> u64 {
         match ty {
             Type::Int(int) => int.bits() as u64 / 8,
@@ -250,13 +258,15 @@ impl Layouts {
             | Type::CString
             | Type::Wrapper(..)
             | Type::Function(_) => self.pointer_size(),
-            // Each of the others holds a 64-bit integer.
+            /* Each of the others holds a 64-bit integer. */
             _ => 8,
         }
     }
 
-    /// Field offsets, the end of the last field, and the alignment of a
-    /// structure with these field types, following LLVM's struct layout.
+    /**
+    Field offsets, the end of the last field, and the alignment of a
+    structure with these field types, following LLVM's struct layout.
+    */
     fn record_layout(&self, fields: &[Type]) -> (Vec<u64>, u64, u64) {
         let mut offsets = Vec::with_capacity(fields.len());
         let mut offset: u64 = 0;
@@ -271,12 +281,12 @@ impl Layouts {
         (offsets, offset, align)
     }
 
-    /// Byte offset of a structure's field.
+    /** Byte offset of a structure's field. */
     pub fn field_offset(&self, named: &NamedType, field: u32) -> u64 {
         self.record_layout(&structure_fields(&self.types, named)).0[field as usize]
     }
 
-    /// Byte offset of a variant's field within an enum value.
+    /** Byte offset of a variant's field within an enum value. */
     pub fn variant_field_offset(&self, named: &NamedType, variant: u32, field: u32) -> u64 {
         8 + self
             .record_layout(&variant_fields(&self.types, named, variant))
@@ -284,49 +294,61 @@ impl Layouts {
     }
 }
 
-/// The LLVM type a C function takes or gives a value of type `ty` as: a C
-/// string is the address of its text.
+/**
+The LLVM type a C function takes or gives a value of type `ty` as: a C
+string is the address of its text.
+*/
 pub fn c_llvm(ty: &Type) -> &'static str {
     match ty {
         Type::Int(int) => int_llvm(*int),
         Type::Float(FloatType::F64) => "double",
         Type::Float(FloatType::F32) => "float",
-        // A function C calls back goes as the address of its C entry.
+        /* A function C calls back goes as the address of its C entry. */
         Type::Pointer | Type::CString | Type::Function(_) => "ptr",
         Type::Nothing => "void",
         _ => "i64",
     }
 }
 
-/// How a C function takes or gives a value, under the target's convention.
+/** How a C function takes or gives a value, under the target's convention. */
 pub enum CPass {
-    /// As the LLVM value of its C type.
+    /** As the LLVM value of its C type. */
     Value,
-    /// Windows x64: a structure of 1, 2, 4, or 8 bytes, in a register as an
-    /// integer of this many bits.
+    /**
+    Windows x64: a structure of 1, 2, 4, or 8 bytes, in a register as an
+    integer of this many bits.
+    */
     Register(u64),
-    /// Windows x64 and WebAssembly: a structure by the address of a copy.
-    /// For a result, on every convention: by the address of where C writes
-    /// it.
+    /**
+    Windows x64 and WebAssembly: a structure by the address of a copy.
+    For a result, on every convention: by the address of where C writes
+    it.
+    */
     Address,
-    /// System V: a structure as one value for each of its eightbytes, in a
-    /// register of the kind it needs: its offset and LLVM type. WebAssembly:
-    /// a structure of one number as that number.
+    /**
+    System V: a structure as one value for each of its eightbytes, in a
+    register of the kind it needs: its offset and LLVM type. WebAssembly:
+    a structure of one number as that number.
+    */
     Pieces(Vec<(u64, String)>),
-    /// System V: a structure copied onto the stack.
+    /** System V: a structure copied onto the stack. */
     Stack,
-    /// ARM64: a structure as one LLVM value of this type, as clang gives
-    /// it: an integer or two words for one of up to 16 bytes, or the array
-    /// of its floats for one of up to four floats (or doubles) alone, with
-    /// the attributes the parameter takes. It goes through a copy padded to
-    /// the value's size, so that nothing past the structure is read or
-    /// written.
+    /**
+    ARM64: a structure as one LLVM value of this type, as clang gives
+    it: an integer or two words for one of up to 16 bytes, or the array
+    of its floats for one of up to four floats (or doubles) alone, with
+    the attributes the parameter takes. It goes through a copy padded to
+    the value's size, so that nothing past the structure is read or
+    written.
+    */
     Coerced(String, &'static str),
 }
 
-/// How a C function is called: its result, each parameter, and the LLVM
-/// declaration's result type and parameters (each a type and its
-/// attributes).
+/**
+How a C function is called: its result, each parameter, and the LLVM
+declaration's result type and parameters (each a type and its
+attributes).
+*/
 pub struct CPlan {
     pub ret: CPass,
     pub ret_llvm: String,
@@ -336,7 +358,7 @@ pub struct CPlan {
 }
 
 impl CPlan {
-    /// The parameters of the declaration, with their attributes.
+    /** The parameters of the declaration, with their attributes. */
     pub fn declaration(&self) -> Vec<String> {
         let mut params: Vec<String> = self
             .declared
@@ -355,7 +377,7 @@ impl CPlan {
         params
     }
 
-    /// The function's type, for a call: the parameters' types alone.
+    /** The function's type, for a call: the parameters' types alone. */
     pub fn function_type(&self) -> String {
         let mut params: Vec<&str> = self.declared.iter().map(|(ty, _)| ty.as_str()).collect();
         if self.variadic {
@@ -365,25 +387,29 @@ impl CPlan {
     }
 }
 
-/// Whether the target passes C structures as System V does on x86-64.
+/** Whether the target passes C structures as System V does on x86-64. */
 fn system_v(target: &Target) -> bool {
     target.processor == "x64" && target.platform != "windows"
 }
 
-/// Whether the target passes C structures by the procedure call standard
-/// for ARM64 (AAPCS64), as Linux and Android do, and as Windows does for
-/// functions that are not variadic, but for the stack's alignment of
-/// floats. Apple's ARM64 convention differs in what it does with the
-/// stack, and Windows' for variadic functions passes floats, and structures
-/// of them, as integers, for every parameter.
+/**
+Whether the target passes C structures by the procedure call standard
+for ARM64 (AAPCS64), as Linux and Android do, and as Windows does for
+functions that are not variadic, but for the stack's alignment of
+floats. Apple's ARM64 convention differs in what it does with the
+stack, and Windows' for variadic functions passes floats, and structures
+of them, as integers, for every parameter.
+*/
 fn aapcs64(target: &Target) -> bool {
     target.processor == "arm64" && matches!(target.platform, "linux" | "android" | "windows")
 }
 
-/// Whether compiled programs know how the target passes C structures to and
-/// from `function`: by the Windows x64, System V x86-64, AAPCS64, and basic
-/// WebAssembly conventions so far, but not to and from Windows ARM64's
-/// variadic functions.
+/**
+Whether compiled programs know how the target passes C structures to and
+from `function`: by the Windows x64, System V x86-64, AAPCS64, and basic
+WebAssembly conventions so far, but not to and from Windows ARM64's
+variadic functions.
+*/
 pub fn structures_supported(target: &Target, function: &ForeignFunction) -> bool {
     match target.processor {
         "x64" | "wasm32" => true,
@@ -392,12 +418,14 @@ pub fn structures_supported(target: &Target, function: &ForeignFunction) -> bool
     }
 }
 
-/// The largest value a structure is coerced to: four doubles.
+/** The largest value a structure is coerced to: four doubles. */
 pub const COERCED_BYTES: u64 = 32;
 
-/// AAPCS64: the LLVM type of a homogeneous floating-point aggregate, a
-/// structure of one to four floats, or one to four doubles, with nothing
-/// else, which goes in that many vector registers.
+/**
+AAPCS64: the LLVM type of a homogeneous floating-point aggregate, a
+structure of one to four floats, or one to four doubles, with nothing
+else, which goes in that many vector registers.
+*/
 fn homogeneous_floats(types: &[TypeDef], ty: &Type, target: &Target) -> Option<String> {
     let (count, kind) = aapcs64_floats(types, ty, target)?;
     let element = if kind == FloatType::F32 {
@@ -408,12 +436,14 @@ fn homogeneous_floats(types: &[TypeDef], ty: &Type, target: &Target) -> Option<S
     Some(format!("[{count} x {element}]"))
 }
 
-/// AAPCS64, as clang lowers it: a homogeneous floating-point aggregate as
-/// its floats, aligned to 8 bytes should it go on the stack (on Windows, to
-/// its floats' own alignment); another structure of up to 16 bytes as one
-/// word, or two, as a parameter, and as a result an integer of its size, or
-/// two words; any larger one by the address of a copy, or for a result
-/// through the address C writes it to.
+/**
+AAPCS64, as clang lowers it: a homogeneous floating-point aggregate as
+its floats, aligned to 8 bytes should it go on the stack (on Windows, to
+its floats' own alignment); another structure of up to 16 bytes as one
+word, or two, as a parameter, and as a result an integer of its size, or
+two words; any larger one by the address of a copy, or for a result
+through the address C writes it to.
+*/
 fn aapcs64_pass(types: &[TypeDef], ty: &Type, target: &Target, result: bool) -> CPass {
     if let Some(floats) = homogeneous_floats(types, ty, target) {
         let attributes = if result || target.platform == "windows" {
@@ -432,10 +462,12 @@ fn aapcs64_pass(types: &[TypeDef], ty: &Type, target: &Target, result: bool) -> 
     }
 }
 
-/// The one number or address a structure holds, with nothing else and no
-/// padding, through any structures it is nested in. The basic C convention
-/// of WebAssembly passes and gives such a structure as that value, and any
-/// other structure by address.
+/**
+The one number or address a structure holds, with nothing else and no
+padding, through any structures it is nested in. The basic C convention
+of WebAssembly passes and gives such a structure as that value, and any
+other structure by address.
+*/
 fn single_scalar(types: &[TypeDef], ty: &Type, target: &Target) -> Option<Type> {
     let Type::Named(named) = ty else {
         return Some(ty.clone());
@@ -448,9 +480,11 @@ fn single_scalar(types: &[TypeDef], ty: &Type, target: &Target) -> Option<Type> 
     (c_size_align(types, &scalar, target).0 == layout.size).then_some(scalar)
 }
 
-/// How the target's convention calls a C function. System V puts a
-/// structure's eightbytes in registers only when registers are left for
-/// all of them, which depends on the parameters before it.
+/**
+How the target's convention calls a C function. System V puts a
+structure's eightbytes in registers only when registers are left for
+all of them, which depends on the parameters before it.
+*/
 pub fn c_plan(types: &[TypeDef], function: &ForeignFunction, target: &Target) -> CPlan {
     let system_v = system_v(target);
     let wasm = target.processor == "wasm32";
@@ -507,7 +541,7 @@ pub fn c_plan(types: &[TypeDef], function: &ForeignFunction, target: &Target) ->
     let mut params = Vec::new();
     for param in &function.params {
         let pass = match param {
-            // The address of a copy is what C's `byval` comes to there.
+            /* The address of a copy is what C's `byval` comes to there. */
             Type::Named(_) if wasm => match single_scalar(types, param, target) {
                 Some(scalar) => {
                     let llvm = c_llvm(&scalar).to_string();
@@ -590,9 +624,11 @@ pub fn c_plan(types: &[TypeDef], function: &ForeignFunction, target: &Target) ->
     }
 }
 
-/// The LLVM type of each eightbyte of a structure, with its offset: an
-/// integer of the eightbyte's bytes, or the float, two floats, or double
-/// it holds.
+/**
+The LLVM type of each eightbyte of a structure, with its offset: an
+integer of the eightbyte's bytes, or the float, two floats, or double
+it holds.
+*/
 fn eightbyte_types(
     types: &[TypeDef],
     ty: &Type,
@@ -645,15 +681,17 @@ fn eightbyte_types(
         .collect()
 }
 
-/// Whether a C function takes or gives a structure, which compiled programs
-/// pass only on the targets whose conventions they know.
+/**
+Whether a C function takes or gives a structure, which compiled programs
+pass only on the targets whose conventions they know.
+*/
 pub fn passes_structures(function: &ForeignFunction) -> bool {
     std::iter::once(&function.ret)
         .chain(&function.params)
         .any(|ty| matches!(ty, Type::Named(_)))
 }
 
-/// A C parameter's type with the extension C expects for a narrow integer.
+/** A C parameter's type with the extension C expects for a narrow integer. */
 pub fn c_param(ty: &Type) -> String {
     match ty {
         Type::Int(int) if int.bits() < 32 => {
@@ -673,8 +711,10 @@ pub fn int_llvm(int: IntType) -> &'static str {
     }
 }
 
-/// Code passed to the runtime for an integer type; see
-/// `sayon_runtime::text::INTEGER_TYPE_NAMES`.
+/**
+Code passed to the runtime for an integer type; see
+`sayon_runtime::text::INTEGER_TYPE_NAMES`.
+*/
 pub fn int_code(int: IntType) -> u32 {
     match int {
         IntType::I8 => 0,
@@ -688,7 +728,7 @@ pub fn int_code(int: IntType) -> u32 {
     }
 }
 
-/// Whether values of the type own resources that must be released.
+/** Whether values of the type own resources that must be released. */
 pub fn needs_drop(ty: &Type) -> bool {
     match ty {
         Type::String
@@ -704,7 +744,7 @@ pub fn needs_drop(ty: &Type) -> bool {
         ) => true,
         Type::Wrapper(Wrapper::Cell, inner) => needs_drop(inner),
         Type::Union(members) => members.iter().any(needs_drop),
-        // Every non-Copy field owns something.
+        /* Every non-Copy field owns something. */
         Type::Named(_) => !ty.is_copy(),
         _ => false,
     }
@@ -803,7 +843,7 @@ mod tests {
         let Type::Named(shape_named) = &shape else {
             panic!()
         };
-        // tag, then { i1, %sayon.str } padded to 32 bytes
+        /* tag, then { i1, %sayon.str } padded to 32 bytes */
         assert_eq!(layouts.size_of(&shape), 40);
         assert_eq!(layouts.variant_field_offset(shape_named, 1, 1), 16);
         assert!(needs_drop(&shape));
@@ -821,14 +861,14 @@ mod tests {
         assert_eq!(wasm.align_of(&function), 4);
         assert_eq!(wasm.environment_offset(), 4);
         assert_eq!(wasm.size_of(&Type::Error), 4);
-        // Lengths are 64-bit integers, aligned to 8 bytes everywhere.
+        /* Lengths are 64-bit integers, aligned to 8 bytes everywhere. */
         assert_eq!(wasm.size_of(&Type::String), 24);
         let host = host_layouts(Vec::new());
         assert_eq!(host.size_of(&function), 16);
         assert_eq!(host.environment_offset(), 8);
     }
 
-    /// A foreign structure of these fields, numbered as they are given.
+    /** A foreign structure of these fields, numbered as they are given. */
     fn foreign(fields: Vec<Type>) -> TypeDef {
         TypeDef {
             name: "S".into(),
@@ -846,10 +886,12 @@ mod tests {
         }
     }
 
-    /// How AAPCS64 passes and gives each structure: the declared parameter
-    /// and the result's type, as clang declares them for Android, and for
-    /// Windows, where a structure of floats on the stack has no alignment of
-    /// 8 forced on it.
+    /**
+    How AAPCS64 passes and gives each structure: the declared parameter
+    and the result's type, as clang declares them for Android, and for
+    Windows, where a structure of floats on the stack has no alignment of
+    8 forced on it.
+    */
     #[test]
     fn arm64_passes_structures_as_clang_does() {
         let float = Type::Float(FloatType::F32);
@@ -896,7 +938,7 @@ mod tests {
                     plan.ret_llvm, *result,
                     "the result of structure {index} ({name})"
                 );
-                // A result through an address comes first, as `sret`.
+                /* A result through an address comes first, as `sret`. */
                 let declared = plan.declared.last().unwrap();
                 assert_eq!(
                     declared.0, *param,
@@ -911,8 +953,10 @@ mod tests {
             }
             assert!(structures_supported(target, &function(0, false)));
         }
-        // Windows ARM64 passes a variadic function's every parameter as it
-        // does the variadic ones, which compiled programs do not do yet.
+        /*
+        Windows ARM64 passes a variadic function's every parameter as it
+        does the variadic ones, which compiled programs do not do yet.
+        */
         let windows = sayon_target::find("windows-arm64").unwrap();
         assert!(!structures_supported(windows, &function(0, true)));
         assert!(structures_supported(

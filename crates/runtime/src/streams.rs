@@ -1,14 +1,16 @@
-//! Open files, standard input, and sockets, for `standard/io`'s `File` and
-//! `standard/network`'s connections.
-//!
-//! A stream is a number naming an entry of a process-wide table, so that the
-//! interpreter and compiled programs share one implementation. Each value
-//! holding the number is a reference: `share` adds one (for a file's line
-//! iterator), dropping a value removes one, and the file is closed when none
-//! are left. `close` closes the file at once and reports what writing the
-//! rest of it failed with; the references that remain then refer to a closed
-//! stream. Numbers are never reused, so a stale reference can never reach a
-//! different file.
+/*!
+Open files, standard input, and sockets, for `standard/io`'s `File` and
+`standard/network`'s connections.
+
+A stream is a number naming an entry of a process-wide table, so that the
+interpreter and compiled programs share one implementation. Each value
+holding the number is a reference: `share` adds one (for a file's line
+iterator), dropping a value removes one, and the file is closed when none
+are left. `close` closes the file at once and reports what writing the
+rest of it failed with; the references that remain then refer to a closed
+stream. Numbers are never reused, so a stale reference can never reach a
+different file.
+*/
 
 use crate::encodings::{DecodeReader, Encoding};
 use crate::font::Font;
@@ -25,36 +27,40 @@ use std::sync::{LazyLock, Mutex, MutexGuard};
 
 enum Handle {
     Reader(BufReader<File>),
-    /// A file read in an encoding other than UTF-8, as UTF-8.
+    /** A file read in an encoding other than UTF-8, as UTF-8. */
     Decoded(BufReader<DecodeReader<File>>),
     Writer(BufWriter<File>),
-    /// Standard input, read through the process's own buffer, which
-    /// `io.read_line` shares.
+    /**
+    Standard input, read through the process's own buffer, which
+    `io.read_line` shares.
+    */
     Input,
-    /// The process's standard output, which `print` writes too.
+    /** The process's standard output, which `print` writes too. */
     Output,
-    /// The process's standard error.
+    /** The process's standard error. */
     Errors,
     Socket(Socket),
-    /// A program started with `os.start`.
+    /** A program started with `os.start`. */
     Process(Arc<Process>),
-    /// A started program's output or error output, read from.
+    /** A started program's output or error output, read from. */
     PipeIn(Arc<PipeInput>),
-    /// A started program's input, written to.
+    /** A started program's input, written to. */
     PipeOut(Arc<PipeOutput>),
-    /// A response the browser fetched for a web page.
+    /** A response the browser fetched for a web page. */
     Fetched(Box<Fetched>),
-    /// Pixels to draw on, of `standard/graphics`.
+    /** Pixels to draw on, of `standard/graphics`. */
     Canvas(Box<Canvas>),
-    /// A window, or the surface an app or a page shows.
+    /** A window, or the surface an app or a page shows. */
     Window(Box<Window>),
-    /// A font of `standard/graphics`, which drawing takes a reference to.
+    /** A font of `standard/graphics`, which drawing takes a reference to. */
     Font(Arc<Font>),
     Closed,
 }
 
-/// A response the browser fetched: its head, as `host_fetch_head` gives it,
-/// and its body, until `host_fetch_body` takes it.
+/**
+A response the browser fetched: its head, as `host_fetch_head` gives it,
+and its body, until `host_fetch_body` takes it.
+*/
 pub struct Fetched {
     pub head: Vec<String>,
     pub body: Vec<u8>,
@@ -71,7 +77,7 @@ struct Entry {
     handle: Handle,
     path: String,
     references: usize,
-    /// The encoding the text written to a file goes in.
+    /** The encoding the text written to a file goes in. */
     encoding: Encoding,
 }
 
@@ -81,11 +87,13 @@ struct Table {
     entries: HashMap<i64, Entry, std::hash::BuildHasherDefault<NumberHasher>>,
 }
 
-/// Hashes a stream's number. The numbers are the runtime's own, counted up
-/// from 1, so no one can choose them to make the table slow, and a fixed
-/// hash keeps the system's random numbers, which Rust's usual hasher asks
-/// for as the table is made, out of every program: each one makes the
-/// table as it ends, to flush what it wrote.
+/**
+Hashes a stream's number. The numbers are the runtime's own, counted up
+from 1, so no one can choose them to make the table slow, and a fixed
+hash keeps the system's random numbers, which Rust's usual hasher asks
+for as the table is made, out of every program: each one makes the
+table as it ends, to flush what it wrote.
+*/
 #[derive(Default)]
 struct NumberHasher(u64);
 
@@ -100,7 +108,7 @@ impl std::hash::Hasher for NumberHasher {
         }
     }
 
-    /// Spreads consecutive numbers over all of the hash's bits.
+    /** Spreads consecutive numbers over all of the hash's bits. */
     fn write_i64(&mut self, value: i64) {
         self.0 = (value as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
     }
@@ -120,7 +128,7 @@ fn unpositioned(path: &str) -> HostError {
     ("IOError", format!("{path} has no positions to move to"))
 }
 
-/// Runs `f` on the open reader of a stream.
+/** Runs `f` on the open reader of a stream. */
 fn reader<T>(
     id: i64,
     f: impl FnOnce(&mut dyn BufRead, &str) -> Result<T, HostError>,
@@ -134,7 +142,7 @@ fn reader<T>(
         Handle::Reader(reader) => f(reader, &entry.path),
         Handle::Decoded(reader) => f(reader, &entry.path),
         Handle::Input => {
-            // What the program wrote shows before it waits for input.
+            /* What the program wrote shows before it waits for input. */
             let _ = crate::console::stdout().flush();
             f(&mut std::io::stdin().lock(), &entry.path)
         }
@@ -156,7 +164,7 @@ fn reader<T>(
     }
 }
 
-/// The pipe a stream reads from a program, when it is one.
+/** The pipe a stream reads from a program, when it is one. */
 fn pipe_in(id: i64) -> Option<Arc<PipeInput>> {
     match table().entries.get(&id).map(|entry| &entry.handle) {
         Some(Handle::PipeIn(pipe)) => Some(pipe.clone()),
@@ -164,7 +172,7 @@ fn pipe_in(id: i64) -> Option<Arc<PipeInput>> {
     }
 }
 
-/// The pipe a stream writes to a program, when it is one.
+/** The pipe a stream writes to a program, when it is one. */
 fn pipe_out(id: i64) -> Option<Arc<PipeOutput>> {
     match table().entries.get(&id).map(|entry| &entry.handle) {
         Some(Handle::PipeOut(pipe)) => Some(pipe.clone()),
@@ -172,8 +180,10 @@ fn pipe_out(id: i64) -> Option<Arc<PipeOutput>> {
     }
 }
 
-/// Which standard stream a stream writes to: 1 for output, 2 for error,
-/// or 0 for neither.
+/**
+Which standard stream a stream writes to: 1 for output, 2 for error,
+or 0 for neither.
+*/
 fn standard_stream(id: i64) -> u8 {
     match table().entries.get(&id).map(|entry| &entry.handle) {
         Some(Handle::Output) => 1,
@@ -182,13 +192,15 @@ fn standard_stream(id: i64) -> u8 {
     }
 }
 
-/// Whether a stream writes to the process's standard output, which the
-/// interpreter writes through its own writer, as it does `print`.
+/**
+Whether a stream writes to the process's standard output, which the
+interpreter writes through its own writer, as it does `print`.
+*/
 pub fn is_standard_output(id: i64) -> bool {
     standard_stream(id) == 1
 }
 
-/// Whether a stream writes to the process's standard error.
+/** Whether a stream writes to the process's standard error. */
 pub fn is_standard_error(id: i64) -> bool {
     standard_stream(id) == 2
 }
@@ -197,7 +209,7 @@ fn not_connection(name: &str) -> HostError {
     ("IOError", format!("{name} is not a connection"))
 }
 
-/// Runs `f` on the socket of a stream.
+/** Runs `f` on the socket of a stream. */
 fn socket<T>(
     id: i64,
     f: impl FnOnce(&mut Socket, &str) -> Result<T, HostError>,
@@ -217,7 +229,7 @@ fn socket<T>(
     }
 }
 
-/// Runs `f` on the connection of a stream, when it is one.
+/** Runs `f` on the connection of a stream, when it is one. */
 fn connection<T>(
     id: i64,
     f: impl FnOnce(&mut Connection) -> Result<T, HostError>,
@@ -229,7 +241,7 @@ fn connection<T>(
     }
 }
 
-/// Runs `f` on a connection, or fails for a stream that is none.
+/** Runs `f` on a connection, or fails for a stream that is none. */
 fn with_connection<T>(
     id: i64,
     f: impl FnOnce(&mut Connection) -> Result<T, HostError>,
@@ -240,7 +252,7 @@ fn with_connection<T>(
     })
 }
 
-/// Runs `f` on the open writer of a stream.
+/** Runs `f` on the open writer of a stream. */
 fn writer<T>(
     id: i64,
     f: impl FnOnce(&mut BufWriter<File>, &str) -> Result<T, HostError>,
@@ -288,12 +300,12 @@ fn insert(handle: Handle, path: &str) -> i64 {
     id
 }
 
-/// A stream holding a response the browser fetched from `url`.
+/** A stream holding a response the browser fetched from `url`. */
 pub fn fetched(url: &str, response: Fetched) -> i64 {
     insert(Handle::Fetched(Box::new(response)), url)
 }
 
-/// Runs `f` on the response a stream holds.
+/** Runs `f` on the response a stream holds. */
 fn response<T>(id: i64, f: impl FnOnce(&mut Fetched) -> T) -> Result<T, HostError> {
     let mut table = table();
     let entry = table
@@ -306,28 +318,30 @@ fn response<T>(id: i64, f: impl FnOnce(&mut Fetched) -> T) -> Result<T, HostErro
     }
 }
 
-/// The status, reason, and URL of a fetched response, then its headers'
-/// names and values in turn.
+/**
+The status, reason, and URL of a fetched response, then its headers'
+names and values in turn.
+*/
 pub fn fetched_head(id: i64) -> Result<Vec<String>, HostError> {
     response(id, |response| response.head.clone())
 }
 
-/// Takes the body of a fetched response.
+/** Takes the body of a fetched response. */
 pub fn fetched_body(id: i64) -> Result<Vec<u8>, HostError> {
     response(id, |response| std::mem::take(&mut response.body))
 }
 
-/// A stream holding a canvas.
+/** A stream holding a canvas. */
 pub fn canvas(canvas: Canvas) -> i64 {
     insert(Handle::Canvas(Box::new(canvas)), "a canvas")
 }
 
-/// A stream holding a font.
+/** A stream holding a font. */
 pub fn font(font: Font) -> i64 {
     insert(Handle::Font(Arc::new(font)), "a font")
 }
 
-/// The font a stream holds.
+/** The font a stream holds. */
 pub fn font_of(id: i64) -> Result<Arc<Font>, HostError> {
     let table = table();
     let entry = table
@@ -340,7 +354,7 @@ pub fn font_of(id: i64) -> Result<Arc<Font>, HostError> {
     }
 }
 
-/// A stream holding a window.
+/** A stream holding a window. */
 pub fn window(window: Window) -> i64 {
     insert(Handle::Window(Box::new(window)), "a window")
 }
@@ -349,7 +363,7 @@ fn not_canvas(path: &str) -> HostError {
     ("IOError", format!("{path} is not a canvas"))
 }
 
-/// Runs `f` on the canvas a stream holds.
+/** Runs `f` on the canvas a stream holds. */
 pub fn with_canvas<T>(id: i64, f: impl FnOnce(&mut Canvas) -> T) -> Result<T, HostError> {
     let mut table = table();
     let entry = table
@@ -362,8 +376,10 @@ pub fn with_canvas<T>(id: i64, f: impl FnOnce(&mut Canvas) -> T) -> Result<T, Ho
     }
 }
 
-/// Runs `f` on two canvases, the first drawn on; the same canvas twice
-/// draws a copy of it.
+/**
+Runs `f` on two canvases, the first drawn on; the same canvas twice
+draws a copy of it.
+*/
 pub fn with_canvases<T>(
     target: i64,
     source: i64,
@@ -388,7 +404,7 @@ pub fn with_canvases<T>(
     }
 }
 
-/// Runs `f` on the window a stream holds.
+/** Runs `f` on the window a stream holds. */
 pub fn with_window<T>(id: i64, f: impl FnOnce(&mut Window) -> T) -> Result<T, HostError> {
     let mut table = table();
     let entry = table
@@ -402,7 +418,7 @@ pub fn with_window<T>(id: i64, f: impl FnOnce(&mut Window) -> T) -> Result<T, Ho
     }
 }
 
-/// Shows a canvas in a window.
+/** Shows a canvas in a window. */
 pub fn present(window: i64, canvas: i64) -> Result<(), HostError> {
     let mut table = table();
     let [Some(window), Some(canvas)] = table.entries.get_disjoint_mut([&window, &canvas]) else {
@@ -415,17 +431,17 @@ pub fn present(window: i64, canvas: i64) -> Result<(), HostError> {
     }
 }
 
-/// A stream reading standard input.
+/** A stream reading standard input. */
 pub fn standard_input() -> i64 {
     insert(Handle::Input, "standard input")
 }
 
-/// A stream writing to standard output, where `print` writes too.
+/** A stream writing to standard output, where `print` writes too. */
 pub fn standard_output() -> i64 {
     insert(Handle::Output, "standard output")
 }
 
-/// A stream writing to standard error.
+/** A stream writing to standard error. */
 pub fn standard_error() -> i64 {
     insert(Handle::Errors, "standard error")
 }
@@ -437,8 +453,10 @@ fn process(id: i64) -> Result<Arc<Process>, HostError> {
     }
 }
 
-/// Starts a program. Its pipes are taken from it as streams of their own
-/// with `process_input`, `process_output`, and `process_errors`.
+/**
+Starts a program. Its pipes are taken from it as streams of their own
+with `process_input`, `process_output`, and `process_errors`.
+*/
 pub fn start(
     program: &str,
     arguments: &[&str],
@@ -475,7 +493,7 @@ pub fn process_errors(id: i64) -> Result<i64, HostError> {
     Ok(insert(Handle::PipeIn(pipe), &name))
 }
 
-/// A program's exit status, waiting for it to finish.
+/** A program's exit status, waiting for it to finish. */
 pub fn process_wait(id: i64) -> Result<i64, HostError> {
     process(id)?.wait()
 }
@@ -488,13 +506,15 @@ pub fn process_id(id: i64) -> Result<i64, HostError> {
     Ok(process(id)?.id())
 }
 
-/// What a finished program used.
+/** What a finished program used. */
 pub fn process_usage(id: i64) -> Result<crate::processes::Usage, HostError> {
     process(id)?.usage()
 }
 
-/// Opens a file: `"r"` to read, `"w"` to write from the start (creating or
-/// emptying it), `"a"` to write at its end (creating it when needed).
+/**
+Opens a file: `"r"` to read, `"w"` to write from the start (creating or
+emptying it), `"a"` to write at its end (creating it when needed).
+*/
 pub fn open(path: &str, mode: &str, encoding_name: &str) -> Result<i64, HostError> {
     let encoding = Encoding::by_name(encoding_name)?;
     let handle = match mode {
@@ -514,7 +534,7 @@ pub fn open(path: &str, mode: &str, encoding_name: &str) -> Result<i64, HostErro
                 .append(mode == "a")
                 .open(path)
                 .map_err(|e| io_error("open", path, &e))?;
-            // UTF-16 text starts with a byte-order mark.
+            /* UTF-16 text starts with a byte-order mark. */
             let empty = file.metadata().map(|m| m.len() == 0).unwrap_or(false);
             if encoding == Encoding::Utf16 && empty {
                 file.write_all(&[0xFF, 0xFE])
@@ -533,7 +553,7 @@ pub fn open(path: &str, mode: &str, encoding_name: &str) -> Result<i64, HostErro
     };
     let id = insert(handle, path);
     if let Some(entry) = table().entries.get_mut(&id) {
-        // What follows the byte-order mark is little-endian.
+        /* What follows the byte-order mark is little-endian. */
         entry.encoding = match encoding {
             Encoding::Utf16 => Encoding::Utf16Le,
             other => other,
@@ -559,8 +579,10 @@ fn timeout(nanoseconds: i64) -> Result<Option<std::time::Duration>, HostError> {
     }
 }
 
-/// Starts connecting to a host. `connect_finish` waits for the connection,
-/// or fails with the reason there is none.
+/**
+Starts connecting to a host. `connect_finish` waits for the connection,
+or fails with the reason there is none.
+*/
 pub fn connect(host: &str, port_number: i64, timeout_ns: i64) -> Result<i64, HostError> {
     let port = port(port_number)?;
     let timeout = timeout(timeout_ns)?;
@@ -595,7 +617,7 @@ pub fn connect_finish(id: i64) -> Result<(), HostError> {
     }
 }
 
-/// A listener for connections to a port of this computer.
+/** A listener for connections to a port of this computer. */
 pub fn listen(host: &str, port_number: i64) -> Result<i64, HostError> {
     let listener = Listener::bind(host, port(port_number)?)?;
     Ok(insert(
@@ -604,7 +626,7 @@ pub fn listen(host: &str, port_number: i64) -> Result<i64, HostError> {
     ))
 }
 
-/// The next connection made to a listener, as a stream of its own.
+/** The next connection made to a listener, as a stream of its own. */
 pub fn accept(id: i64) -> Result<i64, HostError> {
     let _ = SEND_RESTS.set(send_rests);
     let connection = socket(id, |socket, name| match socket {
@@ -618,8 +640,10 @@ pub fn accept(id: i64) -> Result<i64, HostError> {
     ))
 }
 
-/// A socket for datagrams, sent from and received at a port of this
-/// computer.
+/**
+A socket for datagrams, sent from and received at a port of this
+computer.
+*/
 pub fn datagram_bind(host: &str, port_number: i64) -> Result<i64, HostError> {
     let socket = Datagrams::bind(host, port(port_number)?)?;
     Ok(insert(
@@ -654,7 +678,7 @@ pub fn datagram_sender(id: i64) -> Result<String, HostError> {
     datagrams(id, |socket| Ok(socket.sender()))
 }
 
-/// How long each operation of a socket may wait; 0 for no limit.
+/** How long each operation of a socket may wait; 0 for no limit. */
 pub fn set_timeout(id: i64, timeout_ns: i64) -> Result<(), HostError> {
     let limit = timeout(timeout_ns)?;
     socket(id, |socket, _| {
@@ -668,7 +692,7 @@ pub fn set_timeout(id: i64, timeout_ns: i64) -> Result<(), HostError> {
     })
 }
 
-/// This computer's address and port of a socket.
+/** This computer's address and port of a socket. */
 pub fn local_address(id: i64) -> Result<String, HostError> {
     socket(id, |socket, name| match socket {
         Socket::Connection(connection) => connection.local_address(),
@@ -678,12 +702,12 @@ pub fn local_address(id: i64) -> Result<String, HostError> {
     })
 }
 
-/// The other side's address and port of a connection.
+/** The other side's address and port of a connection. */
 pub fn peer_address(id: i64) -> Result<String, HostError> {
     with_connection(id, |connection| connection.peer_address())
 }
 
-/// Makes a connection go through TLS with the server named `server`.
+/** Makes a connection go through TLS with the server named `server`. */
 pub fn secure(id: i64, server: &str) -> Result<(), HostError> {
     with_connection(id, |connection| connection.secure(server))
 }
@@ -692,7 +716,7 @@ pub fn finish_sending(id: i64) -> Result<(), HostError> {
     with_connection(id, |connection| connection.finish_sending())
 }
 
-/// Sends what connections hold of their output, as their sockets take it.
+/** Sends what connections hold of their output, as their sockets take it. */
 pub(crate) fn send_output() {
     for entry in table().entries.values_mut() {
         if let Handle::Socket(Socket::Connection(connection)) = &mut entry.handle
@@ -703,7 +727,7 @@ pub(crate) fn send_output() {
     }
 }
 
-/// The sockets of the connections that still hold output.
+/** The sockets of the connections that still hold output. */
 pub(crate) fn sockets_with_output() -> Vec<u64> {
     table()
         .entries
@@ -717,15 +741,17 @@ pub(crate) fn sockets_with_output() -> Vec<u64> {
         .collect()
 }
 
-/// Adds a reference to a stream, for a clone of a value holding it.
+/** Adds a reference to a stream, for a clone of a value holding it. */
 pub fn share(id: i64) {
     if let Some(entry) = table().entries.get_mut(&id) {
         entry.references += 1;
     }
 }
 
-/// Removes a reference; the last one closes the file. Writing what is still
-/// buffered can fail here only silently, which is why `close` exists.
+/**
+Removes a reference; the last one closes the file. Writing what is still
+buffered can fail here only silently, which is why `close` exists.
+*/
 pub fn release(id: i64) {
     let mut table = table();
     let Some(entry) = table.entries.get_mut(&id) else {
@@ -746,7 +772,7 @@ pub fn release(id: i64) {
     }
 }
 
-/// Writes what every open stream still buffers, when the program ends.
+/** Writes what every open stream still buffers, when the program ends. */
 pub fn flush_all() {
     let mut table = table();
     for entry in table.entries.values_mut() {
@@ -765,9 +791,11 @@ pub fn flush_all() {
     }
 }
 
-/// Sends what the connections still hold, for `flush_all`. It is set when
-/// the first connection opens, so that a program that never opens one
-/// doesn't carry the code of sockets.
+/**
+Sends what the connections still hold, for `flush_all`. It is set when
+the first connection opens, so that a program that never opens one
+doesn't carry the code of sockets.
+*/
 static SEND_RESTS: std::sync::OnceLock<fn(&mut Table)> = std::sync::OnceLock::new();
 
 fn send_rests(table: &mut Table) {
@@ -778,9 +806,11 @@ fn send_rests(table: &mut Table) {
     }
 }
 
-/// The next line without its line ending (LF or CRLF), or `None` at the
-/// end. A line longer than `limit` bytes is an error, and the rest of it
-/// stays unread.
+/**
+The next line without its line ending (LF or CRLF), or `None` at the
+end. A line longer than `limit` bytes is an error, and the rest of it
+stays unread.
+*/
 pub fn read_line(id: i64, limit: i64) -> Result<Option<String>, HostError> {
     let limit = limit.max(0) as usize;
     if let Some(result) = connection(id, |connection| connection.read_line(limit)) {
@@ -809,7 +839,7 @@ pub fn read_line(id: i64, limit: i64) -> Result<Option<String>, HostError> {
                 ended = true;
                 break;
             }
-            // Keeps no more than the limit and a carriage return.
+            /* Keeps no more than the limit and a carriage return. */
             let take = available.len().min(limit + 2 - bytes.len());
             bytes.extend_from_slice(&available[..take]);
             reader.consume(take);
@@ -832,7 +862,7 @@ pub fn read_line(id: i64, limit: i64) -> Result<Option<String>, HostError> {
     })
 }
 
-/// The rest of the stream as text.
+/** The rest of the stream as text. */
 pub fn read_rest(id: i64) -> Result<String, HostError> {
     if let Some(result) = connection(id, |connection| connection.read_rest()) {
         return result;
@@ -850,7 +880,7 @@ pub fn read_rest(id: i64) -> Result<String, HostError> {
     })
 }
 
-/// Up to `count` bytes; fewer only at the end of the stream.
+/** Up to `count` bytes; fewer only at the end of the stream. */
 pub fn read_bytes(id: i64, count: i64) -> Result<Vec<u8>, HostError> {
     if count < 0 {
         return Err(("ValueError", format!("cannot read {count} bytes")));
@@ -871,9 +901,11 @@ pub fn read_bytes(id: i64, count: i64) -> Result<Vec<u8>, HostError> {
     })
 }
 
-/// `count` bytes, waiting on a connection until they have all arrived;
-/// fewer only at the end of the stream. A pipe holds a megabyte at most,
-/// so its bytes are read with `read_bytes`.
+/**
+`count` bytes, waiting on a connection until they have all arrived;
+fewer only at the end of the stream. A pipe holds a megabyte at most,
+so its bytes are read with `read_bytes`.
+*/
 pub fn read_exactly(id: i64, count: i64) -> Result<Vec<u8>, HostError> {
     if count < 0 {
         return Err(("ValueError", format!("cannot read {count} bytes")));
@@ -890,8 +922,10 @@ pub fn read_exactly(id: i64, count: i64) -> Result<Vec<u8>, HostError> {
     read_bytes(id, count)
 }
 
-/// Up to `count` bytes of text, or a few more to end with a whole
-/// character; "" only at the end of the stream.
+/**
+Up to `count` bytes of text, or a few more to end with a whole
+character; "" only at the end of the stream.
+*/
 pub fn read_text(id: i64, count: i64) -> Result<String, HostError> {
     if count < 0 {
         return Err(("ValueError", format!("cannot read {count} bytes")));
@@ -905,7 +939,7 @@ pub fn read_text(id: i64, count: i64) -> Result<String, HostError> {
             .take(count as u64)
             .read_to_end(&mut bytes)
             .map_err(|e| io_error("read", path, &e))?;
-        // A last character the count cut short is read to its end.
+        /* A last character the count cut short is read to its end. */
         for _ in 0..3 {
             if crate::text::char_boundary(&bytes, bytes.len()) == bytes.len() {
                 break;
@@ -924,7 +958,7 @@ pub fn read_text(id: i64, count: i64) -> Result<String, HostError> {
     })
 }
 
-/// Writes text, in the encoding a file was opened with.
+/** Writes text, in the encoding a file was opened with. */
 pub fn write_text(id: i64, text: &str) -> Result<(), HostError> {
     let encoding = table()
         .entries
@@ -966,8 +1000,10 @@ pub fn write(id: i64, bytes: &[u8]) -> Result<(), HostError> {
     })
 }
 
-/// Passes buffered output to the system. It does not wait for the data to
-/// reach the disk.
+/**
+Passes buffered output to the system. It does not wait for the data to
+reach the disk.
+*/
 pub fn flush(id: i64) -> Result<(), HostError> {
     if let Some(result) = connection(id, |connection| connection.flush()) {
         return result;
@@ -989,7 +1025,7 @@ pub fn flush(id: i64) -> Result<(), HostError> {
     })
 }
 
-/// The position in bytes from the start.
+/** The position in bytes from the start. */
 pub fn position(id: i64) -> Result<i64, HostError> {
     let mut table = table();
     let entry = table
@@ -1019,7 +1055,7 @@ pub fn position(id: i64) -> Result<i64, HostError> {
         .map_err(|e| io_error("read the position in", &path, &e))
 }
 
-/// Moves to a position in bytes from the start.
+/** Moves to a position in bytes from the start. */
 pub fn seek(id: i64, position: i64) -> Result<(), HostError> {
     if position < 0 {
         return Err((
@@ -1056,8 +1092,10 @@ pub fn seek(id: i64, position: i64) -> Result<(), HostError> {
         .map_err(|e| io_error("move in", &path, &e))
 }
 
-/// Finishes a stream: writes what it buffers and closes the file. A
-/// connection's output goes first, which can wait.
+/**
+Finishes a stream: writes what it buffers and closes the file. A
+connection's output goes first, which can wait.
+*/
 pub fn close(id: i64) -> Result<(), HostError> {
     if let Some(result) = connection(id, |connection| connection.flush()) {
         result?;
@@ -1098,8 +1136,10 @@ pub fn close(id: i64) -> Result<(), HostError> {
     }
 }
 
-/// Copies the rest of one stream to another, a part at a time, and returns
-/// the number of bytes copied.
+/**
+Copies the rest of one stream to another, a part at a time, and returns
+the number of bytes copied.
+*/
 pub fn copy(from: i64, to: i64) -> Result<i64, HostError> {
     let mut table = table();
     let Table { entries, .. } = &mut *table;

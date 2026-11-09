@@ -1,4 +1,4 @@
-//! Token definitions produced by the lexer.
+/*! Token definitions produced by the lexer. */
 
 use crate::source::Span;
 use std::fmt;
@@ -43,7 +43,7 @@ pub enum Keyword {
 }
 
 impl Keyword {
-    /// Every keyword.
+    /** Every keyword. */
     pub const ALL: &[Keyword] = &[
         Keyword::And,
         Keyword::Async,
@@ -172,7 +172,7 @@ pub enum StringPart {
         text: String,
         span: Span,
     },
-    /// Tokens of an interpolated expression, without the surrounding braces.
+    /** Tokens of an interpolated expression, without the surrounding braces. */
     Interpolation {
         tokens: Vec<Token>,
         span: Span,
@@ -268,9 +268,9 @@ impl TokenKind {
 pub struct Token {
     pub kind: TokenKind,
     pub span: Span,
-    /// True for the first token on its physical line.
+    /** True for the first token on its physical line. */
     pub line_start: bool,
-    /// Indentation column of the line, meaningful when `line_start` is set.
+    /** Indentation column of the line, meaningful when `line_start` is set. */
     pub indent: u32,
 }
 
@@ -286,12 +286,12 @@ impl fmt::Display for TokenKind {
     }
 }
 
-/// A comment preserved for the formatter.
+/** A comment preserved for the formatter. */
 #[derive(Clone, Debug, PartialEq)]
 pub struct Comment {
     pub span: Span,
     pub text: String,
     pub block: bool,
-    /// True when nothing but whitespace precedes the comment on its line.
+    /** True when nothing but whitespace precedes the comment on its line. */
     pub own_line: bool,
 }

@@ -87,8 +87,10 @@ while tasks.size() > 0
     tasks.take_last()
 print(tasks.take_first(), tasks.take_last(), tasks.first(), tasks.values())
 
-# The names used last, most recent first, three at most: a dictionary finds
-# a name's position, and the list keeps the order.
+##
+The names used last, most recent first, three at most: a dictionary finds
+a name's position, and the list keeps the order.
+##
 recent: collections.List<string> = collections.new_list()
 where: Dict<string, collections.Position> = []
 for name in ["ada", "bo", "ada", "cy", "di", "bo"]
@@ -126,8 +128,10 @@ print(readings.get(nan), readings.contains(nan), readings.remove(nan), readings.
 nothing_yet: collections.Map<integer, string> = collections.new_map()
 print(nothing_yet.first(), nothing_yet.last(), nothing_yet.keys(), nothing_yet.before(1), nothing_yet.remove(1))
 
-# Many keys added and removed in a scrambled order keep the tree in order
-# and balanced, with its links right. Gives the tree's height.
+##
+Many keys added and removed in a scrambled order keep the tree in order
+and balanced, with its links right. Gives the tree's height.
+##
 function check_tree(map: collections.Map<integer, integer>, tree: integer, parent: integer, low: integer, high: integer) -> integer
     if tree == -1
         return 0

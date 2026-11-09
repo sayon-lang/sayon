@@ -1,9 +1,11 @@
-// Runs a Sayon program built for web pages in Node, through its generated
-// glue: node node.mjs program.js
-//
-// What the program writes goes to this process's output and errors as it
-// comes, and its exit status becomes this process's. SAYON_DEBUG_ALLOC in
-// the environment is passed on as the host option of that name.
+/*
+Runs a Sayon program built for web pages in Node, through its generated
+glue: node node.mjs program.js
+
+What the program writes goes to this process's output and errors as it
+comes, and its exit status becomes this process's. SAYON_DEBUG_ALLOC in
+the environment is passed on as the host option of that name.
+*/
 
 import { pathToFileURL } from "node:url";
 

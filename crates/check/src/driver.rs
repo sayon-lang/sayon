@@ -1,4 +1,4 @@
-//! Checks items component by component and assembles the program.
+/*! Checks items component by component and assembles the program. */
 
 use crate::checker::{Checker, ConstState, FnCtx, FunctionEntry, Item, Signature};
 use crate::hir::{self, ConstId, FuncId, LocalKind};
@@ -94,14 +94,16 @@ impl<'a> Checker<'a> {
         self.check_functions(&functions);
     }
 
-    /// Passes the requirements of the type parameters of a component's
-    /// generic functions on to the type arguments its calls give them,
-    /// until nothing more is required: a function that calls one requiring
-    /// that its type parameter be cloned, with its own type parameter,
-    /// requires that of its own callers too.
+    /**
+    Passes the requirements of the type parameters of a component's
+    generic functions on to the type arguments its calls give them,
+    until nothing more is required: a function that calls one requiring
+    that its type parameter be cloned, with its own type parameter,
+    requires that of its own callers too.
+    */
     fn pass_on_requirements(&mut self, required: &mut HashMap<FuncId, HashMap<u32, Traits>>) {
         let calls = std::mem::take(&mut self.component_calls);
-        // What each call has already passed on, for each type argument.
+        /* What each call has already passed on, for each type argument. */
         let mut passed: Vec<Vec<Traits>> = calls
             .iter()
             .map(|(_, _, args, _)| vec![Traits::NONE; args.len()])
@@ -197,10 +199,12 @@ impl<'a> Checker<'a> {
             let signature = self.initial_signature(*id);
             self.functions[id.0 as usize].signature = Some(signature);
         }
-        // A generic function whose parameter and result types are written
-        // has its final signature already, so the calls of it in its own
-        // component are instantiated like any other: the functions of a
-        // component can call each other with type arguments of their own.
+        /*
+        A generic function whose parameter and result types are written
+        has its final signature already, so the calls of it in its own
+        component are instantiated like any other: the functions of a
+        component can call each other with type arguments of their own.
+        */
         let mut written = Vec::new();
         for id in functions {
             let explicit = self.functions[id.0 as usize]
@@ -230,8 +234,10 @@ impl<'a> Checker<'a> {
         }
         self.current_component = functions.to_vec();
         self.component_calls.clear();
-        // What each body requires of its own type parameters, such as
-        // cloning their values or converting them to JSON.
+        /*
+        What each body requires of its own type parameters, such as
+        cloning their values or converting them to JSON.
+        */
         let mut required: HashMap<FuncId, HashMap<u32, Traits>> = HashMap::new();
         let mut bodies = Vec::new();
         for id in functions {
@@ -244,8 +250,10 @@ impl<'a> Checker<'a> {
         self.checking = None;
         self.unifier.param_traits.clear();
         self.solve_deferred(true);
-        // What the last constraints required belongs to the component's
-        // generic functions together.
+        /*
+        What the last constraints required belongs to the component's
+        generic functions together.
+        */
         for (index, traits) in std::mem::take(&mut self.unifier.param_traits) {
             for id in &written {
                 let entry = required.entry(*id).or_default().entry(index).or_default();
@@ -254,8 +262,10 @@ impl<'a> Checker<'a> {
         }
         self.pass_on_requirements(&mut required);
         self.current_component.clear();
-        // A caller must give type arguments that support what the body
-        // requires of them.
+        /*
+        A caller must give type arguments that support what the body
+        requires of them.
+        */
         for id in functions {
             let Some(traits) = required.remove(id) else {
                 continue;
@@ -276,8 +286,10 @@ impl<'a> Checker<'a> {
         {
             self.generalize(*id);
         } else {
-            // A function of a cycle whose result nothing constrains, one
-            // that only fails, returns nothing, as one outside a cycle does.
+            /*
+            A function of a cycle whose result nothing constrains, one
+            that only fails, returns nothing, as one outside a cycle does.
+            */
             for id in functions {
                 let Some(signature) = &self.functions[id.0 as usize].signature else {
                     continue;
@@ -329,7 +341,7 @@ impl<'a> Checker<'a> {
                     .help("add a `return` on every path, for example at the end of the function"),
                 );
             }
-            // Store the final signature types (with generic parameters).
+            /* Store the final signature types (with generic parameters). */
             let entry = &mut self.functions[id.0 as usize];
             if let Some(signature) = &mut entry.signature {
                 signature.params = function.params.iter().map(|p| p.ty.clone()).collect();
@@ -341,8 +353,10 @@ impl<'a> Checker<'a> {
         self.scc_order.push(functions.to_vec());
     }
 
-    /// Finalizes the function literals checked since `first`. A literal
-    /// shares the type parameters of the named function it appears in.
+    /**
+    Finalizes the function literals checked since `first`. A literal
+    shares the type parameters of the named function it appears in.
+    */
     fn finish_closures(&mut self, first: usize) {
         for index in first..self.closures.len() {
             let (closure, owner) = self.closures[index];
@@ -411,9 +425,11 @@ impl<'a> Checker<'a> {
                     .mode
                     .map(|(mode, _)| mode)
                     .unwrap_or(ast::ParamMode::Read),
-                // Calling a function value borrows it for changes, so how a
-                // parameter holding one is passed is inferred even when its
-                // type is written.
+                /*
+                Calling a function value borrows it for changes, so how a
+                parameter holding one is passed is inferred even when its
+                type is written.
+                */
                 explicit_mode: param.mode.is_some()
                     || (param.ty.is_some() && !self.holds_function(&self.unifier.resolve(&ty))),
                 ty,
@@ -423,7 +439,7 @@ impl<'a> Checker<'a> {
         }
         let body = self.check_block(&mut cx, &ast.body);
         if ast.ret.is_none() && !block_exits(&body) {
-            // Reaching the end returns nothing.
+            /* Reaching the end returns nothing. */
             if self.unifier.unify(&signature.ret, &Type::Nothing).is_err() {
                 let ret = self.unifier.resolve(&signature.ret);
                 self.error(
@@ -456,8 +472,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Determines the program's entry: the script's top-level statements, or
-    /// `main` when the file has no top-level statements.
+    /**
+    Determines the program's entry: the script's top-level statements, or
+    `main` when the file has no top-level statements.
+    */
     pub fn check_entry(&mut self, script: &[&'a ast::Stmt], span: sayon_syntax::Span) -> FuncId {
         let has_statements = script.iter().any(|stmt| {
             !matches!(stmt.kind, ast::StmtKind::Declare(ref decl) if decl.kind == ast::DeclKind::Constant)
@@ -509,7 +527,7 @@ impl<'a> Checker<'a> {
         id
     }
 
-    /// Checks each test block as a function without parameters.
+    /** Checks each test block as a function without parameters. */
     pub fn check_tests(&mut self) -> Vec<(String, FuncId)> {
         let mut tests = Vec::new();
         for (module, name, span, body) in std::mem::take(&mut self.test_blocks) {
@@ -575,7 +593,7 @@ impl<'a> Checker<'a> {
     }
 }
 
-/// Whether a value of the type can hold a `Shared`, `Weak`, or `Cell`.
+/** Whether a value of the type can hold a `Shared`, `Weak`, or `Cell`. */
 fn holds_wrapper(types: &[crate::types::TypeDef], ty: &Type) -> bool {
     fn search(types: &[crate::types::TypeDef], ty: &Type, seen: &mut Vec<u32>) -> bool {
         match ty {

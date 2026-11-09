@@ -1,4 +1,4 @@
-//! The commands.
+/*! The commands. */
 
 use crate::compile::{
     Options, Source, WorkDir, compile, compile_android_app, compile_native, current_project,
@@ -47,8 +47,10 @@ fn report_run_error(error: sayon_interp::RunError, options: &Options) -> u8 {
     }
 }
 
-/// `sayon check`: checks the program for each target, which selects its
-/// platform branches and finds the capabilities it lacks.
+/**
+`sayon check`: checks the program for each target, which selects its
+platform branches and finds the capabilities it lacks.
+*/
 pub fn check(source: &Source, options: &Options, targets: &[&'static Target]) -> u8 {
     let named = targets.len() > 1 || targets.iter().any(|t| !t.is_host());
     let mut result = status::SUCCESS;
@@ -76,8 +78,10 @@ pub fn check(source: &Source, options: &Options, targets: &[&'static Target]) ->
     result
 }
 
-/// `sayon install`: resolves the project's dependencies, fetches Git sources,
-/// and writes sayon.lock.
+/**
+`sayon install`: resolves the project's dependencies, fetches Git sources,
+and writes sayon.lock.
+*/
 pub fn install(options: &Options, locked: bool, offline: bool) -> u8 {
     let project = match current_project(options) {
         Ok(Some(project)) => project,
@@ -124,8 +128,10 @@ pub fn install(options: &Options, locked: bool, offline: bool) -> u8 {
     }
 }
 
-/// `sayon lint`: the compiler's checks and the lint warnings. With
-/// `deny_warnings`, any warning fails the command.
+/**
+`sayon lint`: the compiler's checks and the lint warnings. With
+`deny_warnings`, any warning fails the command.
+*/
 pub fn lint(
     source: &Source,
     options: &Options,
@@ -167,7 +173,7 @@ pub fn run(source: &Source, options: &Options, program_args: &[String]) -> u8 {
         Ok(compiled) => compiled,
         Err(code) => return code,
     };
-    // Not locked for the run: tasks on other threads write too.
+    /* Not locked for the run: tasks on other threads write too. */
     let mut out = std::io::BufWriter::new(std::io::stdout());
     sayon_runtime::host::set_arguments(program_args.to_vec());
     let result = sayon_interp::Machine::new(&compiled.module, &compiled.sources, &mut out).run();
@@ -176,17 +182,21 @@ pub fn run(source: &Source, options: &Options, program_args: &[String]) -> u8 {
     finished(result, options)
 }
 
-/// `sayon run --sandbox`: runs one file from anyone, kept from what the
-/// sandbox does not give it, and within its limits, which count from the
-/// start, the checking too (see `sandbox`).
+/**
+`sayon run --sandbox`: runs one file from anyone, kept from what the
+sandbox does not give it, and within its limits, which count from the
+start, the checking too (see `sandbox`).
+*/
 pub fn run_sandboxed(file: &Path, options: &Options) -> u8 {
     crate::sandbox::enter();
     let compiled = match crate::compile::compile_sandboxed(file, options) {
         Ok(compiled) => compiled,
         Err(code) => return code,
     };
-    // Written a line at a time, so that what the program printed before
-    // the sandbox stops it shows.
+    /*
+    Written a line at a time, so that what the program printed before
+    the sandbox stops it shows.
+    */
     let mut out = std::io::stdout();
     let mut machine = sayon_interp::Machine::new(&compiled.module, &compiled.sources, &mut out);
     machine.sandbox(sayon_interp::Sandbox {
@@ -198,7 +208,7 @@ pub fn run_sandboxed(file: &Path, options: &Options) -> u8 {
     finished(result, options)
 }
 
-/// The status a program's run ends with, reporting how it failed.
+/** The status a program's run ends with, reporting how it failed. */
 fn finished(result: Result<i32, sayon_interp::RunError>, options: &Options) -> u8 {
     match result {
         Ok(code) if (0..=255).contains(&code) => code as u8,
@@ -264,11 +274,13 @@ pub fn run_native(
     }
 }
 
-/// Where `sayon build` writes for a target: next to a standalone file, or
-/// under the project's `build/debug` or `build/release` directory. A target
-/// other than this computer's has a name of its own there: `hello-web.wasm`,
-/// or `build/debug/web/hello.wasm`.
-/// The name of the program: its project's, or its file's.
+/**
+Where `sayon build` writes for a target: next to a standalone file, or
+under the project's `build/debug` or `build/release` directory. A target
+other than this computer's has a name of its own there: `hello-web.wasm`,
+or `build/debug/web/hello.wasm`.
+The name of the program: its project's, or its file's.
+*/
 fn program_name(source: &Source) -> String {
     match &source.project {
         Some(project) => project.manifest.name.clone(),
@@ -307,8 +319,10 @@ fn default_output(source: &Source, release: bool, target: &Target) -> PathBuf {
     }
 }
 
-/// `sayon build`: an executable for each target, or for Android an app's
-/// package, unless `executable` asks for a program to run from a shell.
+/**
+`sayon build`: an executable for each target, or for Android an app's
+package, unless `executable` asks for a program to run from a shell.
+*/
 #[allow(clippy::too_many_arguments)]
 pub fn build(
     source: &Source,
@@ -383,7 +397,7 @@ fn build_for(
     if emit_llvm {
         let destination =
             output.unwrap_or_else(|| default_output(source, release, target).with_extension("ll"));
-        // Coroutines take the form the clang that would compile them reads.
+        /* Coroutines take the form the clang that would compile them reads. */
         let dialect = match sayon_codegen::clang() {
             Some(clang) if sayon_codegen::uses_coroutines(&compiled.module) => {
                 sayon_codegen::dialect(&clang)
@@ -410,7 +424,7 @@ fn build_for(
     let android_app = target.platform == "android" && !executable;
     let destination = output.unwrap_or_else(|| {
         let path = default_output(source, release, target);
-        // A program for `adb shell` has no suffix.
+        /* A program for `adb shell` has no suffix. */
         if target.platform == "android" && executable {
             path.with_extension("")
         } else {
@@ -447,8 +461,10 @@ fn build_for(
     }
 }
 
-/// Beside a module built for web pages, the glue that runs it (`.js`) and a
-/// page that shows its output (`.html`).
+/**
+Beside a module built for web pages, the glue that runs it (`.js`) and a
+page that shows its output (`.html`).
+*/
 fn write_web_files(module: &Path) -> Result<(), String> {
     let name = |path: &Path| {
         path.file_name()
@@ -467,8 +483,10 @@ fn write_web_files(module: &Path) -> Result<(), String> {
         .map_err(|e| format!("cannot write {}: {e}", page.display()))
 }
 
-/// `sayon target list`: every target, how far its support has come, and
-/// what it lacks.
+/**
+`sayon target list`: every target, how far its support has come, and
+what it lacks.
+*/
 pub fn target_list() -> u8 {
     println!("Targets (* is this computer):");
     let width = sayon_target::TARGETS
@@ -521,7 +539,7 @@ pub fn target_list() -> u8 {
     status::SUCCESS
 }
 
-/// `sayon target setup <target>`: what building for a target needs.
+/** `sayon target setup <target>`: what building for a target needs. */
 pub fn target_setup(name: &str) -> u8 {
     let target = match sayon_target::resolve(name) {
         Ok(target) => target,
@@ -570,8 +588,10 @@ pub fn target_setup(name: &str) -> u8 {
     status::SUCCESS
 }
 
-/// What building for Linux of another processor needs, and whether this
-/// computer has it.
+/**
+What building for Linux of another processor needs, and whether this
+computer has it.
+*/
 fn linux_setup(target: &'static Target) {
     use sayon_codegen::linux;
     let names = linux::cross(target);
@@ -593,8 +613,10 @@ fn linux_setup(target: &'static Target) {
     show_toolchain(target);
 }
 
-/// What building for Windows of another processor needs, and whether this
-/// computer has it.
+/**
+What building for Windows of another processor needs, and whether this
+computer has it.
+*/
 fn windows_setup(target: &'static Target) {
     let names = sayon_codegen::windows::libraries(target);
     println!(
@@ -612,7 +634,7 @@ fn windows_setup(target: &'static Target) {
     show_toolchain(target);
 }
 
-/// Whether this computer has what building for `target` needs.
+/** Whether this computer has what building for `target` needs. */
 fn show_toolchain(target: &'static Target) {
     let exe_dir = std::env::current_exe()
         .ok()
@@ -627,7 +649,7 @@ fn show_toolchain(target: &'static Target) {
     }
 }
 
-/// What building for Android needs, and which of it this computer has.
+/** What building for Android needs, and which of it this computer has. */
 fn android_setup(target: &'static Target) {
     use sayon_codegen::android;
     println!(
@@ -682,8 +704,10 @@ fn android_setup(target: &'static Target) {
     }
 }
 
-/// Collects `.sayon` files under a directory in a stable order, skipping
-/// build output and hidden or version-control directories.
+/**
+Collects `.sayon` files under a directory in a stable order, skipping
+build output and hidden or version-control directories.
+*/
 fn source_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -707,10 +731,12 @@ fn source_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Runs the test blocks of each file in the interpreter. Each test runs with
-/// freshly initialized constants, and its output is shown only if it fails.
-/// Without files, a project's `src` and `tests` directories are used, or
-/// else `tests` under the current directory.
+/**
+Runs the test blocks of each file in the interpreter. Each test runs with
+freshly initialized constants, and its output is shown only if it fails.
+Without files, a project's `src` and `tests` directories are used, or
+else `tests` under the current directory.
+*/
 pub fn test(files: &[String], options: &Options) -> u8 {
     let mut paths: Vec<PathBuf> = files.iter().map(PathBuf::from).collect();
     let mut root = None;
@@ -821,8 +847,10 @@ pub fn test(files: &[String], options: &Options) -> u8 {
     }
 }
 
-/// Formats files in place, or with `check_only` reports the files that are
-/// not formatted. Files with syntax errors are reported and left unchanged.
+/**
+Formats files in place, or with `check_only` reports the files that are
+not formatted. Files with syntax errors are reported and left unchanged.
+*/
 pub fn format_files(paths: &[String], check_only: bool) -> u8 {
     let mut files = Vec::new();
     let roots: Vec<PathBuf> = if paths.is_empty() {
@@ -916,10 +944,10 @@ test \"greets by name\"
     assert(greeting(\"Sayon\") == \"Hello, Sayon!\")
 ";
 
-/// Creates a project directory with a manifest, a small program with a
-/// test, and ignore rules for build output.
-/// A project name made from a folder's: lowercase letters and digits, with
-/// `_` for whatever else, starting with a letter.
+/**
+A project name made from a folder's: lowercase letters and digits, with
+`_` for whatever else, starting with a letter.
+*/
 fn project_name(folder: &str) -> String {
     let mut name = String::new();
     for c in folder.chars() {
@@ -937,9 +965,11 @@ fn project_name(folder: &str) -> String {
     }
 }
 
-/// `sayon init <name>` makes a project in a new folder `name`; `sayon init`
-/// alone makes the current folder a project, named after it, keeping the
-/// files it already has.
+/**
+`sayon init <name>` makes a project in a new folder `name`; `sayon init`
+alone makes the current folder a project, named after it, keeping the
+files it already has.
+*/
 pub fn init(name: Option<&str>) -> u8 {
     let here = name.is_none();
     let (name, root) = match name {
@@ -996,7 +1026,7 @@ pub fn init(name: Option<&str>) -> u8 {
     let mut kept = Vec::new();
     for (relative, content) in files {
         let path = root.join(relative);
-        // A folder made a project keeps the files it has.
+        /* A folder made a project keeps the files it has. */
         if path.exists() {
             kept.push(relative);
             continue;
@@ -1035,7 +1065,7 @@ pub fn init(name: Option<&str>) -> u8 {
     status::SUCCESS
 }
 
-/// Removes the project's `build` directory, and nothing else.
+/** Removes the project's `build` directory, and nothing else. */
 pub fn clean(options: &Options) -> u8 {
     let project = match current_project(options) {
         Ok(Some(project)) => project,
@@ -1064,8 +1094,10 @@ pub fn clean(options: &Options) -> u8 {
     }
 }
 
-/// Reports where the standard library, runtime library, and clang are, and
-/// whether native builds can work.
+/**
+Reports where the standard library, runtime library, and clang are, and
+whether native builds can work.
+*/
 pub fn doctor() -> u8 {
     println!(
         "sayon {} ({}-{})",
@@ -1121,8 +1153,10 @@ pub fn doctor() -> u8 {
             line(false, "native toolchain", first);
         }
     }
-    // Building for WebAssembly, Android, and this system with another
-    // processor is optional: without it, the rest works.
+    /*
+    Building for WebAssembly, Android, and this system with another
+    processor is optional: without it, the rest works.
+    */
     for (name, label) in [
         ("wasi", "WASI runtime"),
         ("web", "web runtime"),

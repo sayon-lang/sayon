@@ -1,9 +1,11 @@
-//! Flow-sensitive narrowing of union-typed and `Outcome`-typed locals.
-//!
-//! Recognized tests on a local `x`:
-//! `x == nothing`, `x != nothing`, `typeof(x) == "name"`, `typeof(x) != "name"`
-//! (on a union), and `x is error` (on an `Outcome`, or a union that can hold
-//! an `Error`), combined with `not`, `and`, and `or`.
+/*!
+Flow-sensitive narrowing of union-typed and `Outcome`-typed locals.
+
+Recognized tests on a local `x`:
+`x == nothing`, `x != nothing`, `typeof(x) == "name"`, `typeof(x) != "name"`
+(on a union), and `x is error` (on an `Outcome`, or a union that can hold
+an `Error`), combined with `not`, `and`, and `or`.
+*/
 
 use crate::checker::{Checker, FAILURE, FnCtx, Narrowing, OUTCOME, SUCCESS};
 use crate::hir::{self, LocalId};
@@ -40,7 +42,7 @@ impl<'a> Checker<'a> {
         self.facts_with(cx, condition, &HashMap::new())
     }
 
-    /// What is known about a local: its narrowing, or its declared type.
+    /** What is known about a local: its narrowing, or its declared type. */
     fn current(&self, cx: &FnCtx, local: LocalId, overlay: &Overlay) -> Narrowing {
         if let Some(narrowing) = overlay.get(&local).or_else(|| cx.narrowed(local)) {
             return narrowing.clone();
@@ -110,7 +112,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The local an expression names, with what is known about it.
+    /** The local an expression names, with what is known about it. */
     fn tested_local(
         &self,
         cx: &FnCtx,
@@ -131,7 +133,7 @@ impl<'a> Checker<'a> {
         overlay: &Overlay,
     ) -> Option<(LocalId, Vec<Type>)> {
         match self.tested_local(cx, expr, overlay)? {
-            // The value inside an `Outcome` is not narrowed further.
+            /* The value inside an `Outcome` is not narrowed further. */
             (
                 local,
                 Narrowing {
@@ -143,7 +145,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Facts for `value == nothing`.
+    /** Facts for `value == nothing`. */
     fn nothing_test(
         &self,
         cx: &FnCtx,
@@ -166,7 +168,7 @@ impl<'a> Checker<'a> {
         ))
     }
 
-    /// Facts for `typeof(value) == "name"`.
+    /** Facts for `typeof(value) == "name"`. */
     fn typeof_test(
         &self,
         cx: &FnCtx,
@@ -206,8 +208,10 @@ impl<'a> Checker<'a> {
         ))
     }
 
-    /// Facts for `value is error`: an `Outcome` holds its failure or its
-    /// success; a union holds its `Error` or one of its other members.
+    /**
+    Facts for `value is error`: an `Outcome` holds its failure or its
+    success; a union holds its `Error` or one of its other members.
+    */
     fn error_test(&self, cx: &FnCtx, value: &ast::Expr, overlay: &Overlay) -> Option<Facts> {
         let (local, current) = self.tested_local(cx, value, overlay)?;
         if current.variant.is_some() {
@@ -232,7 +236,7 @@ impl<'a> Checker<'a> {
     }
 }
 
-/// The union of `members` other than `removed`.
+/** The union of `members` other than `removed`. */
 fn without(members: &[Type], removed: &Type) -> Type {
     Type::union(
         members
@@ -243,7 +247,7 @@ fn without(members: &[Type], removed: &Type) -> Type {
     )
 }
 
-/// Whether control can never continue past this block.
+/** Whether control can never continue past this block. */
 pub(crate) fn block_exits(block: &hir::Block) -> bool {
     block.stmts.iter().any(stmt_exits)
 }
@@ -282,13 +286,13 @@ pub(crate) fn stmt_exits(stmt: &hir::Stmt) -> bool {
         While { condition, body } => {
             matches!(condition.kind, hir::ExprKind::Boolean(true)) && !breaks_out(body)
         }
-        // Every value reaches some arm, so the match leaves when they all do.
+        /* Every value reaches some arm, so the match leaves when they all do. */
         Match { arms, .. } => !arms.is_empty() && arms.iter().all(|arm| block_exits(&arm.body)),
         _ => false,
     }
 }
 
-/// Whether a loop body contains a `break` for this loop (not a nested one).
+/** Whether a loop body contains a `break` for this loop (not a nested one). */
 fn breaks_out(block: &hir::Block) -> bool {
     use hir::StmtKind::*;
     block.stmts.iter().any(|stmt| match &stmt.kind {
@@ -313,7 +317,7 @@ fn breaks_out(block: &hir::Block) -> bool {
     })
 }
 
-/// Names assigned anywhere inside a block (used to drop narrowing before a loop).
+/** Names assigned anywhere inside a block (used to drop narrowing before a loop). */
 pub(crate) fn assigned_names(block: &ast::Block, out: &mut Vec<String>) {
     for stmt in &block.stmts {
         match &stmt.kind {

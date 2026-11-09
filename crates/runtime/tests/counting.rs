@@ -1,10 +1,12 @@
-//! Sayon's allocator counts what a program holds while the sandbox limits
-//! it. This is the only test in its process, so that nothing else allocates
-//! or frees while it counts, but the test harness, a little.
+/*!
+Sayon's allocator counts what a program holds while the sandbox limits
+it. This is the only test in its process, so that nothing else allocates
+or frees while it counts, but the test harness, a little.
+*/
 
 use sayon_runtime::alloc;
 
-/// Never called: the limit is far above anything the test holds.
+/** Never called: the limit is far above anything the test holds. */
 fn over_the_limit() -> ! {
     std::process::abort()
 }

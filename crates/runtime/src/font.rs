@@ -1,18 +1,20 @@
-//! Fonts for `standard/graphics`. A TrueType font is read from its bytes,
-//! and the runtime draws its glyphs' outlines smooth on a canvas (see
-//! `graphics`), so that text in it is the same on every system. The
-//! system's own fonts are found in its font directories by the names
-//! inside them; in a web page they are the browser's, which the browser
-//! draws, through the glue's host functions.
-//!
-//! A font's tables, of the OpenType specification: `head` for its units
-//! per em and the size of `loca`'s offsets, `maxp` for its number of
-//! glyphs, `cmap` for each character's glyph (its formats 4 and 12),
-//! `hhea` and `hmtx` for its ascender, descender, line gap, and advances,
-//! `loca` and `glyf` for the outlines, and `name` for its names. Of a
-//! collection (`.ttc`), the first font is read. Kerning, hinting, and the
-//! glyphs of PostScript outlines (CFF, in most `.otf` files) are not read
-//! yet.
+/*!
+Fonts for `standard/graphics`. A TrueType font is read from its bytes,
+and the runtime draws its glyphs' outlines smooth on a canvas (see
+`graphics`), so that text in it is the same on every system. The
+system's own fonts are found in its font directories by the names
+inside them; in a web page they are the browser's, which the browser
+draws, through the glue's host functions.
+
+A font's tables, of the OpenType specification: `head` for its units
+per em and the size of `loca`'s offsets, `maxp` for its number of
+glyphs, `cmap` for each character's glyph (its formats 4 and 12),
+`hhea` and `hmtx` for its ascender, descender, line gap, and advances,
+`loca` and `glyf` for the outlines, and `name` for its names. Of a
+collection (`.ttc`), the first font is read. Kerning, hinting, and the
+glyphs of PostScript outlines (CFF, in most `.otf` files) are not read
+yet.
+*/
 
 use crate::graphics::{Canvas, Outline};
 use crate::host::HostError;
@@ -35,12 +37,12 @@ fn u32_at(data: &[u8], at: usize) -> Option<u32> {
         .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
 }
 
-/// A number of the 2.14 format: two bits whole, fourteen a fraction.
+/** A number of the 2.14 format: two bits whole, fourteen a fraction. */
 fn f2dot14(data: &[u8], at: usize) -> Option<f64> {
     i16_at(data, at).map(|value| value as f64 / 16384.0)
 }
 
-/// A font, and what it is called.
+/** A font, and what it is called. */
 pub struct Font {
     pub name: String,
     face: Face,
@@ -48,13 +50,13 @@ pub struct Font {
 
 enum Face {
     TrueType(Box<TrueType>),
-    /// One of the browser's, by its number in the page's glue.
+    /** One of the browser's, by its number in the page's glue. */
     #[cfg(all(target_family = "wasm", target_os = "unknown"))]
     Browser(i32),
 }
 
 impl Font {
-    /// Reads a TrueType font, or the first of a collection.
+    /** Reads a TrueType font, or the first of a collection. */
     pub fn from_bytes(data: Vec<u8>) -> Result<Font, HostError> {
         let font = TrueType::read(data)?;
         let names = font.names();
@@ -64,9 +66,11 @@ impl Font {
         })
     }
 
-    /// The system's font named `name`, by its family's name, such as
-    /// "Arial", or its full name, such as "Arial Bold"; `sans-serif`,
-    /// `serif`, `monospace`, or nothing for the system's usual one of each.
+    /**
+    The system's font named `name`, by its family's name, such as
+    "Arial", or its full name, such as "Arial Bold"; `sans-serif`,
+    `serif`, `monospace`, or nothing for the system's usual one of each.
+    */
     pub fn system(name: &str) -> Result<Font, HostError> {
         #[cfg(all(target_family = "wasm", target_os = "unknown"))]
         {
@@ -78,9 +82,11 @@ impl Font {
         }
     }
 
-    /// How far above the baseline the font reaches, how far below it, and
-    /// the gap between one line's bottom and the next's top, in pixels at
-    /// `size` pixels per em.
+    /**
+    How far above the baseline the font reaches, how far below it, and
+    the gap between one line's bottom and the next's top, in pixels at
+    `size` pixels per em.
+    */
     fn metrics(&self, size: f64) -> (f64, f64, f64) {
         match &self.face {
             Face::TrueType(font) => {
@@ -96,7 +102,7 @@ impl Font {
         }
     }
 
-    /// How far a line of text advances, in pixels.
+    /** How far a line of text advances, in pixels. */
     fn advance(&self, line: &str, size: f64) -> f64 {
         match &self.face {
             Face::TrueType(font) => {
@@ -110,8 +116,10 @@ impl Font {
         }
     }
 
-    /// The font's ascent (0), descent (1), or the height of a line (2), in
-    /// whole pixels at `size`.
+    /**
+    The font's ascent (0), descent (1), or the height of a line (2), in
+    whole pixels at `size`.
+    */
     pub fn metric(&self, which: i64, size: i64) -> i64 {
         let (ascent, descent, gap) = self.metrics(size.max(0) as f64);
         match which {
@@ -121,7 +129,7 @@ impl Font {
         }
     }
 
-    /// How wide text is at `size`, its longest line, in whole pixels.
+    /** How wide text is at `size`, its longest line, in whole pixels. */
     pub fn width(&self, text: &str, size: i64) -> i64 {
         let size = size.max(0) as f64;
         text.split('\n')
@@ -130,16 +138,20 @@ impl Font {
             .ceil() as i64
     }
 
-    /// How high text is at `size`, from its first line's top to its last
-    /// line's bottom, in whole pixels.
+    /**
+    How high text is at `size`, from its first line's top to its last
+    line's bottom, in whole pixels.
+    */
     pub fn height(&self, text: &str, size: i64) -> i64 {
         let (ascent, descent, gap) = self.metrics(size.max(0) as f64);
         let lines = text.split('\n').count() as f64;
         ((lines - 1.0) * (ascent + descent + gap) + ascent + descent).ceil() as i64
     }
 
-    /// Draws text, its first line's top left corner at `x`, `y`, each line
-    /// below the last by the font's line height.
+    /**
+    Draws text, its first line's top left corner at `x`, `y`, each line
+    below the last by the font's line height.
+    */
     pub fn draw(&self, canvas: &mut Canvas, text: &str, (x, y): (i64, i64), size: i64, color: i64) {
         if size <= 0 {
             return;
@@ -183,15 +195,17 @@ impl Drop for Font {
     }
 }
 
-/// What a font calls itself, from its `name` table.
+/** What a font calls itself, from its `name` table. */
 #[derive(Clone, Debug, Default)]
 struct Names {
-    /// Its family, such as "Arial", by the name of its typographic family
-    /// where it has one, and by its older name too.
+    /**
+    Its family, such as "Arial", by the name of its typographic family
+    where it has one, and by its older name too.
+    */
     families: Vec<String>,
-    /// Its style in the family, such as "Regular" or "Bold".
+    /** Its style in the family, such as "Regular" or "Bold". */
     style: String,
-    /// Its family and style, such as "Arial Bold".
+    /** Its family and style, such as "Arial Bold". */
     full: String,
 }
 
@@ -204,11 +218,11 @@ impl Names {
         format!("{family} {}", self.style).trim().to_string()
     }
 
-    /// Reads them from the `name` table.
+    /** Reads them from the `name` table. */
     fn read(table: &[u8]) -> Names {
         let count = u16_at(table, 2).unwrap_or(0) as usize;
         let strings = u16_at(table, 4).unwrap_or(0) as usize;
-        // The best string of each name so far: lower is better.
+        /* The best string of each name so far: lower is better. */
         let mut found: [(u32, String); 5] = Default::default();
         for index in 0..count {
             let record = 6 + 12 * index;
@@ -229,8 +243,10 @@ impl Names {
                 17 => 4,
                 _ => continue,
             };
-            // Windows' English names first, then its others, then Unicode's
-            // and the Macintosh's.
+            /*
+            Windows' English names first, then its others, then Unicode's
+            and the Macintosh's.
+            */
             let rank = match (platform, language) {
                 (3, 0x409) => 1,
                 (3, _) => 2,
@@ -275,7 +291,7 @@ impl Names {
     }
 }
 
-/// Where the tables of the first font in `data` are, by their tags.
+/** Where the tables of the first font in `data` are, by their tags. */
 fn directory(data: &[u8]) -> Result<Vec<([u8; 4], usize, usize)>, HostError> {
     let not_font = || fail("these bytes are not a TrueType font");
     let mut start = 0;
@@ -309,26 +325,30 @@ fn directory(data: &[u8]) -> Result<Vec<([u8; 4], usize, usize)>, HostError> {
     Ok(tables)
 }
 
-/// A TrueType font's bytes, and where in them what it draws with is.
+/** A TrueType font's bytes, and where in them what it draws with is. */
 struct TrueType {
     data: Vec<u8>,
-    /// The units of its outlines in an em.
+    /** The units of its outlines in an em. */
     units: f64,
-    /// In its units: how far above the baseline it reaches, how far below,
-    /// and the gap between lines.
+    /**
+    In its units: how far above the baseline it reaches, how far below,
+    and the gap between lines.
+    */
     ascender: f64,
     descender: f64,
     gap: f64,
     glyphs: u16,
-    /// Whether `loca` holds 32-bit offsets, not 16-bit halves.
+    /** Whether `loca` holds 32-bit offsets, not 16-bit halves. */
     long_offsets: bool,
     loca: usize,
     glyf: (usize, usize),
     hmtx: usize,
-    /// The glyphs with an advance of their own; the rest take the last's.
+    /** The glyphs with an advance of their own; the rest take the last's. */
     advances: u16,
-    /// The subtable of `cmap` read, its format, and whether it is a
-    /// symbol font's, whose characters are at 0xF000 and on.
+    /**
+    The subtable of `cmap` read, its format, and whether it is a
+    symbol font's, whose characters are at 0xF000 and on.
+    */
     cmap: usize,
     format: u16,
     symbol: bool,
@@ -372,8 +392,10 @@ impl TrueType {
         if advances == 0 || u16_at(&data, hmtx + 4 * (advances as usize - 1)).is_none() {
             return Err(damaged());
         }
-        // The subtable that maps the most: Unicode's full range, then its
-        // basic plane, then a symbol font's.
+        /*
+        The subtable that maps the most: Unicode's full range, then its
+        basic plane, then a symbol font's.
+        */
         let mut best: Option<(u32, usize, u16, bool)> = None;
         for index in 0..u16_at(&data, cmap + 2).ok_or_else(damaged)? as usize {
             let record = cmap + 4 + 8 * index;
@@ -424,7 +446,7 @@ impl TrueType {
         Names::read(&self.data[offset..offset + length])
     }
 
-    /// The glyph of a character, or 0, the glyph of the ones it lacks.
+    /** The glyph of a character, or 0, the glyph of the ones it lacks. */
     fn glyph(&self, character: char) -> u16 {
         let code = character as u32;
         match self.lookup(code) {
@@ -442,8 +464,10 @@ impl TrueType {
         found.filter(|&glyph| glyph < self.glyphs).unwrap_or(0)
     }
 
-    /// Format 4: segments of the basic plane, each mapped by a delta, or
-    /// through an array of glyphs.
+    /**
+    Format 4: segments of the basic plane, each mapped by a delta, or
+    through an array of glyphs.
+    */
     fn lookup_segments(&self, code: u32) -> Option<u16> {
         let (data, at) = (&self.data[..], self.cmap);
         if code > 0xFFFF {
@@ -455,7 +479,7 @@ impl TrueType {
         let starts = ends + doubled + 2;
         let deltas = starts + doubled;
         let ranges = deltas + doubled;
-        // The first segment that ends at the character or after.
+        /* The first segment that ends at the character or after. */
         let (mut low, mut high) = (0, doubled / 2);
         while low < high {
             let middle = (low + high) / 2;
@@ -478,7 +502,7 @@ impl TrueType {
         (glyph != 0).then(|| glyph.wrapping_add(delta))
     }
 
-    /// Format 12: groups of characters, each to consecutive glyphs.
+    /** Format 12: groups of characters, each to consecutive glyphs. */
     fn lookup_groups(&self, code: u32) -> Option<u16> {
         let (data, at) = (&self.data[..], self.cmap);
         let (mut low, mut high) = (0, u32_at(data, at + 12)? as usize);
@@ -498,13 +522,13 @@ impl TrueType {
         None
     }
 
-    /// How far a glyph advances the pen, in the font's units.
+    /** How far a glyph advances the pen, in the font's units. */
     fn advance(&self, glyph: u16) -> f64 {
         let index = glyph.min(self.advances - 1) as usize;
         u16_at(&self.data, self.hmtx + 4 * index).unwrap_or(0) as f64
     }
 
-    /// Where a glyph's outline is in `glyf`.
+    /** Where a glyph's outline is in `glyf`. */
     fn place(&self, glyph: u16) -> Option<(usize, usize)> {
         let glyph = glyph as usize;
         let (start, end) = if self.long_offsets {
@@ -521,10 +545,12 @@ impl TrueType {
         (start <= end && end <= self.glyf.1).then_some((self.glyf.0 + start, self.glyf.0 + end))
     }
 
-    /// Adds a glyph's contours, each its points in the font's units and
-    /// whether each is on the curve, or off it, the control point of a
-    /// quadratic curve. A glyph made of others takes them each moved, or
-    /// transformed, as it says, to eight levels deep.
+    /**
+    Adds a glyph's contours, each its points in the font's units and
+    whether each is on the curve, or off it, the control point of a
+    quadratic curve. A glyph made of others takes them each moved, or
+    transformed, as it says, to eight levels deep.
+    */
     fn contours(&self, glyph: u16, depth: u32, out: &mut Vec<Vec<(f64, f64, bool)>>) -> Option<()> {
         if depth > 8 {
             return None;
@@ -555,8 +581,10 @@ impl TrueType {
                 }
             }
             flags.truncate(points);
-            // Each coordinate is a change from the last: a byte with a sign
-            // in the flags, or the same, or a 16-bit change.
+            /*
+            Each coordinate is a change from the last: a byte with a sign
+            in the flags, or the same, or a 16-bit change.
+            */
             let mut coordinates = |short: u8, same: u8| -> Option<Vec<f64>> {
                 let mut value = 0i32;
                 let mut values = Vec::with_capacity(points);
@@ -594,8 +622,10 @@ impl TrueType {
             let flags = u16_at(data, at)?;
             let component = u16_at(data, at + 2)?;
             at += 4;
-            // Its offset; given as two points to match instead, which is
-            // rare, it is not moved.
+            /*
+            Its offset; given as two points to match instead, which is
+            rare, it is not moved.
+            */
             let (dx, dy) = if flags & 1 != 0 {
                 at += 4;
                 (i16_at(data, at - 4)? as f64, i16_at(data, at - 2)? as f64)
@@ -639,8 +669,10 @@ impl TrueType {
         }
     }
 
-    /// Adds a glyph's outline to `outline`, its origin at `origin` and its
-    /// units `scale` pixels each, as lines close enough to its curves.
+    /**
+    Adds a glyph's outline to `outline`, its origin at `origin` and its
+    units `scale` pixels each, as lines close enough to its curves.
+    */
     fn outline(&self, glyph: u16, origin: (f64, f64), scale: f64, outline: &mut Outline) {
         let mut contours = Vec::new();
         if self.contours(glyph, 0, &mut contours).is_none() {
@@ -654,8 +686,10 @@ impl TrueType {
                 continue;
             }
             let mut points: Vec<(f64, f64, bool)> = contour.into_iter().map(place).collect();
-            // Start on the curve: at its first point there, or else between
-            // the last point and the first.
+            /*
+            Start on the curve: at its first point there, or else between
+            the last point and the first.
+            */
             match points.iter().position(|point| point.2) {
                 Some(first) => points.rotate_left(first),
                 None => points.insert(0, middle(points[points.len() - 1], points[0])),
@@ -675,7 +709,7 @@ impl TrueType {
                         control = None;
                     }
                     (false, None) => control = Some(point),
-                    // Between two points off the curve is one on it.
+                    /* Between two points off the curve is one on it. */
                     (false, Some(off)) => {
                         let between = middle(off, point);
                         curve(outline, current, off, between);
@@ -688,16 +722,20 @@ impl TrueType {
     }
 }
 
-/// Adds a quadratic curve as lines, enough that none strays more than a
-/// tenth of a pixel from it.
+/**
+Adds a quadratic curve as lines, enough that none strays more than a
+tenth of a pixel from it.
+*/
 fn curve(
     outline: &mut Outline,
     from: (f64, f64, bool),
     control: (f64, f64, bool),
     to: (f64, f64, bool),
 ) {
-    // A square root, not `hypot`, which each system's C library rounds its
-    // own way.
+    /*
+    A square root, not `hypot`, which each system's C library rounds its
+    own way.
+    */
     let (across, down) = (
         from.0 - 2.0 * control.0 + to.0,
         from.1 - 2.0 * control.1 + to.1,
@@ -717,8 +755,10 @@ fn curve(
     }
 }
 
-/// Finding the system's fonts: the files of its font directories, read
-/// once for their names.
+/**
+Finding the system's fonts: the files of its font directories, read
+once for their names.
+*/
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 mod system {
     use super::{Font, Names, fail, u16_at, u32_at};
@@ -727,10 +767,10 @@ mod system {
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
 
-    /// The fonts found, and their names, once looked for.
+    /** The fonts found, and their names, once looked for. */
     static FOUND: Mutex<Option<Vec<(PathBuf, Names)>>> = Mutex::new(None);
 
-    /// The usual fonts of each kind, the first the system has.
+    /** The usual fonts of each kind, the first the system has. */
     #[cfg(windows)]
     const USUAL: [&[&str]; 3] = [
         &["Segoe UI", "Arial", "Tahoma", "Verdana"],
@@ -774,7 +814,7 @@ mod system {
         ],
     ];
 
-    /// The directories the system keeps fonts in.
+    /** The directories the system keeps fonts in. */
     fn directories() -> Vec<PathBuf> {
         let variable = |name: &str| std::env::var_os(name).map(PathBuf::from);
         let mut found = Vec::new();
@@ -812,8 +852,10 @@ mod system {
         found
     }
 
-    /// Adds the font files in a directory and those within, in order of
-    /// their names, to `found`.
+    /**
+    Adds the font files in a directory and those within, in order of
+    their names, to `found`.
+    */
     fn walk(dir: &Path, depth: u32, found: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -835,8 +877,10 @@ mod system {
         }
     }
 
-    /// A font file's names, reading only its directory and `name` table;
-    /// nothing for one not of TrueType outlines.
+    /**
+    A font file's names, reading only its directory and `name` table;
+    nothing for one not of TrueType outlines.
+    */
     fn names_of(path: &Path) -> Option<Names> {
         let mut file = std::fs::File::open(path).ok()?;
         let mut read = |at: u64, length: usize| -> Option<Vec<u8>> {
@@ -867,8 +911,10 @@ mod system {
         None
     }
 
-    /// How well a font's names match `wanted`, lower being better: its
-    /// full name, then its family in its regular style, then in another.
+    /**
+    How well a font's names match `wanted`, lower being better: its
+    full name, then its family in its regular style, then in another.
+    */
     fn fit(names: &Names, wanted: &str) -> Option<u32> {
         let same = |name: &str| name.trim().eq_ignore_ascii_case(wanted.trim());
         if same(&names.full) {
@@ -880,7 +926,7 @@ mod system {
         None
     }
 
-    /// Whether a font is of its family's regular style.
+    /** Whether a font is of its family's regular style. */
     fn regular(names: &Names) -> bool {
         ["Regular", "Normal", "Book", "Roman", "Plain"]
             .iter()
@@ -899,8 +945,10 @@ mod system {
                 .filter_map(|path| names_of(&path).map(|names| (path, names)))
                 .collect()
         });
-        // A kind of font is the system's usual one of the kind, or else its
-        // usual sans-serif one, or else any in its regular style.
+        /*
+        A kind of font is the system's usual one of the kind, or else its
+        usual sans-serif one, or else any in its regular style.
+        */
         let kind = match name.trim().to_ascii_lowercase().as_str() {
             "" | "sans-serif" => Some(0),
             "serif" => Some(1),
@@ -942,8 +990,10 @@ mod system {
     }
 }
 
-/// The browser's fonts, which the page's glue measures and draws with a
-/// canvas of its own.
+/**
+The browser's fonts, which the page's glue measures and draws with a
+canvas of its own.
+*/
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 mod web {
     use super::{Face, Font, fail};
@@ -952,11 +1002,15 @@ mod web {
 
     #[link(wasm_import_module = "sayon")]
     unsafe extern "C" {
-        /// The number of the browser's font named so, 0 when the browser
-        /// lacks it, or -1 where there is no canvas to draw text with.
+        /**
+        The number of the browser's font named so, 0 when the browser
+        lacks it, or -1 where there is no canvas to draw text with.
+        */
         fn host_font_open(name: *const u8, length: usize) -> i32;
-        /// How wide a line of text is (0), or the font's ascent (1) or
-        /// descent (2), at `size` pixels.
+        /**
+        How wide a line of text is (0), or the font's ascent (1) or
+        descent (2), at `size` pixels.
+        */
         fn host_font_measure(
             font: i32,
             text: *const u8,
@@ -964,10 +1018,12 @@ mod web {
             size: f64,
             which: i32,
         ) -> f64;
-        /// Draws a line of text in white on a canvas of its own and gives
-        /// its width; `host_font_drawn` gives its height (0) and where on it
-        /// the text starts (1) and its baseline is (2), and
-        /// `host_font_take` copies how opaque each of its pixels is.
+        /**
+        Draws a line of text in white on a canvas of its own and gives
+        its width; `host_font_drawn` gives its height (0) and where on it
+        the text starts (1) and its baseline is (2), and
+        `host_font_take` copies how opaque each of its pixels is.
+        */
         fn host_font_draw(font: i32, text: *const u8, length: usize, size: f64) -> i32;
         fn host_font_drawn(which: i32) -> i32;
         fn host_font_take(into: *mut u8);
@@ -1039,7 +1095,7 @@ mod web {
 mod tests {
     use super::*;
 
-    /// The bytes of 16-bit words, as a font holds them.
+    /** The bytes of 16-bit words, as a font holds them. */
     fn words(values: &[i32]) -> Vec<u8> {
         values
             .iter()
@@ -1047,8 +1103,10 @@ mod tests {
             .collect()
     }
 
-    /// A font of two glyphs, the one for missing characters and a square
-    /// for "A", made here as a font maker would.
+    /**
+    A font of two glyphs, the one for missing characters and a square
+    for "A", made here as a font maker would.
+    */
     fn square_font() -> Vec<u8> {
         let mut head = vec![0; 54];
         head[18..20].copy_from_slice(&1000u16.to_be_bytes());
@@ -1057,14 +1115,18 @@ mod tests {
         hhea.resize(34, 0);
         hhea.extend(words(&[2]));
         let hmtx = words(&[500, 0, 1000, 0]);
-        // The square: one contour of four points on the curve, from 0 to
-        // 500 across and up, each a change from the last.
+        /*
+        The square: one contour of four points on the curve, from 0 to
+        500 across and up, each a change from the last.
+        */
         let mut glyf = words(&[1, 0, 0, 500, 500, 3, 0]);
         glyf.extend([1, 1, 1, 1]);
         glyf.extend(words(&[0, 500, 0, -500, 0, 0, 500, 0]));
         let loca = words(&[0, 0, glyf.len() as i32 / 2]);
-        // Format 4, after the header and the one record: "A" to glyph 1,
-        // and the segment that ends the table.
+        /*
+        Format 4, after the header and the one record: "A" to glyph 1,
+        and the segment that ends the table.
+        */
         let cmap = [
             words(&[0, 1, 3, 1, 0, 12]),
             words(&[4, 32, 0, 4, 0, 0, 0]),
@@ -1103,8 +1165,10 @@ mod tests {
     fn a_font_draws_its_glyphs() {
         let font = Font::from_bytes(square_font()).unwrap();
         assert_eq!(font.name, "Square");
-        // At 20 pixels an em: an ascent of 16, a descent of 4, and the
-        // square 10 pixels a side, sitting on the baseline.
+        /*
+        At 20 pixels an em: an ascent of 16, a descent of 4, and the
+        square 10 pixels a side, sitting on the baseline.
+        */
         assert_eq!(
             (font.metric(0, 20), font.metric(1, 20), font.metric(2, 20)),
             (16, 4, 20)

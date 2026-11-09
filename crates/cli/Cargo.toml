@@ -14,7 +14,6 @@ path = "src/main.rs"
 [dependencies]
 sayon-target.workspace = true
 sayon-syntax.workspace = true
-sayon-check.workspace = true
 sayon-ir.workspace = true
 sayon-interp.workspace = true
 sayon-codegen.workspace = true

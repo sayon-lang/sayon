@@ -1,8 +1,10 @@
-//! Versions and the ranges dependencies ask for, as semantic versioning has
-//! them: `1.2.3`, with an optional pre-release (`1.2.3-beta.1`), and ranges
-//! such as `^1.2`, `~1.2.3`, `=1.2.3`, `>=1.0, <2.0`, and `*`. A bare
-//! version, `1.2.3`, means `^1.2.3`: that version or any later one that
-//! does not change the first number that is not 0.
+/*!
+Versions and the ranges dependencies ask for, as semantic versioning has
+them: `1.2.3`, with an optional pre-release (`1.2.3-beta.1`), and ranges
+such as `^1.2`, `~1.2.3`, `=1.2.3`, `>=1.0, <2.0`, and `*`. A bare
+version, `1.2.3`, means `^1.2.3`: that version or any later one that
+does not change the first number that is not 0.
+*/
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -12,12 +14,12 @@ pub struct Version {
     pub major: u64,
     pub minor: u64,
     pub patch: u64,
-    /// The pre-release, as `beta.1`; empty for a release.
+    /** The pre-release, as `beta.1`; empty for a release. */
     pub pre: String,
 }
 
 impl Version {
-    /// Reads a whole version, all three numbers written.
+    /** Reads a whole version, all three numbers written. */
     pub fn parse(text: &str) -> Option<Version> {
         let (numbers, pre) = match text.split_once('-') {
             Some((numbers, pre)) => (numbers, pre),
@@ -73,8 +75,10 @@ impl PartialOrd for Version {
 }
 
 impl Ord for Version {
-    /// Semantic versioning's order: a pre-release comes before its release,
-    /// and pre-releases compare identifier by identifier, numbers as numbers.
+    /**
+    Semantic versioning's order: a pre-release comes before its release,
+    and pre-releases compare identifier by identifier, numbers as numbers.
+    */
     fn cmp(&self, other: &Version) -> Ordering {
         self.numbers().cmp(&other.numbers()).then_with(|| {
             match (self.pre.is_empty(), other.pre.is_empty()) {
@@ -119,8 +123,10 @@ enum Operator {
     LessEqual,
 }
 
-/// One part of a range: an operator and a version whose later numbers may
-/// be left out, as `^1.2`.
+/**
+One part of a range: an operator and a version whose later numbers may
+be left out, as `^1.2`.
+*/
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Comparator {
     operator: Operator,
@@ -182,10 +188,10 @@ impl Comparator {
     }
 }
 
-/// A range of versions a dependency accepts.
+/** A range of versions a dependency accepts. */
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Requirement {
-    /// All must match; none for `*`, which every release matches.
+    /** All must match; none for `*`, which every release matches. */
     comparators: Vec<Comparator>,
     text: String,
 }
@@ -213,8 +219,10 @@ impl Requirement {
         })
     }
 
-    /// Whether a version is in the range. A pre-release is only when the
-    /// range names a pre-release of the same three numbers.
+    /**
+    Whether a version is in the range. A pre-release is only when the
+    range names a pre-release of the same three numbers.
+    */
     pub fn matches(&self, version: &Version) -> bool {
         if !version.pre.is_empty()
             && !self.comparators.iter().any(|c| {
@@ -226,11 +234,6 @@ impl Requirement {
             return false;
         }
         self.comparators.iter().all(|c| c.matches(version))
-    }
-
-    /// The latest of `versions` in the range.
-    pub fn best<'v>(&self, versions: impl IntoIterator<Item = &'v Version>) -> Option<&'v Version> {
-        versions.into_iter().filter(|v| self.matches(v)).max()
     }
 }
 
@@ -342,10 +345,5 @@ mod tests {
         assert!(accepts("*", "7.1.0") && !accepts("*", "7.1.0-rc.1"));
         assert!(accepts("=2.0.0-rc.1", "2.0.0-rc.1") && !accepts("^1.0", "1.1.0-beta"));
         assert!(Requirement::parse("one point two").is_err());
-        let versions = [v("1.0.0"), v("1.4.2"), v("2.0.0")];
-        assert_eq!(
-            Requirement::parse("^1").unwrap().best(&versions),
-            Some(&versions[1])
-        );
     }
 }

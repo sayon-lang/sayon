@@ -1,15 +1,17 @@
-//! LLVM IR text generation.
-//!
-//! Each IR function becomes `i32 @sayon.fn.N(ptr %ret, ptr %err, i64 %argc,
-//! params...)`, returning 0 after writing its result through `%ret` or 1
-//! after storing an error through `%err`. A function whose result fits in a
-//! register, and that is no coroutine, is `{ T, ptr } @sayon.fn.N.direct(i64
-//! %argc, params...)` instead, handing back the result and a null error, or
-//! the error, and direct calls call it; `@sayon.fn.N` is then a wrapper with
-//! the usual convention, for calls through function values. Owned
-//! parameters are passed by value; borrowed parameters as pointers. Slots
-//! are stack allocations that start zeroed, so dropping a slot that never
-//! received a value (or whose value moved out) does nothing.
+/*!
+LLVM IR text generation.
+
+Each IR function becomes `i32 @sayon.fn.N(ptr %ret, ptr %err, i64 %argc,
+params...)`, returning 0 after writing its result through `%ret` or 1
+after storing an error through `%err`. A function whose result fits in a
+register, and that is no coroutine, is `{ T, ptr } @sayon.fn.N.direct(i64
+%argc, params...)` instead, handing back the result and a null error, or
+the error, and direct calls call it; `@sayon.fn.N` is then a wrapper with
+the usual convention, for calls through function values. Owned
+parameters are passed by value; borrowed parameters as pointers. Slots
+are stack allocations that start zeroed, so dropping a slot that never
+received a value (or whose value moved out) does nothing.
+*/
 
 use crate::layout::SHARED_HEADER;
 use crate::layout::{
@@ -28,11 +30,11 @@ pub(crate) enum Helper {
     Clone,
     Eq,
     Display,
-    /// Destroys and frees a closure environment block.
+    /** Destroys and frees a closure environment block. */
     EnvDrop,
-    /// Copies a closure environment block, returning the new one.
+    /** Copies a closure environment block, returning the new one. */
     EnvClone,
-    /// A hash of a dictionary key.
+    /** A hash of a dictionary key. */
     Hash,
 }
 
@@ -47,15 +49,17 @@ pub struct Codegen<'m> {
     pub(crate) helper_code: String,
     intrinsics: HashSet<String>,
     function_code: String,
-    /// The `KeyOps` table of each dictionary key type.
+    /** The `KeyOps` table of each dictionary key type. */
     key_ops: HashMap<Type, String>,
-    /// The functions lowered to coroutines, so that their tasks can wait on
-    /// a target without fibers (see `coroutines`).
+    /**
+    The functions lowered to coroutines, so that their tasks can wait on
+    a target without fibers (see `coroutines`).
+    */
     coroutines: HashSet<FunctionId>,
     dialect: crate::Dialect,
 }
 
-/// A function body under construction.
+/** A function body under construction. */
 pub(crate) struct Body {
     pub code: String,
     pub allocas: String,
@@ -98,7 +102,7 @@ impl Body {
         name
     }
 
-    /// Emits a counted loop; `each` receives the current index (an i64 value).
+    /** Emits a counted loop; `each` receives the current index (an i64 value). */
     pub fn counted_loop(&mut self, count: &str, mut each: impl FnMut(&mut Body, &str)) {
         let counter = self.alloca("i64");
         self.line(format!("store i64 0, ptr {counter}"));
@@ -140,7 +144,7 @@ fn escape_bytes(bytes: &[u8]) -> String {
     out
 }
 
-/// An integer constant in the bit pattern of its LLVM type.
+/** An integer constant in the bit pattern of its LLVM type. */
 pub fn int_literal(value: i128, int: IntType) -> String {
     let bits = int.bits();
     let truncated = value & ((1i128 << bits) - 1);
@@ -175,12 +179,14 @@ impl<'m> Codegen<'m> {
         }
     }
 
-    /// The LLVM type of `function`'s result when it hands the result back in
-    /// a register: a result that fits in one, of a function that is no
-    /// coroutine. Such a function's body is `@sayon.fn.N.direct`, which
-    /// returns `{ T, i32 }`, the result and the status, and direct calls
-    /// call it; `@sayon.fn.N` is a wrapper with the usual convention, for
-    /// calls through function values and the like.
+    /**
+    The LLVM type of `function`'s result when it hands the result back in
+    a register: a result that fits in one, of a function that is no
+    coroutine. Such a function's body is `@sayon.fn.N.direct`, which
+    returns `{ T, i32 }`, the result and the status, and direct calls
+    call it; `@sayon.fn.N` is a wrapper with the usual convention, for
+    calls through function values and the like.
+    */
     pub(crate) fn direct_result(&mut self, function: FunctionId) -> Option<String> {
         if self.coroutines.contains(&function) {
             return None;
@@ -194,8 +200,10 @@ impl<'m> Codegen<'m> {
         .then_some(llvm)
     }
 
-    /// The table of helpers a dictionary with keys of type `key` uses:
-    /// `{ size, hash, eq, clone or null, drop or null, display }`.
+    /**
+    The table of helpers a dictionary with keys of type `key` uses:
+    `{ size, hash, eq, clone or null, drop or null, display }`.
+    */
     pub(crate) fn key_ops(&mut self, key: &Type) -> String {
         if let Some(name) = self.key_ops.get(key) {
             return name.clone();
@@ -225,7 +233,7 @@ impl<'m> Codegen<'m> {
         self.layouts.llvm(ty)
     }
 
-    /// A private constant byte array; returns its global name.
+    /** A private constant byte array; returns its global name. */
     pub(crate) fn bytes(&mut self, bytes: &[u8]) -> String {
         if let Some(name) = self.constants.get(bytes) {
             return name.clone();
@@ -247,7 +255,7 @@ impl<'m> Codegen<'m> {
         self.bytes(&bytes)
     }
 
-    /// A static string value: the body of a `%sayon.str` constant.
+    /** A static string value: the body of a `%sayon.str` constant. */
     pub(crate) fn str_constant(&mut self, text: &str) -> String {
         if text.is_empty() {
             return "{ ptr null, i64 0, i64 0 }".to_string();
@@ -267,7 +275,7 @@ impl<'m> Codegen<'m> {
         self.intrinsics.insert(declaration);
     }
 
-    /// The name of a per-type helper function, generating it on first use.
+    /** The name of a per-type helper function, generating it on first use. */
     pub(crate) fn helper(&mut self, kind: Helper, ty: &Type) -> String {
         if let Some(name) = self.helpers.get(&(kind, ty.clone())) {
             return name.clone();
@@ -339,7 +347,7 @@ impl<'m> Codegen<'m> {
                 self.dialect,
             ));
         }
-        // Each C function once, whichever declarations name it.
+        /* Each C function once, whichever declarations name it. */
         let mut declared = HashSet::new();
         for function in &module.foreign {
             if !declared.insert(function.name.as_str()) {
@@ -371,10 +379,12 @@ impl<'m> Codegen<'m> {
         out
     }
 
-    /// For each parameter of a C function that is a function, the function
-    /// C calls: it calls the Sayon function value given for the parameter
-    /// in the newest call of the C function, and keeps its error, if it
-    /// fails, for that call to raise.
+    /**
+    For each parameter of a C function that is a function, the function
+    C calls: it calls the Sayon function value given for the parameter
+    in the newest call of the C function, and keeps its error, if it
+    fails, for that call to raise.
+    */
     fn callback_entries(&self) -> String {
         let mut code = String::new();
         for (index, function) in self.module.foreign.iter().enumerate() {
@@ -447,7 +457,7 @@ impl<'m> Codegen<'m> {
         code
     }
 
-    /// Destroys every module constant, in reverse initialization order.
+    /** Destroys every module constant, in reverse initialization order. */
     fn release_globals(&mut self) -> String {
         let module = self.module;
         let mut code = String::new();
@@ -461,8 +471,10 @@ impl<'m> Codegen<'m> {
         code
     }
 
-    /// In `main`, after calling `function`: when it is a coroutine that
-    /// stopped to wait, the tasks run until it finishes. Gives its status.
+    /**
+    In `main`, after calling `function`: when it is a coroutine that
+    stopped to wait, the tasks run until it finishes. Gives its status.
+    */
     fn main_await(&self, body: &mut Body, function: FunctionId, status: String) -> String {
         if !self.coroutines.contains(&function) {
             return status;
@@ -479,9 +491,11 @@ impl<'m> Codegen<'m> {
         body.line(format!("{finished} = call i32 @sayon_tasks_wait_main()"));
         body.line(format!("store i32 {finished}, ptr {result}"));
         if self.module.target.platform == "web" {
-            // While every task sleeps or waits for a response, `main`
-            // stops and the browser waits, then resumes it to run the tasks
-            // on.
+            /*
+            While every task sleeps or waits for a response, `main`
+            stops and the browser waits, then resumes it to run the tasks
+            on.
+            */
             let sleeping = body.tmp();
             body.line(format!("{sleeping} = icmp eq i32 {finished}, 2"));
             let host = body.label("host");
@@ -511,9 +525,11 @@ impl<'m> Codegen<'m> {
         final_status
     }
 
-    /// Ends `main` with the exit status `code`: returns it, or in a web page
-    /// leaves it for `sayon_run` to give the browser, since there `main` may
-    /// be a coroutine, whose own status says only whether it finished.
+    /**
+    Ends `main` with the exit status `code`: returns it, or in a web page
+    leaves it for `sayon_run` to give the browser, since there `main` may
+    be a coroutine, whose own status says only whether it finished.
+    */
     fn main_exit(&self, body: &mut Body, code: &str) {
         if self.module.target.platform != "web" {
             body.line(format!("ret i32 {code}"));
@@ -563,9 +579,11 @@ impl<'m> Codegen<'m> {
         body.line(format!("br i1 {ok}, label %finished, label %{failed}"));
         body.start("finished");
         let release_globals = self.release_globals();
-        // Tasks still running are cancelled and cleaned up first; a task's
-        // `os.exit`, or one that failed unjoined, decides the status. A
-        // program that can have no tasks skips this (see `uses_tasks`).
+        /*
+        Tasks still running are cancelled and cleaned up first; a task's
+        `os.exit`, or one that failed unjoined, decides the status. A
+        program that can have no tasks skips this (see `uses_tasks`).
+        */
         let has_tasks = crate::coroutines::uses_tasks(module);
         let tasks = body.tmp();
         if has_tasks {
@@ -606,8 +624,10 @@ impl<'m> Codegen<'m> {
             self.main_exit(&mut body, "0");
         }
         body.start(failed);
-        // The tasks stop first, so their cleanup comes before the report;
-        // a task's `os.exit` replaces it.
+        /*
+        The tasks stop first, so their cleanup comes before the report;
+        a task's `os.exit` replaces it.
+        */
         let tasks = body.tmp();
         if has_tasks {
             body.line(format!("{tasks} = call i32 @sayon_tasks_finish(i1 true)"));
@@ -635,8 +655,10 @@ impl<'m> Codegen<'m> {
         if module.target.platform == "web" {
             return self.web_main(&body);
         }
-        // WASI's C library starts the program by calling the name C
-        // compilers give a `main` that takes its arguments.
+        /*
+        WASI's C library starts the program by calling the name C
+        compilers give a `main` that takes its arguments.
+        */
         let name = if module.target.platform == "wasi" {
             "__main_argc_argv"
         } else {
@@ -648,9 +670,11 @@ impl<'m> Codegen<'m> {
         )
     }
 
-    /// A web page's program: `@sayon.main`, a coroutine when its tasks can
-    /// wait, and `sayon_run`, which the page's glue calls (see
-    /// `coroutines::WEB_ENTRY`).
+    /**
+    A web page's program: `@sayon.main`, a coroutine when its tasks can
+    wait, and `sayon_run`, which the page's glue calls (see
+    `coroutines::WEB_ENTRY`).
+    */
     fn web_main(&self, body: &Body) -> String {
         let main = if self.coroutines.is_empty() {
             format!(
@@ -674,32 +698,38 @@ pub(crate) struct FnEmit<'c, 'm> {
     pub cg: &'c mut Codegen<'m>,
     f: &'m Function,
     pub body: Body,
-    /// Owned temporaries to destroy once the current instruction completes.
+    /** Owned temporaries to destroy once the current instruction completes. */
     after: Vec<(String, Type)>,
-    /// Whether the function is lowered to a coroutine.
+    /** Whether the function is lowered to a coroutine. */
     coroutine: bool,
-    /// The LLVM type of the result, when the function hands it back in a
-    /// register with its status (`Codegen::direct_result`). The body then
-    /// keeps the result in a local `%ret` until it returns.
+    /**
+    The LLVM type of the result, when the function hands it back in a
+    register with its status (`Codegen::direct_result`). The body then
+    keeps the result in a local `%ret` until it returns.
+    */
     direct: Option<String>,
-    /// The function's calls that report a failed check, emitted after its
-    /// blocks.
+    /**
+    The function's calls that report a failed check, emitted after its
+    blocks.
+    */
     reports: Vec<Report>,
 }
 
-/// One call of a runtime function that sets the error for a failed check,
-/// shared by every check in the function that fails the same way into the
-/// same error block. Each check comes from a block of its own with its own
-/// values, which phi nodes gather. A function with many checks then has one
-/// call where it had one per check, and stays small enough for LLVM to
-/// inline.
+/**
+One call of a runtime function that sets the error for a failed check,
+shared by every check in the function that fails the same way into the
+same error block. Each check comes from a block of its own with its own
+values, which phi nodes gather. A function with many checks then has one
+call where it had one per check, and stays small enough for LLVM to
+inline.
+*/
 struct Report {
     label: String,
     callee: &'static str,
-    /// The types of the arguments after the error slot.
+    /** The types of the arguments after the error slot. */
     types: &'static [&'static str],
     error: BlockId,
-    /// The block each check comes from, and its arguments.
+    /** The block each check comes from, and its arguments. */
     incoming: Vec<(String, Vec<String>)>,
 }
 
@@ -733,26 +763,32 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             params.insert(0, "ptr %ret".to_string());
             params.insert(1, "ptr %err".to_string());
         }
-        // The arguments the wrapper of a direct function passes on: each
-        // parameter as it came.
+        /*
+        The arguments the wrapper of a direct function passes on: each
+        parameter as it came.
+        */
         let mut passed = vec!["i64 %argc".to_string()];
         for (position, slot) in f.params.iter().enumerate() {
             let definition = f.slot(*slot);
             let environment = definition.name.as_deref() == Some("<environment>");
             let llvm = match definition.kind {
-                // An `update` parameter borrows its place exclusively: the
-                // checker lets nothing else reach it while the call lasts,
-                // so LLVM may keep what it read from it. A closure's
-                // environment and a coroutine, which outlives its first
-                // call, are left as they are.
+                /*
+                An `update` parameter borrows its place exclusively: the
+                checker lets nothing else reach it while the call lasts,
+                so LLVM may keep what it read from it. A closure's
+                environment and a coroutine, which outlives its first
+                call, are left as they are.
+                */
                 SlotKind::Ref { mutable: true } if !self.coroutine && !environment => {
                     "ptr noalias".to_string()
                 }
-                // A read-only parameter borrows its place shared: nothing
-                // can change it while the call lasts, so LLVM may keep what
-                // it read from it too, such as an array's length across a
-                // store into another array. A cell is the exception, since
-                // it changes even through a read-only path.
+                /*
+                A read-only parameter borrows its place shared: nothing
+                can change it while the call lasts, so LLVM may keep what
+                it read from it too, such as an array's length across a
+                store into another array. A cell is the exception, since
+                it changes even through a read-only path.
+                */
                 SlotKind::Ref { mutable: false }
                     if !self.coroutine
                         && !environment
@@ -763,11 +799,13 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 SlotKind::Ref { .. } => "ptr".to_string(),
                 SlotKind::Value => self.cg.llvm(&definition.ty),
             };
-            // The place a parameter refers to holds a whole value, aligned for
-            // its type, for as long as the call lasts, so LLVM may read it
-            // before it must, such as an array's length and data, ahead of a
-            // loop. A parameter with a default is left out: a caller that
-            // omits it passes null.
+            /*
+            The place a parameter refers to holds a whole value, aligned for
+            its type, for as long as the call lasts, so LLVM may read it
+            before it must, such as an array's length and data, ahead of a
+            loop. A parameter with a default is left out: a caller that
+            omits it passes null.
+            */
             let llvm = if matches!(definition.kind, SlotKind::Ref { .. })
                 && !environment
                 && position < f.required_params
@@ -781,11 +819,13 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             } else {
                 llvm
             };
-            // Nothing keeps the address of a place a parameter refers to past
-            // the call: a closure takes over what it captures instead of
-            // referring to it, and no function gives out a place's address.
-            // A coroutine's frame keeps its parameters while it waits, so it
-            // is left out.
+            /*
+            Nothing keeps the address of a place a parameter refers to past
+            the call: a closure takes over what it captures instead of
+            referring to it, and no function gives out a place's address.
+            A coroutine's frame keeps its parameters while it waits, so it
+            is left out.
+            */
             let llvm = if matches!(definition.kind, SlotKind::Ref { .. })
                 && !environment
                 && !self.coroutine
@@ -839,9 +879,11 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         }
         self.emit_reports();
         if let Some(llvm) = &self.direct {
-            // The body hands back `{ result, error }`; the wrapper keeps the
-            // usual convention, storing the result on success and the
-            // error on failure.
+            /*
+            The body hands back `{ result, error }`; the wrapper keeps the
+            usual convention, storing the result on success and the
+            error on failure.
+            */
             let mut wrapper_params = vec!["ptr %ret".to_string(), "ptr %err".to_string()];
             wrapper_params.extend(params.iter().cloned());
             return format!(
@@ -864,9 +906,11 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 self.body.code
             );
         }
-        // The allocas stay in the entry block, where LLVM decides which live
-        // across a suspension and so go in the frame; what initializes them
-        // comes once the frame has begun.
+        /*
+        The allocas stay in the entry block, where LLVM decides which live
+        across a suspension and so go in the frame; what initializes them
+        comes once the frame has begun.
+        */
         let (allocas, stores): (Vec<&str>, Vec<&str>) = self
             .body
             .allocas
@@ -884,8 +928,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         )
     }
 
-    /// Ends the function with `status`: returns it, or for a coroutine,
-    /// leaves it for the frame's end.
+    /**
+    Ends the function with `status`: returns it, or for a coroutine,
+    leaves it for the frame's end.
+    */
     fn finish(&mut self, status: &str) {
         if self.coroutine {
             self.body
@@ -896,10 +942,15 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         }
     }
 
-    /// Returns from a function that hands back `{ result, error }`: the
-    /// result with a null error, or the error.
+    /**
+    Returns from a function that hands back `{ result, error }`: the
+    result with a null error, or the error.
+    */
     fn give_back(&mut self, value: &str, error: &str) {
-        let llvm = self.direct.clone().expect("a function that returns directly");
+        let llvm = self
+            .direct
+            .clone()
+            .expect("a function that returns directly");
         let first = self.body.tmp();
         self.body.line(format!(
             "{first} = insertvalue {{ {llvm}, ptr }} poison, {llvm} {value}, 0"
@@ -911,7 +962,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         self.body.line(format!("ret {{ {llvm}, ptr }} {both}"));
     }
 
-    /// Whether an operation's call can stop to wait, in a coroutine.
+    /** Whether an operation's call can stop to wait, in a coroutine. */
     fn suspends(&self, op: &Op) -> bool {
         self.coroutine
             && match op {
@@ -921,9 +972,11 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             }
     }
 
-    /// After a call that can stop to wait: while its status is 2, suspends
-    /// and, on each resume, resumes the frame it left (or calls the waiting
-    /// operation again). Gives the final status.
+    /**
+    After a call that can stop to wait: while its status is 2, suspends
+    and, on each resume, resumes the frame it left (or calls the waiting
+    operation again). Gives the final status.
+    */
     fn await_status(&mut self, status: &str) -> String {
         let result = self.body.alloca("i32");
         self.body.line(format!("store i32 {status}, ptr {result}"));
@@ -966,7 +1019,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         final_status
     }
 
-    // ----- places and operands ----------------------------------------------------
+    /* ----- places and operands ---------------------------------------------------- */
 
     pub fn place_type(&self, place: &Place) -> Type {
         let mut ty = match &place.base {
@@ -979,7 +1032,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         ty
     }
 
-    /// A pointer to the place, following reference slots.
+    /** A pointer to the place, following reference slots. */
     pub fn place_ptr(&mut self, place: &Place) -> (String, Type) {
         let (mut pointer, mut ty) = match &place.base {
             Base::Slot(slot) => {
@@ -1087,7 +1140,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         (pointer, ty)
     }
 
-    /// `pointer + offset` bytes.
+    /** `pointer + offset` bytes. */
     fn offset_pointer(&mut self, pointer: &str, offset: u64) -> String {
         if offset == 0 {
             return pointer.to_string();
@@ -1149,7 +1202,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         }
     }
 
-    /// Clears the source of a move: the whole union when moving a payload.
+    /** Clears the source of a move: the whole union when moving a payload. */
     fn clear_moved(&mut self, place: &Place) {
         let target = match place.projection.last() {
             Some(Projection::Payload(_)) => Place {
@@ -1164,7 +1217,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             .line(format!("store {llvm} zeroinitializer, ptr {pointer}"));
     }
 
-    /// Loads an operand's value: (LLVM type, value, Sayon type).
+    /** Loads an operand's value: (LLVM type, value, Sayon type). */
     pub fn value(&mut self, operand: &Operand) -> (String, String, Type) {
         match operand {
             Operand::Const(constant) => self.const_value(constant),
@@ -1186,8 +1239,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         }
     }
 
-    /// A pointer to an operand's value for reading. Moved values are taken
-    /// into a temporary that is destroyed after the current instruction.
+    /**
+    A pointer to an operand's value for reading. Moved values are taken
+    into a temporary that is destroyed after the current instruction.
+    */
     pub fn pointer(&mut self, operand: &Operand) -> (String, Type) {
         match operand {
             Operand::Borrow { place, .. } | Operand::Copy(place) => self.place_ptr(place),
@@ -1217,7 +1272,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         }
     }
 
-    /// Stores an operand into `dest`, converting between union shapes.
+    /** Stores an operand into `dest`, converting between union shapes. */
     fn store_operand(&mut self, operand: &Operand, dest: &str, dest_ty: &Type) {
         let source_ty = self.operand_type(operand);
         if source_ty == *dest_ty
@@ -1227,7 +1282,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             self.body.line(format!("store {llvm} {value}, ptr {dest}"));
             return;
         }
-        // Unions share tags and the payload offset; copy the common prefix.
+        /* Unions share tags and the payload offset; copy the common prefix. */
         let dest_llvm = self.cg.llvm(dest_ty);
         self.body
             .line(format!("store {dest_llvm} zeroinitializer, ptr {dest}"));
@@ -1249,7 +1304,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         }
     }
 
-    // ----- instructions --------------------------------------------------------------------
+    /* ----- instructions -------------------------------------------------------------------- */
 
     fn inst(&mut self, inst: &Inst) {
         match inst {
@@ -1275,7 +1330,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     panic!("push onto {ty}")
                 };
                 let size = self.cg.layouts.size_of(&element);
-                // The runtime is called only when the array is full.
+                /* The runtime is called only when the array is full. */
                 let length_ptr = self.body.tmp();
                 self.body.line(format!("{length_ptr} = getelementptr inbounds %sayon.array, ptr {pointer}, i32 0, i32 1"));
                 let length = self.body.tmp();
@@ -1397,8 +1452,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 self.body.line(format!("store i1 {result}, ptr {dest}"));
             }
             Rvalue::Format(parts) => {
-                // Room for the text around the values, and a few bytes for
-                // each value.
+                /*
+                Room for the text around the values, and a few bytes for
+                each value.
+                */
                 let guess: usize = parts
                     .iter()
                     .map(|part| match part {
@@ -1589,7 +1646,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     Type::String => self.body.line(format!(
                         "{result} = call i64 @sayon_str_chars(ptr {pointer})"
                     )),
-                    // A view's length is where an array's is.
+                    /* A view's length is where an array's is. */
                     Type::Array(_) | Type::View(..) => {
                         let field = self.body.tmp();
                         self.body.line(format!("{field} = getelementptr inbounds %sayon.array, ptr {pointer}, i32 0, i32 1"));
@@ -1608,17 +1665,20 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             Rvalue::DictSlots(value) => {
                 let (pointer, _) = self.pointer(value);
                 let handle = self.body.tmp();
-                self.body.line(format!("{handle} = load ptr, ptr {pointer}"));
-                let result = self.body.tmp();
                 self.body
-                    .line(format!("{result} = call i64 @sayon_dict_slots(ptr {handle})"));
+                    .line(format!("{handle} = load ptr, ptr {pointer}"));
+                let result = self.body.tmp();
+                self.body.line(format!(
+                    "{result} = call i64 @sayon_dict_slots(ptr {handle})"
+                ));
                 self.body.line(format!("store i64 {result}, ptr {dest}"));
             }
             Rvalue::DictNext { dict, index } => {
                 let (pointer, _) = self.pointer(dict);
                 let (_, position, _) = self.value(index);
                 let handle = self.body.tmp();
-                self.body.line(format!("{handle} = load ptr, ptr {pointer}"));
+                self.body
+                    .line(format!("{handle} = load ptr, ptr {pointer}"));
                 let result = self.body.tmp();
                 self.body.line(format!(
                     "{result} = call i64 @sayon_dict_next(ptr {handle}, i64 {position})"
@@ -1655,7 +1715,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 self.body.line(format!("store ptr {block}, ptr {dest}"));
             }
             Rvalue::MakeMutex { value, ty } => {
-                // The mutex takes the value over.
+                /* The mutex takes the value over. */
                 let llvm = self.cg.llvm(ty);
                 let temp = self.body.alloca(&llvm);
                 self.store_operand(value, &temp, ty);
@@ -1708,9 +1768,11 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 value,
                 ty: Type::View(element, _),
             } => {
-                // An array of copies of the viewed elements: the view has
-                // the first two fields of an array, so copying it into an
-                // array and cloning that array copies the elements.
+                /*
+                An array of copies of the viewed elements: the view has
+                the first two fields of an array, so copying it into an
+                array and cloning that array copies the elements.
+                */
                 let (pointer, _) = self.pointer(value);
                 let array = self.body.alloca("%sayon.array");
                 self.body
@@ -1931,7 +1993,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         self.body.start(&done);
     }
 
-    /// Allocates a closure environment holding the captured values.
+    /** Allocates a closure environment holding the captured values. */
     fn make_environment(&mut self, env: &Type, captures: &[Operand]) -> String {
         let Type::Named(named) = env else {
             panic!("environment of type {env}")
@@ -2051,7 +2113,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         result
     }
 
-    // ----- terminators ---------------------------------------------------------------------------
+    /* ----- terminators --------------------------------------------------------------------------- */
 
     fn terminator(&mut self, term: &Terminator) {
         match term {
@@ -2085,10 +2147,12 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             Terminator::ReturnError => {
                 let value = self.body.tmp();
                 if self.direct.is_some() {
-                    // The slot holds the error that sent the function here,
-                    // never null. Saying so lets LLVM see, once it inlines
-                    // the function, that this path fails, so the caller's
-                    // own path on success keeps what it knew.
+                    /*
+                    The slot holds the error that sent the function here,
+                    never null. Saying so lets LLVM see, once it inlines
+                    the function, that this path fails, so the caller's
+                    own path on success keeps what it knew.
+                    */
                     self.body.line(format!(
                         "{value} = load ptr, ptr {}, !nonnull !{{}}",
                         self.error_slot()
@@ -2110,7 +2174,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 span,
             } => {
                 let mut status = self.op(op, dest.as_ref(), *span, *error);
-                // What the call uses stays until it no longer waits.
+                /* What the call uses stays until it no longer waits. */
                 if let Some(first) = status.clone()
                     && self.suspends(op)
                 {
@@ -2132,13 +2196,15 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         }
     }
 
-    /// Emits a failing operation and returns its status value (0 on success),
-    /// or `None` when it branched to the error block itself.
+    /**
+    Emits a failing operation and returns its status value (0 on success),
+    or `None` when it branched to the error block itself.
+    */
     fn op(&mut self, op: &Op, dest: Option<&Place>, span: Span, error: BlockId) -> Option<String> {
         let err = self.error_slot();
         match op {
             Op::Spawn { body, result } => {
-                // The task takes the function value over.
+                /* The task takes the function value over. */
                 let (llvm, value, _) = self.value(body);
                 let function = self.body.alloca(&llvm);
                 self.body
@@ -2159,7 +2225,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 Some("0".to_string())
             }
             Op::SpawnParallel { body, result } => {
-                // The task takes the function value over.
+                /* The task takes the function value over. */
                 let (llvm, value, _) = self.value(body);
                 let function = self.body.alloca(&llvm);
                 self.body
@@ -2340,10 +2406,12 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     }
                 }
                 if let Some(llvm) = self.cg.direct_result(*function) {
-                    // The result and the error come back in registers. The
-                    // result goes to its place on success, and the error to
-                    // this function's error slot on failure, where the
-                    // callee would have stored them.
+                    /*
+                    The result and the error come back in registers. The
+                    result goes to its place on success, and the error to
+                    this function's error slot on failure, where the
+                    callee would have stored them.
+                    */
                     let target = dest.map(|place| self.place_ptr(place).0);
                     let mut all = vec![format!("i64 {}", args.len())];
                     all.extend(values);
@@ -2354,29 +2422,35 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                         all.join(", ")
                     ));
                     let error = self.body.tmp();
-                    self.body
-                        .line(format!("{error} = extractvalue {{ {llvm}, ptr }} {both}, 1"));
+                    self.body.line(format!(
+                        "{error} = extractvalue {{ {llvm}, ptr }} {both}, 1"
+                    ));
                     let failed = self.body.tmp();
-                    self.body.line(format!("{failed} = icmp ne ptr {error}, null"));
+                    self.body
+                        .line(format!("{failed} = icmp ne ptr {error}, null"));
                     let failure = self.body.label("failure");
                     let returned = self.body.label("returned");
                     let called = self.body.label("called");
-                    self.body
-                        .line(format!("br i1 {failed}, label %{failure}, label %{returned}"));
+                    self.body.line(format!(
+                        "br i1 {failed}, label %{failure}, label %{returned}"
+                    ));
                     self.body.start(&failure);
                     self.body.line(format!("store ptr {error}, ptr {err}"));
                     self.body.line(format!("br label %{called}"));
                     self.body.start(&returned);
                     if let Some(target) = target {
                         let value = self.body.tmp();
+                        self.body.line(format!(
+                            "{value} = extractvalue {{ {llvm}, ptr }} {both}, 0"
+                        ));
                         self.body
-                            .line(format!("{value} = extractvalue {{ {llvm}, ptr }} {both}, 0"));
-                        self.body.line(format!("store {llvm} {value}, ptr {target}"));
+                            .line(format!("store {llvm} {value}, ptr {target}"));
                     }
                     self.body.line(format!("br label %{called}"));
                     self.body.start(&called);
                     let status = self.body.tmp();
-                    self.body.line(format!("{status} = zext i1 {failed} to i32"));
+                    self.body
+                        .line(format!("{status} = zext i1 {failed} to i32"));
                     return Some(status);
                 }
                 let ret_pointer = match dest {
@@ -2410,8 +2484,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 let field = self.offset_pointer(&pointer, self.cg.layouts.environment_offset());
                 let block = self.body.tmp();
                 self.body.line(format!("{block} = load ptr, ptr {field}"));
-                // A named function's value has no environment; its code
-                // never reads the pointer.
+                /*
+                A named function's value has no environment; its code
+                never reads the pointer.
+                */
                 let environment = self.body.tmp();
                 self.body.line(format!(
                     "{environment} = getelementptr i8, ptr {block}, i64 16"
@@ -2495,7 +2571,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 let (pointer, _) = self.pointer(array);
                 let length = self.array_length(&pointer);
                 let (_, position, _) = self.value(index);
-                // Compared without sign, a negative position is past the end.
+                /* Compared without sign, a negative position is past the end. */
                 let inside = self.body.tmp();
                 self.body
                     .line(format!("{inside} = icmp ult i64 {position}, {length}"));
@@ -2516,13 +2592,13 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             }
             Op::MakeView { base, start, end } => {
                 let (pointer, ty) = self.place_ptr(base);
-                // A string starts like an array of its UTF-8 bytes.
+                /* A string starts like an array of its UTF-8 bytes. */
                 let element = match &ty {
                     Type::Array(element) | Type::View(element, _) => (**element).clone(),
                     Type::String => Type::Int(IntType::U8),
                     other => panic!("view of {other}"),
                 };
-                // A string's text can lie inside it (see `string_parts`).
+                /* A string's text can lie inside it (see `string_parts`). */
                 let (data, length) = if ty == Type::String {
                     self.string_parts(&pointer)
                 } else {
@@ -2542,8 +2618,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     Some(end) => self.value(end).1,
                     None => length.clone(),
                 };
-                // 0 <= start <= end <= length; compared without sign, an end
-                // within the length is not negative.
+                /*
+                0 <= start <= end <= length; compared without sign, an end
+                within the length is not negative.
+                */
                 let from_zero = self.body.tmp();
                 self.body
                     .line(format!("{from_zero} = icmp sge i64 {start}, 0"));
@@ -2595,8 +2673,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 self.body
                     .line(format!("{length} = load i64, ptr {length_field}"));
                 let (_, count, _) = self.value(count);
-                // 0 <= count <= length. On failure the view is left as it
-                // was.
+                /*
+                0 <= count <= length. On failure the view is left as it
+                was.
+                */
                 let inside = self.body.tmp();
                 self.body
                     .line(format!("{inside} = icmp ule i64 {count}, {length}"));
@@ -2650,9 +2730,11 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 let inside = self.body.tmp();
                 self.body
                     .line(format!("{inside} = and i1 {first_inside}, {second_inside}"));
-                // The position outside: the first one if both are. The array
-                // itself is not passed on, so that LLVM knows nothing keeps
-                // its address and may read its length once, ahead of a loop.
+                /*
+                The position outside: the first one if both are. The array
+                itself is not passed on, so that LLVM knows nothing keeps
+                its address and may read its length once, ahead of a loop.
+                */
                 let position = self.body.tmp();
                 self.body.line(format!(
                     "{position} = select i1 {first_inside}, i64 {second}, i64 {first}"
@@ -2665,8 +2747,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     vec![position, length.clone(), location],
                     error,
                 );
-                // Each element is read before either is written, so a
-                // position swapped with itself keeps its element.
+                /*
+                Each element is read before either is written, so a
+                position swapped with itself keeps its element.
+                */
                 let element_llvm = self.cg.llvm(&element);
                 let data = self.body.tmp();
                 self.body.line(format!("{data} = load ptr, ptr {pointer}"));
@@ -2720,7 +2804,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 let inside = self.body.tmp();
                 self.body
                     .line(format!("{inside} = and i1 {first_inside}, {second_inside}"));
-                // The position outside its array: the first one's if both are.
+                /* The position outside its array: the first one's if both are. */
                 let position = self.body.tmp();
                 self.body.line(format!(
                     "{position} = select i1 {first_inside}, i64 {second}, i64 {first}"
@@ -3002,8 +3086,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     self.body.line(format!("store ptr {pointer}, ptr {entry}"));
                 }
                 let location = self.cg.location(span);
-                // Each primitive has an entry of its own, so that a program
-                // links only those it calls.
+                /*
+                Each primitive has an entry of its own, so that a program
+                links only those it calls.
+                */
                 let entry = format!("sayon_host_{}", function.name());
                 self.cg
                     .intrinsic(format!("declare i32 @{entry}(ptr, ptr, ptr, ptr, ptr)"));
@@ -3092,7 +3178,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     return Some(status);
                 }
                 let plan = c_plan(&self.cg.module.types, declaration, target);
-                // The function values C can call back, by parameter.
+                /* The function values C can call back, by parameter. */
                 let callbacks = args.iter().any(|(_, ty)| matches!(ty, Type::Function(_)));
                 let frame = if callbacks {
                     let frame = self.body.alloca(&format!("[{} x ptr]", args.len()));
@@ -3115,7 +3201,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     None
                 };
                 let mut values = Vec::new();
-                // Where C writes a structure it gives back by address.
+                /* Where C writes a structure it gives back by address. */
                 let written = if let CPass::Address = plan.ret {
                     let target = match dest {
                         Some(place) => self.place_ptr(place).0,
@@ -3151,7 +3237,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                             format!("i{bits} {bytes}")
                         }
                         CPass::Address | CPass::Stack => {
-                            // C may change its copy.
+                            /* C may change its copy. */
                             let (llvm, value, _) = self.value(operand);
                             let copy = self.body.alloca(&llvm);
                             self.body.line(format!("store {llvm} {value}, ptr {copy}"));
@@ -3224,8 +3310,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     if let Some(place) = dest {
                         let (target, _) = self.place_ptr(place);
                         match &plan.ret {
-                            // Through a copy as large as the value, of which
-                            // the structure takes its size.
+                            /*
+                            Through a copy as large as the value, of which
+                            the structure takes its size.
+                            */
                             CPass::Coerced(..) => {
                                 let (size, _) = sayon_check::types::c_size_align(
                                     &self.cg.module.types,
@@ -3241,7 +3329,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                                     "call void @llvm.memcpy.p0.p0.i64(ptr {target}, ptr {padded}, i64 {size}, i1 false)"
                                 ));
                             }
-                            // Each eightbyte where it lies in the structure.
+                            /* Each eightbyte where it lies in the structure. */
                             CPass::Pieces(pieces) if pieces.len() > 1 => {
                                 for (index, (offset, llvm)) in pieces.iter().enumerate() {
                                     let piece = self.body.tmp();
@@ -3259,8 +3347,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                         }
                     }
                 }
-                // What C prints comes out in order with what the program
-                // prints.
+                /*
+                What C prints comes out in order with what the program
+                prints.
+                */
                 if library == "c" {
                     self.body.line("call i32 (ptr) @fflush(ptr null)");
                 }
@@ -3268,7 +3358,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 if frame.is_none() {
                     return Some("0".to_string());
                 }
-                // A function C called may have failed.
+                /* A function C called may have failed. */
                 let status = self.body.tmp();
                 self.body.line(format!(
                     "{status} = call i32 @sayon_callbacks_leave(ptr {err})"
@@ -3308,8 +3398,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         }
     }
 
-    /// The address `offset` bytes after a pointer; fails, branching to
-    /// `error`, for `null_pointer`.
+    /**
+    The address `offset` bytes after a pointer; fails, branching to
+    `error`, for `null_pointer`.
+    */
     fn raw_address(
         &mut self,
         address: &Operand,
@@ -3424,7 +3516,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 );
                 self.body.start(&ok);
                 if ty.signed() {
-                    // MIN / -1 overflows; MIN % -1 is 0.
+                    /* MIN / -1 overflows; MIN % -1 is 0. */
                     let minimum = match ty.bits() {
                         8 => i8::MIN as i64,
                         16 => i16::MIN as i64,
@@ -3476,11 +3568,13 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         "0".to_string()
     }
 
-    /// Goes on when `holds` is true. Otherwise a cold block destroys what the
-    /// instruction made so far and goes to the function's call of `callee`
-    /// with `values` (see [`Report`]), which sets the error and goes on to
-    /// the error block. The check itself stays in the function, where LLVM
-    /// can see through it, hoist it out of a loop, or prove it always holds.
+    /**
+    Goes on when `holds` is true. Otherwise a cold block destroys what the
+    instruction made so far and goes to the function's call of `callee`
+    with `values` (see [`Report`]), which sets the error and goes on to
+    the error block. The check itself stays in the function, where LLVM
+    can see through it, hoist it out of a loop, or prove it always holds.
+    */
     fn check(
         &mut self,
         holds: &str,
@@ -3508,8 +3602,10 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         self.body.start(&ok);
     }
 
-    /// Ends the block `from`, where a check failed, by going to the
-    /// function's call of `callee` with `values` (see [`Report`]).
+    /**
+    Ends the block `from`, where a check failed, by going to the
+    function's call of `callee` with `values` (see [`Report`]).
+    */
     fn report(
         &mut self,
         from: &str,
@@ -3542,7 +3638,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         self.body.line(line);
     }
 
-    /// The blocks of the function's [`Report`]s.
+    /** The blocks of the function's [`Report`]s. */
     fn emit_reports(&mut self) {
         let err = self.error_slot();
         for report in std::mem::take(&mut self.reports) {
@@ -3569,11 +3665,13 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         }
     }
 
-    /// A primitive of `standard/strings` that the runtime has a function of
-    /// its own for, which reads and writes Sayon's strings and arrays where
-    /// they are instead of gathering them into values first. The searches
-    /// only read, which LLVM is told, so it can drop a repeated one. `None`
-    /// for other primitives.
+    /**
+    A primitive of `standard/strings` that the runtime has a function of
+    its own for, which reads and writes Sayon's strings and arrays where
+    they are instead of gathering them into values first. The searches
+    only read, which LLVM is told, so it can drop a repeated one. `None`
+    for other primitives.
+    */
     fn text(
         &mut self,
         function: sayon_runtime::host::Host,
@@ -3643,12 +3741,14 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         }
     }
 
-    /// A primitive of `standard/math`, called without the host call's
-    /// dispatch. Square roots and rounding toward a whole number are LLVM's
-    /// own operations; the others are the runtime's functions, which LLVM
-    /// is told only compute, so it can move or drop them like arithmetic.
-    /// Both give what the interpreter gives: Rust's functions of `f64`, or
-    /// operations exact in IEEE arithmetic. `None` for other primitives.
+    /**
+    A primitive of `standard/math`, called without the host call's
+    dispatch. Square roots and rounding toward a whole number are LLVM's
+    own operations; the others are the runtime's functions, which LLVM
+    is told only compute, so it can move or drop them like arithmetic.
+    Both give what the interpreter gives: Rust's functions of `f64`, or
+    operations exact in IEEE arithmetic. `None` for other primitives.
+    */
     fn math(
         &mut self,
         function: sayon_runtime::host::Host,
@@ -3702,9 +3802,11 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         Some("0".to_string())
     }
 
-    /// Starts a builder in a slot of the function's own, with room for
-    /// `guess` bytes, and gives its address. The runtime's builder is a
-    /// string.
+    /**
+    Starts a builder in a slot of the function's own, with room for
+    `guess` bytes, and gives its address. The runtime's builder is a
+    string.
+    */
     fn start_builder(&mut self, guess: usize) -> String {
         let builder = self.body.alloca("%sayon.str");
         self.body.line(format!(
@@ -3713,11 +3815,13 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         builder
     }
 
-    /// Where the text of the string at `pointer` is, and how many bytes it
-    /// has. On a 64-bit target text of up to 23 bytes lies inside the string
-    /// itself, its length in the string's last byte with the top bit set (see
-    /// the runtime's `SayonStr`); other text, and all text on WebAssembly,
-    /// lies at the string's address, with its length beside it.
+    /**
+    Where the text of the string at `pointer` is, and how many bytes it
+    has. On a 64-bit target text of up to 23 bytes lies inside the string
+    itself, its length in the string's last byte with the top bit set (see
+    the runtime's `SayonStr`); other text, and all text on WebAssembly,
+    lies at the string's address, with its length beside it.
+    */
     fn string_parts(&mut self, pointer: &str) -> (String, String) {
         let data = self.body.tmp();
         self.body.line(format!("{data} = load ptr, ptr {pointer}"));
@@ -3749,7 +3853,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         (where_text, how_long)
     }
 
-    /// The array's length, loaded from its header at `pointer`.
+    /** The array's length, loaded from its header at `pointer`. */
     fn array_length(&mut self, pointer: &str) -> String {
         let field = self.body.tmp();
         self.body.line(format!(
@@ -3909,12 +4013,14 @@ impl<'c, 'm> FnEmit<'c, 'm> {
 
 pub(crate) const MEMCPY: &str = "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)";
 
-/// How many values a range gives, as the runtime's `range_length` counts
-/// them, but where LLVM can inline it and fold a constant step. The count
-/// is taken without overflowing: the distance between the ends fits an
-/// unsigned 64-bit number, and the step's size too, even the smallest
-/// integer's. A step is never 0 once the range is made; the divisor is
-/// kept from 0 all the same.
+/**
+How many values a range gives, as the runtime's `range_length` counts
+them, but where LLVM can inline it and fold a constant step. The count
+is taken without overflowing: the distance between the ends fits an
+unsigned 64-bit number, and the step's size too, even the smallest
+integer's. A step is never 0 once the range is made; the divisor is
+kept from 0 all the same.
+*/
 const RANGE_LENGTH: &str = "
 define internal i64 @sayon.range_length(i64 %start, i64 %end, i64 %step) alwaysinline {
 entry:

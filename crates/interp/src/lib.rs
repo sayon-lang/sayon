@@ -1,12 +1,14 @@
-//! Interpreter for Sayon programs.
-//!
-//! It runs the same checked, ownership-annotated IR the native backend
-//! compiles, so moves, borrows, checked arithmetic, and cleanup behave the
-//! same way in both execution modes.
+/*!
+Interpreter for Sayon programs.
+
+It runs the same checked, ownership-annotated IR the native backend
+compiles, so moves, borrows, checked arithmetic, and cleanup behave the
+same way in both execution modes.
+*/
 
 mod foreign;
 mod machine;
 pub mod value;
 
-pub use machine::{MAX_CALL_DEPTH, Machine, RunError, Sandbox};
-pub use value::{ErrorValue, Value};
+pub use machine::{Machine, RunError, Sandbox};
+pub use value::Value;

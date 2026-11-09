@@ -1,7 +1,9 @@
-# HTTP requests to the server the tests run at 127.0.0.1:47613 (see
-# crates/cli/tests/fixtures.rs): over sockets, or in a web page through the
-# browser's fetch, which lets a page read another site's responses since
-# that server allows it. Each way gives the same responses.
+##
+HTTP requests to the server the tests run at 127.0.0.1:47613 (see
+crates/cli/tests/fixtures.rs): over sockets, or in a web page through the
+browser's fetch, which lets a page read another site's responses since
+that server allows it. Each way gives the same responses.
+##
 network = import("standard/network.sayon")
 strings = import("standard/strings.sayon")
 threads = import("standard/threads.sayon")
@@ -31,8 +33,10 @@ print(length(bytes), bytes[0], bytes[200], bytes[255])
 missing = network.get(base + "/nowhere")
 print(missing.status, missing.reason, missing.text(), missing.succeeded())
 
-# A task waits for its response while the others run: the server answers
-# "/later" two seconds after it was asked.
+##
+A task waits for its response while the others run: the server answers
+"/later" two seconds after it was asked.
+##
 later = base + "/later"
 waiting = threads.spawn(function() -> string
     return network.get(later).text()

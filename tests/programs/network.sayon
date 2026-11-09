@@ -26,8 +26,10 @@ print(client.read_line())
 client.close()
 threads.join(echo)
 
-# Bytes sent in parts arrive whole with `read_exactly`, or fewer once the
-# other side finishes sending.
+##
+Bytes sent in parts arrive whole with `read_exactly`, or fewer once the
+other side finishes sending.
+##
 gatherer = network.listen("127.0.0.1", 0)
 gathering = gatherer.address().port
 gathered = threads.spawn(function() -> string
@@ -46,8 +48,10 @@ parts.finish_sending()
 print(threads.join(gathered))
 parts.close()
 
-# A connection a task captured closes as the task finishes, while every
-# other task waits: the other side reads to its end at once.
+##
+A connection a task captured closes as the task finishes, while every
+other task waits: the other side reads to its end at once.
+##
 closer = network.listen("127.0.0.1", 0)
 reader = network.connect("127.0.0.1", closer.address().port)
 reader.set_timeout(time.seconds(5))

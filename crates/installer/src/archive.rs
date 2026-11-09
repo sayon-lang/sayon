@@ -1,14 +1,16 @@
-//! Reading the zip archive embedded in the installer: the central
-//! directory, DEFLATE decompression (RFC 1951), and CRC-32 checks.
-//!
-//! Only what the release archives use is supported: stored and deflated
-//! entries, no encryption, no ZIP64. Entry names are checked so that none
-//! can escape the installation directory.
+/*!
+Reading the zip archive embedded in the installer: the central
+directory, DEFLATE decompression (RFC 1951), and CRC-32 checks.
 
-/// A file from the archive. Directories are implied by file paths.
+Only what the release archives use is supported: stored and deflated
+entries, no encryption, no ZIP64. Entry names are checked so that none
+can escape the installation directory.
+*/
+
+/** A file from the archive. Directories are implied by file paths. */
 #[derive(Debug, PartialEq)]
 pub struct Entry {
-    /// Path inside the archive, with `/` separators.
+    /** Path inside the archive, with `/` separators. */
     pub path: String,
     pub data: Vec<u8>,
 }
@@ -27,13 +29,13 @@ fn u32_at(bytes: &[u8], at: usize) -> Result<u32, String> {
         .ok_or_else(|| "the archive is truncated".to_string())
 }
 
-/// Reads every file of a zip archive, verifying each one's checksum.
+/** Reads every file of a zip archive, verifying each one's checksum. */
 pub fn read_zip(bytes: &[u8]) -> Result<Vec<Entry>, String> {
     const END_SIGNATURE: u32 = 0x0605_4b50;
     const CENTRAL_SIGNATURE: u32 = 0x0201_4b50;
     const LOCAL_SIGNATURE: u32 = 0x0403_4b50;
 
-    // The end record is at least 22 bytes and may be followed by a comment.
+    /* The end record is at least 22 bytes and may be followed by a comment. */
     let search_start = bytes.len().saturating_sub(22 + 0xFFFF);
     let end = (search_start..=bytes.len().saturating_sub(22))
         .rev()
@@ -98,8 +100,10 @@ pub fn read_zip(bytes: &[u8]) -> Result<Vec<Entry>, String> {
     Ok(entries)
 }
 
-/// Normalizes an entry name and rejects any that could leave the
-/// destination: absolute paths, drive letters, and `..` components.
+/**
+Normalizes an entry name and rejects any that could leave the
+destination: absolute paths, drive letters, and `..` components.
+*/
 fn safe_path(name: &str) -> Result<String, String> {
     let path = name.replace('\\', "/");
     let unsafe_name = path.starts_with('/')
@@ -115,7 +119,7 @@ fn safe_path(name: &str) -> Result<String, String> {
     Ok(path)
 }
 
-// ----- DEFLATE ------------------------------------------------------------------
+/* ----- DEFLATE ------------------------------------------------------------------ */
 
 struct Bits<'a> {
     input: &'a [u8],
@@ -134,7 +138,7 @@ impl<'a> Bits<'a> {
         }
     }
 
-    /// The next `need` bits, least significant first.
+    /** The next `need` bits, least significant first. */
     fn take(&mut self, need: u32) -> Result<u32, String> {
         while self.count < need {
             let byte = *self
@@ -151,15 +155,17 @@ impl<'a> Bits<'a> {
         Ok(value)
     }
 
-    /// Drops the bits left in the current byte.
+    /** Drops the bits left in the current byte. */
     fn align(&mut self) {
         self.buffer = 0;
         self.count = 0;
     }
 }
 
-/// A canonical Huffman code: how many codes have each length, and the
-/// symbols in code order.
+/**
+A canonical Huffman code: how many codes have each length, and the
+symbols in code order.
+*/
 struct Huffman {
     counts: [u16; 16],
     symbols: Vec<u16>,
@@ -172,8 +178,10 @@ impl Huffman {
             counts[length as usize] += 1;
         }
         counts[0] = 0;
-        // Reject over-subscribed codes; incomplete ones are allowed (RFC 1951
-        // permits a single distance code).
+        /*
+        Reject over-subscribed codes; incomplete ones are allowed (RFC 1951
+        permits a single distance code).
+        */
         let mut left: i32 = 1;
         for &count in &counts[1..] {
             left = left * 2 - count as i32;
@@ -229,7 +237,7 @@ const DISTANCE_EXTRA: [u8; 30] = [
     13,
 ];
 
-/// Decompresses a raw DEFLATE stream whose output is `size` bytes.
+/** Decompresses a raw DEFLATE stream whose output is `size` bytes. */
 pub fn inflate(input: &[u8], size: usize) -> Result<Vec<u8>, String> {
     let mut out = Vec::with_capacity(size);
     let mut bits = Bits::new(input);
@@ -348,7 +356,7 @@ fn codes(
                     return Err("compressed data refers before its start".into());
                 }
                 let from = out.len() - distance;
-                // Copies may overlap the bytes they produce.
+                /* Copies may overlap the bytes they produce. */
                 for offset in 0..length {
                     let byte = out[from + offset];
                     out.push(byte);
@@ -358,7 +366,7 @@ fn codes(
     }
 }
 
-// ----- CRC-32 -----------------------------------------------------------------------
+/* ----- CRC-32 ----------------------------------------------------------------------- */
 
 const fn crc_table() -> [u32; 256] {
     let mut table = [0u32; 256];
@@ -382,7 +390,7 @@ const fn crc_table() -> [u32; 256] {
 
 static CRC_TABLE: [u32; 256] = crc_table();
 
-/// The CRC-32 used by zip archives.
+/** The CRC-32 used by zip archives. */
 pub fn crc32(data: &[u8]) -> u32 {
     let mut crc = !0u32;
     for &byte in data {
@@ -395,7 +403,7 @@ pub fn crc32(data: &[u8]) -> u32 {
 mod tests {
     use super::*;
 
-    /// Builds a zip archive of stored (uncompressed) entries.
+    /** Builds a zip archive of stored (uncompressed) entries. */
     fn stored_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
         let mut out = Vec::new();
         let mut central = Vec::new();
@@ -409,19 +417,19 @@ mod tests {
                     h.extend_from_slice(&20u16.to_le_bytes());
                 }
                 h.extend_from_slice(&20u16.to_le_bytes());
-                h.extend_from_slice(&0u16.to_le_bytes()); // flags
-                h.extend_from_slice(&0u16.to_le_bytes()); // stored
-                h.extend_from_slice(&0u32.to_le_bytes()); // time and date
+                h.extend_from_slice(&0u16.to_le_bytes()); /* flags */
+                h.extend_from_slice(&0u16.to_le_bytes()); /* stored */
+                h.extend_from_slice(&0u32.to_le_bytes()); /* time and date */
                 h.extend_from_slice(&crc.to_le_bytes());
                 h.extend_from_slice(&(data.len() as u32).to_le_bytes());
                 h.extend_from_slice(&(data.len() as u32).to_le_bytes());
                 h.extend_from_slice(&(name.len() as u16).to_le_bytes());
-                h.extend_from_slice(&0u16.to_le_bytes()); // extra
+                h.extend_from_slice(&0u16.to_le_bytes()); /* extra */
                 if central_record {
-                    h.extend_from_slice(&0u16.to_le_bytes()); // comment
-                    h.extend_from_slice(&0u16.to_le_bytes()); // disk
-                    h.extend_from_slice(&0u16.to_le_bytes()); // internal attributes
-                    h.extend_from_slice(&0u32.to_le_bytes()); // external attributes
+                    h.extend_from_slice(&0u16.to_le_bytes()); /* comment */
+                    h.extend_from_slice(&0u16.to_le_bytes()); /* disk */
+                    h.extend_from_slice(&0u16.to_le_bytes()); /* internal attributes */
+                    h.extend_from_slice(&0u32.to_le_bytes()); /* external attributes */
                     h.extend_from_slice(&offset.to_le_bytes());
                 }
                 h.extend_from_slice(name.as_bytes());
@@ -484,14 +492,14 @@ mod tests {
             assert!(read_zip(&stored_zip(&[(name, b"x")])).is_err(), "{name}");
         }
         let mut zip = stored_zip(&[("a.txt", b"hello")]);
-        zip[30 + 5] = b'j'; // change the stored data, not the checksum
+        zip[30 + 5] = b'j'; /* change the stored data, not the checksum */
         assert!(read_zip(&zip).unwrap_err().contains("corrupted"));
         assert!(read_zip(b"not an archive").is_err());
     }
 
     #[test]
     fn archives_from_compress_archive_are_read() {
-        // Made by PowerShell's Compress-Archive, as the release script does.
+        /* Made by PowerShell's Compress-Archive, as the release script does. */
         let entries = read_zip(include_bytes!("../tests/sample.zip")).unwrap();
         let find = |path: &str| {
             entries
@@ -515,12 +523,12 @@ mod tests {
 
     #[test]
     fn fixed_and_stored_blocks_inflate() {
-        // "hello, hello" with a back-reference, fixed Huffman codes.
+        /* "hello, hello" with a back-reference, fixed Huffman codes. */
         let fixed = [
             0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0xd7, 0x51, 0xc8, 0x00, 0x51, 0x00,
         ];
         assert_eq!(inflate(&fixed, 12).unwrap(), b"hello, hello");
-        // One final stored block.
+        /* One final stored block. */
         let stored = [0x01, 0x03, 0x00, 0xfc, 0xff, b'a', b'b', b'c'];
         assert_eq!(inflate(&stored, 3).unwrap(), b"abc");
         assert!(inflate(&[0xff], 1).is_err());

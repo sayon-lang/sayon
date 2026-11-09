@@ -1,5 +1,7 @@
-// Mandelbrot: count the points of a size by size grid over the plane that
-// stay in the Mandelbrot set for 50 steps.
+/*
+Mandelbrot: count the points of a size by size grid over the plane that
+stay in the Mandelbrot set for 50 steps.
+*/
 #include <cstdio>
 #include <cstdlib>
 

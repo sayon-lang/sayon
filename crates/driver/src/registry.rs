@@ -1,10 +1,12 @@
-//! The package registry's protocol (PROTOCOL.md of www.sayon-lang.org),
-//! apart from how its requests travel. A registry is named by the address
-//! of its index, which holds a file for each package, a line of JSON for
-//! each version, and `config.json`, which says where the registry's API
-//! and its archives are. This module reads what they hold, and says what
-//! `sayon install` asks of a registry ([`Index`]); the `sayon` command
-//! carries the requests over HTTPS.
+/*!
+The package registry's protocol (PROTOCOL.md of www.sayon-lang.org),
+apart from how its requests travel. A registry is named by the address
+of its index, which holds a file for each package, a line of JSON for
+each version, and `config.json`, which says where the registry's API
+and its archives are. This module reads what they hold, and says what
+`sayon install` asks of a registry ([`Index`]); the `sayon` command
+carries the requests over HTTPS.
+*/
 
 use crate::json::Json;
 use crate::manifest::{Dependency, Source};
@@ -12,17 +14,23 @@ use crate::packages::PackageError;
 use crate::semver::{Requirement, Version};
 use sayon_syntax::{FileId, Span};
 
-/// The protocol's version, which every address of it starts with:
-/// `<registry>/api/v1/...`.
+/**
+The protocol's version, which every address of it starts with:
+`<registry>/api/v1/...`.
+*/
 pub const PROTOCOL: u32 = 1;
 
-/// The registry used when nothing names another, by its index's address:
-/// until Sayon's website is operated, the one www.sayon-lang.org runs on
-/// this computer with `sayon run -- --port 4100`.
+/**
+The registry used when nothing names another, by its index's address:
+until Sayon's website is operated, the one www.sayon-lang.org runs on
+this computer with `sayon run -- --port 4100`.
+*/
 pub const DEFAULT: &str = "http://127.0.0.1:4100/index";
 
-/// Whether an address can be a registry's: HTTPS, or plain HTTP to this
-/// computer, for a registry run locally.
+/**
+Whether an address can be a registry's: HTTPS, or plain HTTP to this
+computer, for a registry run locally.
+*/
 pub fn valid_address(address: &str) -> bool {
     let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"]
         .iter()
@@ -37,13 +45,15 @@ pub fn valid_address(address: &str) -> bool {
     (local || secure) && !address.contains(['?', '#', ' ', '"'])
 }
 
-/// An address as packages and locks write it: without a final `/`.
+/** An address as packages and locks write it: without a final `/`. */
 pub fn normalize(address: &str) -> String {
     address.trim().trim_end_matches('/').to_string()
 }
 
-/// The registry that dependencies naming none come from, and that the
-/// registry commands use: `SAYON_REGISTRY`, or [`DEFAULT`].
+/**
+The registry that dependencies naming none come from, and that the
+registry commands use: `SAYON_REGISTRY`, or [`DEFAULT`].
+*/
 pub fn default_address() -> String {
     match std::env::var("SAYON_REGISTRY") {
         Ok(address) if !address.trim().is_empty() => normalize(&address),
@@ -51,20 +61,22 @@ pub fn default_address() -> String {
     }
 }
 
-/// One published version of a package, as its line in the index says.
+/** One published version of a package, as its line in the index says. */
 #[derive(Debug, Clone, PartialEq)]
 pub struct Published {
     pub version: Version,
-    /// The digest of its archive, `sha256:...`.
+    /** The digest of its archive, `sha256:...`. */
     pub digest: String,
     pub description: String,
-    /// Its dependencies, which are all on registry packages.
+    /** Its dependencies, which are all on registry packages. */
     pub dependencies: Vec<Dependency>,
     pub published: String,
 }
 
-/// A registry's `config.json`: the address of its API, and the address of
-/// each archive, with `{name}` and `{version}` in it.
+/**
+A registry's `config.json`: the address of its API, and the address of
+each archive, with `{name}` and `{version}` in it.
+*/
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub api: String,
@@ -72,7 +84,7 @@ pub struct Config {
 }
 
 impl Config {
-    /// The address of a version's archive.
+    /** The address of a version's archive. */
     pub fn archive(&self, package: &str, version: &Version) -> String {
         self.download
             .replace("{name}", package)
@@ -80,7 +92,7 @@ impl Config {
     }
 }
 
-/// A package in the answer to a search.
+/** A package in the answer to a search. */
 #[derive(Debug, Clone, PartialEq)]
 pub struct Found {
     pub name: String,
@@ -96,14 +108,18 @@ fn text(value: &Json, key: &str) -> Result<String, String> {
         .ok_or_else(|| format!("the registry's answer has no `{key}`"))
 }
 
-/// Text a registry gave, as it is shown: without control characters, so
-/// that it cannot move the cursor, recolor the terminal, or add lines.
+/**
+Text a registry gave, as it is shown: without control characters, so
+that it cannot move the cursor, recolor the terminal, or add lines.
+*/
 pub fn printable(text: &str) -> String {
     text.chars().filter(|c| !c.is_control()).collect()
 }
 
-/// Whether text is a digest as the index writes them: `sha256:` and 64
-/// lowercase hexadecimal digits.
+/**
+Whether text is a digest as the index writes them: `sha256:` and 64
+lowercase hexadecimal digits.
+*/
 fn valid_digest(text: &str) -> bool {
     text.strip_prefix("sha256:").is_some_and(|hex| {
         hex.len() == 64
@@ -113,8 +129,10 @@ fn valid_digest(text: &str) -> bool {
     })
 }
 
-/// Where a package's file is in an index, as crates.io-index places them:
-/// `1/a`, `2/ab`, `3/a/abc`, and `ab/cd/abcdef` for longer names.
+/**
+Where a package's file is in an index, as crates.io-index places them:
+`1/a`, `2/ab`, `3/a/abc`, and `ab/cd/abcdef` for longer names.
+*/
 pub fn index_path(name: &str) -> String {
     let characters: Vec<char> = name.chars().collect();
     let first = |count: usize| characters[..count].iter().collect::<String>();
@@ -130,7 +148,7 @@ pub fn index_path(name: &str) -> String {
     }
 }
 
-/// Reads an index's `config.json`.
+/** Reads an index's `config.json`. */
 pub fn config(answer: &Json) -> Result<Config, String> {
     let config = Config {
         api: normalize(&text(answer, "api")?),
@@ -142,13 +160,15 @@ pub fn config(answer: &Json) -> Result<Config, String> {
     Ok(config)
 }
 
-/// Reads a package's file of the index: a line of JSON for each version.
-/// The versions come in order, oldest first. Every line is checked as a
-/// manifest is, since a registry could lie: its dependencies' names, which
-/// become folders of the cache and lines of `sayon.lock`, are names, their
-/// ranges are ranges, and a dependency from another registry names it by
-/// an address Sayon reaches registries at, so that an index cannot send
-/// installing to a registry over plain HTTP.
+/**
+Reads a package's file of the index: a line of JSON for each version.
+The versions come in order, oldest first. Every line is checked as a
+manifest is, since a registry could lie: its dependencies' names, which
+become folders of the cache and lines of `sayon.lock`, are names, their
+ranges are ranges, and a dependency from another registry names it by
+an address Sayon reaches registries at, so that an index cannot send
+installing to a registry over plain HTTP.
+*/
 pub fn entries(file: &str) -> Result<Vec<Published>, String> {
     let mut versions = Vec::new();
     for (number, line) in file.lines().enumerate() {
@@ -211,8 +231,10 @@ pub fn entries(file: &str) -> Result<Vec<Published>, String> {
     Ok(versions)
 }
 
-/// The latest version: the greatest release, or, before the first release,
-/// the greatest pre-release.
+/**
+The latest version: the greatest release, or, before the first release,
+the greatest pre-release.
+*/
 pub fn latest(versions: &[Published]) -> Option<&Published> {
     versions
         .iter()
@@ -221,7 +243,7 @@ pub fn latest(versions: &[Published]) -> Option<&Published> {
         .or_else(|| versions.iter().max_by(|a, b| a.version.cmp(&b.version)))
 }
 
-/// Reads the answer to `GET /api/v1/search`.
+/** Reads the answer to `GET /api/v1/search`. */
 pub fn search(answer: &Json) -> Result<Vec<Found>, String> {
     answer
         .get("packages")
@@ -237,8 +259,10 @@ pub fn search(answer: &Json) -> Result<Vec<Found>, String> {
         .collect()
 }
 
-/// What `sayon install` asks of registries: the versions of a package,
-/// and the archive of one of them.
+/**
+What `sayon install` asks of registries: the versions of a package,
+and the archive of one of them.
+*/
 pub trait Index {
     fn versions(&mut self, registry: &str, package: &str) -> Result<Vec<Published>, PackageError>;
     fn archive(
@@ -295,8 +319,10 @@ mod tests {
         );
         assert_eq!(latest(&versions).unwrap().version.to_string(), "1.0.0");
         assert!(entries("not json").is_err());
-        // What a registry that lies could put in a line is refused, or shown
-        // without control characters.
+        /*
+        What a registry that lies could put in a line is refused, or shown
+        without control characters.
+        */
         let line = file.lines().nth(1).unwrap();
         let refused = |from: &str, to: &str| entries(&line.replace(from, to)).unwrap_err();
         assert!(refused("sha256:aaaa", "sha256:AAAA").contains("which is not a SHA-256 digest"));
@@ -305,7 +331,7 @@ mod tests {
             refused("\"strings\"", "\"../../evil\"").contains("named \"../../evil\", which is not")
         );
         assert!(refused("^0.2", "most recent").contains("which is not a range of versions"));
-        // An index cannot send installing to a registry over plain HTTP.
+        /* An index cannot send installing to a registry over plain HTTP. */
         let elsewhere = r#""registry":"http://registry.example.com/index""#;
         assert!(
             refused("\"registry\":null", elsewhere).contains(

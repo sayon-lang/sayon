@@ -1,4 +1,4 @@
-//! Runtime values and their display, equality, and ordering rules.
+/*! Runtime values and their display, equality, and ordering rules. */
 
 use sayon_check::types::{TypeDef, TypeId};
 use sayon_ir::FunctionId;
@@ -8,11 +8,13 @@ use std::fmt::Write as _;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-/// A runtime value. Owned values form a tree: moving a value moves the whole
-/// tree, and dropping it releases everything it owns.
+/**
+A runtime value. Owned values form a tree: moving a value moves the whole
+tree, and dropping it releases everything it owns.
+*/
 #[derive(Clone, Debug)]
 pub enum Value {
-    /// Every integer width; the static type decides the valid range.
+    /** Every integer width; the static type decides the valid range. */
     Int(i128),
     F64(f64),
     F32(f32),
@@ -21,11 +23,11 @@ pub enum Value {
     Str(Rc<str>),
     Array(Vec<Value>),
     Dict(Box<Dict>),
-    /// A union value: member tag (starting at 1) and payload.
+    /** A union value: member tag (starting at 1) and payload. */
     Union(u32, Box<Value>),
-    /// A structure value: its type and fields in declaration order.
+    /** A structure value: its type and fields in declaration order. */
     Record(TypeId, Fields),
-    /// An enum value: its type, variant index, and the variant's fields.
+    /** An enum value: its type, variant index, and the variant's fields. */
     Variant(TypeId, u32, Vec<Value>),
     Error(Box<ErrorValue>),
     Range {
@@ -33,43 +35,51 @@ pub enum Value {
         end: i64,
         step: i64,
     },
-    /// A function value: the code to call and its environment, a structure
-    /// of captured values (`Nothing` when it captures none).
+    /**
+    A function value: the code to call and its environment, a structure
+    of captured values (`Nothing` when it captures none).
+    */
     Function(FunctionId, Box<Value>),
-    /// A view of `length` elements of the array at a reference, from
-    /// `start`.
+    /**
+    A view of `length` elements of the array at a reference, from
+    `start`.
+    */
     View(Box<ViewValue>),
     Stream(StreamRef),
-    /// A `Shared` handle; cloning the value retains it.
+    /** A `Shared` handle; cloning the value retains it. */
     Shared(Rc<RefCell<Value>>),
     Weak(std::rc::Weak<RefCell<Value>>),
     Task(TaskHandle),
-    /// A channel handle; cloning the value retains it.
+    /** A channel handle; cloning the value retains it. */
     Channel(Channel),
-    /// A raw address.
+    /** A raw address. */
     Pointer(usize),
-    /// A C string: its bytes and the NUL after them, which stay where they
-    /// are while the value lives, for C code to read.
+    /**
+    A C string: its bytes and the NUL after them, which stay where they
+    are while the value lives, for C code to read.
+    */
     CString(Rc<[u8]>),
-    /// A mutex handle; cloning the value retains it.
+    /** A mutex handle; cloning the value retains it. */
     Mutex(std::sync::Arc<crate::machine::parallel::MutexCell>),
-    /// The handle of a task on a thread of its own.
+    /** The handle of a task on a thread of its own. */
     ParallelTask(crate::machine::parallel::ParallelHandle),
 }
 
-/// What the scheduler and a task's handle know of the task.
+/** What the scheduler and a task's handle know of the task. */
 #[derive(Debug, Default)]
 pub struct TaskState {
-    /// The task's result once it has finished.
+    /** The task's result once it has finished. */
     pub result: Option<Result<Value, ErrorValue>>,
-    /// Set when the task is to stop at its next wait.
+    /** Set when the task is to stop at its next wait. */
     pub cancel: bool,
     pub joined: bool,
     pub detached: bool,
 }
 
-/// The handle of a task. The scheduler holds the task's state too, so when
-/// the last handle goes without a join or a detach, the task is cancelled.
+/**
+The handle of a task. The scheduler holds the task's state too, so when
+the last handle goes without a join or a detach, the task is cancelled.
+*/
 #[derive(Debug, Clone)]
 pub struct TaskHandle(pub Rc<RefCell<TaskState>>);
 
@@ -84,24 +94,30 @@ impl Drop for TaskHandle {
     }
 }
 
-/// A channel handle. Every copy refers to the same channel, which tasks on
-/// several threads can share.
+/**
+A channel handle. Every copy refers to the same channel, which tasks on
+several threads can share.
+*/
 #[derive(Clone)]
 pub struct Channel(pub std::sync::Arc<ChannelCell>);
 
 pub struct ChannelCell {
     state: std::sync::Mutex<ChannelState>,
-    /// Set once a task on another thread may hold the channel: from then on
-    /// each message is copied as it is sent, so that it shares nothing with
-    /// the sender's thread, and changes wake the other threads' schedulers.
+    /**
+    Set once a task on another thread may hold the channel: from then on
+    each message is copied as it is sent, so that it shares nothing with
+    the sender's thread, and changes wake the other threads' schedulers.
+    */
     pub crossed: std::sync::atomic::AtomicBool,
 }
 
-// SAFETY: the values of the interpreter count their references without
-// atomics, so a message must share no count with a value of another
-// thread. Until a channel crosses, only its own thread can reach it; when
-// it does, the messages waiting in it are copied (see `parallel`), and so
-// is each one sent after that.
+/*
+SAFETY: the values of the interpreter count their references without
+atomics, so a message must share no count with a value of another
+thread. Until a channel crosses, only its own thread can reach it; when
+it does, the messages waiting in it are copied (see `parallel`), and so
+is each one sent after that.
+*/
 unsafe impl Send for ChannelCell {}
 unsafe impl Sync for ChannelCell {}
 
@@ -134,11 +150,11 @@ impl std::fmt::Debug for Channel {
     }
 }
 
-/// A channel's messages, in the order they were sent.
+/** A channel's messages, in the order they were sent. */
 #[derive(Debug)]
 pub struct ChannelState {
     pub queue: std::collections::VecDeque<Value>,
-    /// 0 for a rendezvous: each message waits until it is received.
+    /** 0 for a rendezvous: each message waits until it is received. */
     pub capacity: usize,
     pub closed: bool,
     pub sent: u64,
@@ -146,24 +162,26 @@ pub struct ChannelState {
 }
 
 impl ChannelState {
-    /// Whether a receive would not wait: a message is there, or none will come.
+    /** Whether a receive would not wait: a message is there, or none will come. */
     pub fn receivable(&self) -> bool {
         !self.queue.is_empty() || self.closed
     }
 
-    /// Whether a send would not wait for room.
+    /** Whether a send would not wait for room. */
     pub fn has_room(&self) -> bool {
         self.closed || self.queue.len() < self.capacity.max(1)
     }
 }
 
-/// A reference to an open stream of the runtime. A clone refers to the
-/// same file, and the file is closed when the last reference is dropped.
+/**
+A reference to an open stream of the runtime. A clone refers to the
+same file, and the file is closed when the last reference is dropped.
+*/
 #[derive(Debug)]
 pub struct StreamRef(i64);
 
 impl StreamRef {
-    /// Takes over the reference a new stream comes with.
+    /** Takes over the reference a new stream comes with. */
     pub fn adopt(id: i64) -> StreamRef {
         StreamRef(id)
     }
@@ -186,8 +204,10 @@ impl Drop for StreamRef {
     }
 }
 
-/// Where a value is stored: a frame's slot, a module constant, or the
-/// place a finally function's value is held while it runs.
+/**
+Where a value is stored: a frame's slot, a module constant, or the
+place a finally function's value is held while it runs.
+*/
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Root {
     Slot { frame: usize, slot: usize },
@@ -195,10 +215,12 @@ pub enum Root {
     Held(usize),
 }
 
-/// The fields of a structure value. Those of a value of a structure with a
-/// finally function carry a token, which queues the value for its finally
-/// function when the value is destroyed, wherever that happens; the copies
-/// the interpreter makes to read a value carry none.
+/**
+The fields of a structure value. Those of a value of a structure with a
+finally function carry a token, which queues the value for its finally
+function when the value is destroyed, wherever that happens; the copies
+the interpreter makes to read a value carry none.
+*/
 #[derive(Debug, Default)]
 pub struct Fields {
     values: Vec<Value>,
@@ -206,7 +228,7 @@ pub struct Fields {
 }
 
 impl Fields {
-    /// The fields of a value of a structure that `finally` destroys.
+    /** The fields of a value of a structure that `finally` destroys. */
     pub fn destroyed_by_finally(ty: TypeId, values: Vec<Value>) -> Fields {
         Fields {
             values,
@@ -214,7 +236,7 @@ impl Fields {
         }
     }
 
-    /// The same fields after `f`, carrying the token on.
+    /** The same fields after `f`, carrying the token on. */
     pub fn map(mut self, f: impl FnMut(Value) -> Value) -> Fields {
         let values = std::mem::take(&mut self.values);
         Fields {
@@ -264,45 +286,51 @@ impl Drop for Fields {
 }
 
 thread_local! {
-    /// The values of structures with finally functions destroyed on this
-    /// thread, for the machine to run their finally functions on, in order.
+    /**
+    The values of structures with finally functions destroyed on this
+    thread, for the machine to run their finally functions on, in order.
+    */
     static DESTROYED: RefCell<std::collections::VecDeque<(TypeId, Vec<Value>)>> =
         const { RefCell::new(std::collections::VecDeque::new()) };
 }
 
-/// How many destroyed values wait for their finally functions, on any
-/// thread: a check that costs little between instructions.
+/**
+How many destroyed values wait for their finally functions, on any
+thread: a check that costs little between instructions.
+*/
 static WAITING_FINALLY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// Whether a value may wait for its finally function.
+/** Whether a value may wait for its finally function. */
 pub fn finally_waiting() -> bool {
     WAITING_FINALLY.load(std::sync::atomic::Ordering::Relaxed) > 0
 }
 
-/// The values of this thread waiting for their finally functions, in the
-/// order they were destroyed.
+/**
+The values of this thread waiting for their finally functions, in the
+order they were destroyed.
+*/
 pub fn take_destroyed() -> std::collections::VecDeque<(TypeId, Vec<Value>)> {
     let taken = DESTROYED.with(|destroyed| std::mem::take(&mut *destroyed.borrow_mut()));
     WAITING_FINALLY.fetch_sub(taken.len(), std::sync::atomic::Ordering::Relaxed);
     taken
 }
 
-/// One step from a value into a part of it.
+/** One step from a value into a part of it. */
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Step {
     Index(usize),
     DictValue(usize),
     DictKey(usize),
     Payload,
-    /// A field of a structure, or of an enum value's variant.
+    /** A field of a structure, or of an enum value's variant. */
     Field(usize),
-    /// The environment of a function value.
+    /** The environment of a function value. */
     Env,
-    /// The value a `Shared` handle refers to.
+    /** The value a `Shared` handle refers to. */
     Deref,
 }
 
-/// A stored value, or a part of one.
+/** A stored value, or a part of one. */
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ref {
     pub root: Root,
@@ -311,7 +339,7 @@ pub struct Ref {
 
 #[derive(Clone, Debug)]
 pub struct ViewValue {
-    /// The array the view shows.
+    /** The array the view shows. */
     pub array: Ref,
     pub start: usize,
     pub length: usize,
@@ -344,9 +372,11 @@ impl Value {
     }
 }
 
-/// An insertion-ordered dictionary. Its keys are values of a type the
-/// checker accepts as a key: integers, booleans, strings, `nothing`, and
-/// structures, enums, and unions made only of those.
+/**
+An insertion-ordered dictionary. Its keys are values of a type the
+checker accepts as a key: integers, booleans, strings, `nothing`, and
+structures, enums, and unions made only of those.
+*/
 #[derive(Clone, Debug, Default)]
 pub struct Dict {
     pub keys: Vec<Value>,
@@ -354,7 +384,7 @@ pub struct Dict {
     index: HashMap<Key, usize>,
 }
 
-/// A key compared and hashed by content.
+/** A key compared and hashed by content. */
 #[derive(Clone, Debug)]
 struct Key(Value);
 
@@ -404,7 +434,7 @@ impl Dict {
         self.index.get(&Key(key.clone())).copied()
     }
 
-    /// Removes a key's entry, keeping the others in order.
+    /** Removes a key's entry, keeping the others in order. */
     pub fn remove(&mut self, key: &Value) -> Option<Value> {
         let position = self.index.remove(&Key(key.clone()))?;
         self.keys.remove(position);
@@ -417,7 +447,7 @@ impl Dict {
         Some(value)
     }
 
-    /// Replaces the value of an existing key in place, or appends a new entry.
+    /** Replaces the value of an existing key in place, or appends a new entry. */
     pub fn set(&mut self, key: Value, value: Value) {
         let key = Key(key);
         match self.index.get(&key) {
@@ -435,17 +465,19 @@ impl Dict {
 pub struct ErrorValue {
     pub code: String,
     pub message: String,
-    /// `file:line:column` of the operation that raised it.
+    /** `file:line:column` of the operation that raised it. */
     pub location: Option<String>,
 }
 
-// ----- display ---------------------------------------------------------------
+/* ----- display --------------------------------------------------------------- */
 
-pub use sayon_runtime::text::{format_f32, format_f64};
+pub(crate) use sayon_runtime::text::{format_f32, format_f64};
 
-/// The text `tostring` and `print` produce. Strings nested inside collections
-/// are quoted so that `["a", "b"]` displays like the literal that made it.
-/// Structures and enum values display like the expressions that build them.
+/**
+The text `tostring` and `print` produce. Strings nested inside collections
+are quoted so that `["a", "b"]` displays like the literal that made it.
+Structures and enum values display like the expressions that build them.
+*/
 pub fn display(value: &Value, out: &mut String, nested: bool, types: &[TypeDef]) {
     let display =
         |value: &Value, out: &mut String, nested: bool| display(value, out, nested, types);
@@ -532,7 +564,7 @@ pub fn display(value: &Value, out: &mut String, nested: bool, types: &[TypeDef])
         }
         Value::Function(..) => out.push_str("function"),
         Value::Stream(_) => out.push_str("stream"),
-        // A shared value and a cell show their value.
+        /* A shared value and a cell show their value. */
         Value::Shared(shared) => display(&shared.borrow(), out, nested),
         Value::Weak(_) => out.push_str("weak"),
         Value::Task(_) | Value::ParallelTask(_) => out.push_str("task"),
@@ -547,7 +579,7 @@ pub fn display(value: &Value, out: &mut String, nested: bool, types: &[TypeDef])
                 out.push_str(&text);
             }
         }
-        // The machine shows a view's elements before displaying it.
+        /* The machine shows a view's elements before displaying it. */
         Value::View(view) => {
             let _ = write!(out, "view of {} elements", view.length);
         }
@@ -556,13 +588,7 @@ pub fn display(value: &Value, out: &mut String, nested: bool, types: &[TypeDef])
 
 use sayon_runtime::text::quote;
 
-pub fn to_display_string(value: &Value, types: &[TypeDef]) -> String {
-    let mut out = String::new();
-    display(value, &mut out, false, types);
-    out
-}
-
-// ----- equality and ordering -------------------------------------------------------
+/* ----- equality and ordering ------------------------------------------------------- */
 
 pub fn values_equal(a: &Value, b: &Value) -> bool {
     match (a, b) {
@@ -610,7 +636,7 @@ pub fn values_equal(a: &Value, b: &Value) -> bool {
     }
 }
 
-/// Ordering for numbers and strings; `None` when unordered (NaN).
+/** Ordering for numbers and strings; `None` when unordered (NaN). */
 pub fn compare_values(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
     match (a, b) {
         (Value::Int(x), Value::Int(y)) => Some(x.cmp(y)),
@@ -625,18 +651,25 @@ pub fn compare_values(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
 mod tests {
     use super::*;
 
+    /** A value as `print` shows it. */
+    fn shown(value: &Value) -> String {
+        let mut out = String::new();
+        display(value, &mut out, false, &[]);
+        out
+    }
+
     #[test]
     fn collections_quote_nested_strings() {
         let array = Value::Array(vec![Value::Int(1), Value::str("text"), Value::Bool(true)]);
-        assert_eq!(to_display_string(&array, &[]), "[1, \"text\", true]");
+        assert_eq!(shown(&array), "[1, \"text\", true]");
         let mut dict = Dict::default();
         dict.set(Value::str("name"), Value::str("Alice"));
         dict.set(Value::str("age"), Value::Int(30));
         assert_eq!(
-            to_display_string(&Value::Dict(Box::new(dict)), &[]),
+            shown(&Value::Dict(Box::new(dict))),
             "[\"name\" = \"Alice\", \"age\" = 30]"
         );
-        assert_eq!(to_display_string(&Value::str("plain"), &[]), "plain");
+        assert_eq!(shown(&Value::str("plain")), "plain");
     }
 
     #[test]

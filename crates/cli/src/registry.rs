@@ -1,10 +1,12 @@
-//! The registry commands, `sayon login`, `logout`, `publish`, `search`, and
-//! `info`, and the registry client `sayon install` fetches packages with.
-//! The protocol is described in the repository of Sayon's website, which
-//! holds the registry, www.sayon-lang.org: a registry is named by its
-//! index's address, and the index's `config.json` says where its API and
-//! archives are. The driver reads what they hold
-//! (`sayon_driver::registry`), and `http` carries the requests.
+/*!
+The registry commands, `sayon login`, `logout`, `publish`, `search`, and
+`info`, and the registry client `sayon install` fetches packages with.
+The protocol is described in the repository of Sayon's website, which
+holds the registry, www.sayon-lang.org: a registry is named by its
+index's address, and the index's `config.json` says where its API and
+archives are. The driver reads what they hold
+(`sayon_driver::registry`), and `http` carries the requests.
+*/
 
 use crate::compile::{Options, current_project, print_package_error};
 use crate::credentials::{self, Saved};
@@ -19,7 +21,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, IsTerminal, Write};
 use std::time::{Duration, Instant};
 
-/// The registry a command uses: `--registry`, or the default.
+/** The registry a command uses: `--registry`, or the default. */
 pub fn address(chosen: Option<&String>) -> Result<String, u8> {
     let address = match chosen {
         Some(address) => registry::normalize(address),
@@ -41,7 +43,7 @@ fn error(message: &str, help: Option<&str>, options: &Options) {
     print_package_error(&error, options);
 }
 
-/// Percent-encodes a part of an address.
+/** Percent-encodes a part of an address. */
 fn encode(text: &str) -> String {
     let mut out = String::new();
     for byte in text.bytes() {
@@ -54,7 +56,7 @@ fn encode(text: &str) -> String {
     out
 }
 
-/// The registry's reason for refusing a request.
+/** The registry's reason for refusing a request. */
 fn refusal(response: &Response) -> String {
     std::str::from_utf8(&response.body)
         .ok()
@@ -63,9 +65,11 @@ fn refusal(response: &Response) -> String {
         .unwrap_or_else(|| format!("the registry answered with status {}", response.status))
 }
 
-/// Refuses an address that is no registry's, wherever it came from,
-/// `SAYON_REGISTRY` as well as a manifest or an index: Sayon reaches
-/// registries over HTTPS, or over HTTP on this computer.
+/**
+Refuses an address that is no registry's, wherever it came from,
+`SAYON_REGISTRY` as well as a manifest or an index: Sayon reaches
+registries over HTTPS, or over HTTP on this computer.
+*/
 fn reachable(registry: &str) -> Result<(), String> {
     if registry::valid_address(registry) {
         Ok(())
@@ -85,7 +89,7 @@ fn reach(registry: &str, error: String) -> String {
     format!("cannot reach the registry {registry}: {error}{local}")
 }
 
-/// Reads a registry's `config.json`, from the top of its index.
+/** Reads a registry's `config.json`, from the top of its index. */
 fn fetch_config(registry: &str) -> Result<Config, String> {
     reachable(registry)?;
     let url = format!("{registry}/config.json");
@@ -104,8 +108,10 @@ fn fetch_config(registry: &str) -> Result<Config, String> {
         .and_then(|answer| registry::config(&answer))
 }
 
-/// A package's file of a registry's index, or nothing when it has no such
-/// package.
+/**
+A package's file of a registry's index, or nothing when it has no such
+package.
+*/
 fn fetch_entries(registry: &str, package: &str) -> Result<Option<Vec<Published>>, String> {
     reachable(registry)?;
     let url = format!("{registry}/{}", registry::index_path(package));
@@ -126,8 +132,10 @@ fn fetch_entries(registry: &str, package: &str) -> Result<Option<Vec<Published>>
         .map_err(|message| format!("{registry}'s index of `{package}` cannot be read: {message}"))
 }
 
-/// Asks a registry's API at `api`, reading a JSON answer. `kind` is the
-/// type of a body sent.
+/**
+Asks a registry's API at `api`, reading a JSON answer. `kind` is the
+type of a body sent.
+*/
 fn call(
     api: &str,
     method: &str,
@@ -156,7 +164,7 @@ fn call(
     Ok((response.status, answer))
 }
 
-/// Asks the registry's API, reading a JSON answer.
+/** Asks the registry's API, reading a JSON answer. */
 fn ask(
     registry: &str,
     method: &str,
@@ -168,8 +176,10 @@ fn ask(
     call(&api, method, path, token, body, "application/octet-stream")
 }
 
-/// Reads a line from the terminal without showing it, or from whatever
-/// standard input is.
+/**
+Reads a line from the terminal without showing it, or from whatever
+standard input is.
+*/
 fn read_secret(prompt: &str) -> std::io::Result<String> {
     let terminal = std::io::stdin().is_terminal();
     if terminal {
@@ -186,10 +196,12 @@ fn read_secret(prompt: &str) -> std::io::Result<String> {
     read.map(|_| line.trim().to_string())
 }
 
-/// `sayon login`: signs in on the registry's page, in the browser, where
-/// the account's owner approves a new token for this computer; or with
-/// `with_token`, takes a token from the input, as a build server does.
-/// Either way it keeps the token, with the account's name.
+/**
+`sayon login`: signs in on the registry's page, in the browser, where
+the account's owner approves a new token for this computer; or with
+`with_token`, takes a token from the input, as a build server does.
+Either way it keeps the token, with the account's name.
+*/
 pub fn login(registry: &str, with_token: bool, open_browser: bool, options: &Options) -> u8 {
     let signed = if with_token {
         token_login(registry, options)
@@ -219,7 +231,7 @@ pub fn login(registry: &str, with_token: bool, open_browser: bool, options: &Opt
     status::SUCCESS
 }
 
-/// A token from the input, and the account `GET /me` says it belongs to.
+/** A token from the input, and the account `GET /me` says it belongs to. */
 fn token_login(registry: &str, options: &Options) -> Result<(String, String), u8> {
     let token = match read_secret(&format!("token for {registry}: ")) {
         Ok(token) if !token.is_empty() => token,
@@ -247,7 +259,7 @@ fn token_login(registry: &str, options: &Options) -> Result<(String, String), u8
             return Err(status::PROGRAM_FAILED);
         }
     };
-    // The name is kept beside the token and shown, so it is a name.
+    /* The name is kept beside the token and shown, so it is a name. */
     if !sayon_driver::manifest::valid_name(&account) {
         error(
             &format!("{registry} did not say which account the token belongs to"),
@@ -259,7 +271,7 @@ fn token_login(registry: &str, options: &Options) -> Result<(String, String), u8
     Ok((account, token))
 }
 
-/// Whether text is a sign-in's code: two fours of capital letters.
+/** Whether text is a sign-in's code: two fours of capital letters. */
 fn valid_code(code: &str) -> bool {
     code.len() == 9
         && code.char_indices().all(|(position, letter)| {
@@ -271,11 +283,13 @@ fn valid_code(code: &str) -> bool {
         })
 }
 
-/// Signs in on the registry's page for a new sign-in, `<api>/login/<code>`,
-/// opened in the browser unless `open_browser` is false, and waits until it
-/// is approved there; then the sign-in's secret, which only this command
-/// has, takes the account's new token. The page shows the code this command
-/// prints, so that its user can tell the sign-in is theirs.
+/**
+Signs in on the registry's page for a new sign-in, `<api>/login/<code>`,
+opened in the browser unless `open_browser` is false, and waits until it
+is approved there; then the sign-in's secret, which only this command
+has, takes the account's new token. The page shows the code this command
+prints, so that its user can tell the sign-in is theirs.
+*/
 fn browser_login(
     registry: &str,
     open_browser: bool,
@@ -332,7 +346,7 @@ fn browser_login(
             Some("approved") => {
                 let account = answer.get("account").as_str().unwrap_or_default();
                 let token = answer.get("token").as_str().unwrap_or_default();
-                // Both are kept, and the name is shown.
+                /* Both are kept, and the name is shown. */
                 let token_fits = !token.is_empty()
                     && !token.chars().any(|c| c.is_whitespace() || c.is_control());
                 if !sayon_driver::manifest::valid_name(account) || !token_fits {
@@ -365,8 +379,10 @@ fn browser_login(
     Err(status::PROGRAM_FAILED)
 }
 
-/// This computer's name, which the page that approves a sign-in shows, and
-/// the new token is named after.
+/**
+This computer's name, which the page that approves a sign-in shows, and
+the new token is named after.
+*/
 fn machine_name() -> String {
     #[cfg(windows)]
     let name = std::env::var("COMPUTERNAME").ok();
@@ -376,7 +392,7 @@ fn machine_name() -> String {
             fn gethostname(name: *mut std::ffi::c_char, length: usize) -> std::ffi::c_int;
         }
         let mut buffer = [0u8; 256];
-        // SAFETY: the buffer is as long as the length given.
+        /* SAFETY: the buffer is as long as the length given. */
         let found = unsafe { gethostname(buffer.as_mut_ptr().cast(), buffer.len()) } == 0;
         let end = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
         found.then(|| String::from_utf8_lossy(&buffer[..end]).into_owned())
@@ -387,9 +403,11 @@ fn machine_name() -> String {
         .unwrap_or_else(|| "a computer".to_string())
 }
 
-/// `sayon logout`: revokes the registry's token, so that it no longer
-/// works anywhere, and forgets it. Without the registry, the token is
-/// forgotten all the same, and its account's page can revoke it later.
+/**
+`sayon logout`: revokes the registry's token, so that it no longer
+works anywhere, and forgets it. Without the registry, the token is
+forgotten all the same, and its account's page can revoke it later.
+*/
 pub fn logout(registry: &str, options: &Options) -> u8 {
     let saved = match credentials::load(registry) {
         Ok(Some(saved)) => saved,
@@ -436,8 +454,10 @@ fn size(bytes: usize) -> String {
     }
 }
 
-/// `sayon publish`: sends the project's package to the registry, or with
-/// `dry_run` shows what it would send.
+/**
+`sayon publish`: sends the project's package to the registry, or with
+`dry_run` shows what it would send.
+*/
 pub fn publish(registry: &str, dry_run: bool, options: &Options) -> u8 {
     let project = match current_project(options) {
         Ok(Some(project)) => project,
@@ -529,7 +549,7 @@ pub fn publish(registry: &str, dry_run: bool, options: &Options) -> u8 {
     }
 }
 
-/// `sayon search`: the packages whose names or descriptions hold `query`.
+/** `sayon search`: the packages whose names or descriptions hold `query`. */
 pub fn search(registry: &str, query: &str, limit: u32, options: &Options) -> u8 {
     let path = format!("/search?q={}&limit={limit}", encode(query));
     let found = match ask(registry, "GET", &path, None, &[])
@@ -563,7 +583,7 @@ pub fn search(registry: &str, query: &str, limit: u32, options: &Options) -> u8 
     status::SUCCESS
 }
 
-/// `sayon info`: what the registry's index holds of a package.
+/** `sayon info`: what the registry's index holds of a package. */
 pub fn info(registry: &str, name: &str, options: &Options) -> u8 {
     let help = Some("`sayon search` finds packages by part of their names");
     let versions = match fetch_entries(registry, name) {
@@ -629,8 +649,10 @@ pub fn info(registry: &str, name: &str, options: &Options) -> u8 {
     status::SUCCESS
 }
 
-/// The registries `sayon install` fetches packages from, with each one's
-/// `config.json` once it has been read.
+/**
+The registries `sayon install` fetches packages from, with each one's
+`config.json` once it has been read.
+*/
 #[derive(Default)]
 pub struct Client {
     configs: HashMap<String, Config>,
@@ -677,9 +699,11 @@ impl Index for Client {
     }
 }
 
-/// Opening a page in the browser the system is set to use: through the shell
-/// on Windows, `open` on macOS, and `xdg-open` on Linux. Only addresses of
-/// `http:` and `https:` are opened, so that nothing else is ever run.
+/**
+Opening a page in the browser the system is set to use: through the shell
+on Windows, `open` on macOS, and `xdg-open` on Linux. Only addresses of
+`http:` and `https:` are opened, so that nothing else is ever run.
+*/
 mod browser {
     fn openable(page: &str) -> bool {
         (page.starts_with("https://") || page.starts_with("http://"))
@@ -688,7 +712,7 @@ mod browser {
                 .any(|c| c.is_whitespace() || c.is_control() || c == '"')
     }
 
-    /// Whether the page was handed to a browser.
+    /** Whether the page was handed to a browser. */
     #[cfg(windows)]
     pub fn open(page: &str) -> bool {
         use std::ffi::c_void;
@@ -709,7 +733,7 @@ mod browser {
         }
         let wide = |text: &str| text.encode_utf16().chain([0]).collect::<Vec<u16>>();
         let (operation, file) = (wide("open"), wide(page));
-        // SAFETY: both texts end in NUL, and the rest may be null.
+        /* SAFETY: both texts end in NUL, and the rest may be null. */
         let done = unsafe {
             ShellExecuteW(
                 std::ptr::null_mut(),
@@ -720,7 +744,7 @@ mod browser {
                 SW_SHOWNORMAL,
             )
         };
-        // Above 32 is success; the rest are errors.
+        /* Above 32 is success; the rest are errors. */
         done > 32
     }
 
@@ -745,7 +769,7 @@ mod browser {
     }
 }
 
-/// Turning the terminal's echo off while a token is typed.
+/** Turning the terminal's echo off while a token is typed. */
 #[cfg(windows)]
 mod console {
     use std::ffi::c_void;

@@ -1,10 +1,12 @@
-//! Lowering from checked HIR to IR.
-//!
-//! Generic functions are instantiated once per distinct list of concrete
-//! type arguments. Every lexical scope records the owned slots it must destroy;
-//! normal exits, `break`/`continue`/`return`, and error edges all emit the
-//! drops for the scopes they leave, innermost first, running any `finally`
-//! blocks they pass through.
+/*!
+Lowering from checked HIR to IR.
+
+Generic functions are instantiated once per distinct list of concrete
+type arguments. Every lexical scope records the owned slots it must destroy;
+normal exits, `break`/`continue`/`return`, and error edges all emit the
+drops for the scopes they leave, innermost first, running any `finally`
+blocks they pass through.
+*/
 
 use crate::ir::*;
 use sayon_check::hir::{self, Builtin, ErrorField, LocalId, Usage};
@@ -16,13 +18,15 @@ use sayon_syntax::ast::{BinaryOp, ParamMode, UnaryOp};
 use sayon_syntax::{Diagnostic, Span};
 use std::collections::{HashMap, HashSet};
 
-/// How deeply the type arguments of a function's instance may nest. A
-/// generic function that calls itself, or calls itself through others,
-/// with a type argument that grows each time would otherwise be
-/// instantiated without end.
+/**
+How deeply the type arguments of a function's instance may nest. A
+generic function that calls itself, or calls itself through others,
+with a type argument that grows each time would otherwise be
+instantiated without end.
+*/
 const SPECIALIZATION_DEPTH: usize = 32;
 
-/// The operand that takes a value out of a place: a copy for a Copy value.
+/** The operand that takes a value out of a place: a copy for a Copy value. */
 fn moved(ty: &Type, place: Place) -> Operand {
     if ty.is_copy() {
         Operand::Copy(place)
@@ -31,7 +35,7 @@ fn moved(ty: &Type, place: Place) -> Operand {
     }
 }
 
-/// How deeply a type nests: 1 for a type made of no other types.
+/** How deeply a type nests: 1 for a type made of no other types. */
 fn type_depth(ty: &Type) -> usize {
     let inner = match ty {
         Type::Array(element) | Type::View(element, _) | Type::Wrapper(_, element) => {
@@ -57,7 +61,7 @@ pub fn lower(program: &hir::Program) -> LowerOutput {
     lower_program(program, false)
 }
 
-/// Lowers a program together with its test blocks.
+/** Lowers a program together with its test blocks. */
 pub fn lower_with_tests(program: &hir::Program) -> LowerOutput {
     lower_program(program, true)
 }
@@ -113,7 +117,7 @@ fn lower_program(program: &hir::Program, include_tests: bool) -> LowerOutput {
     } else {
         Vec::new()
     };
-    // The destruction of a structure calls its finally function.
+    /* The destruction of a structure calls its finally function. */
     let finally = program
         .finally
         .iter()
@@ -154,9 +158,11 @@ fn lower_program(program: &hir::Program, include_tests: bool) -> LowerOutput {
     }
 }
 
-/// Every way to pick one alternative of each `or` pattern met along the
-/// way, in the order matching tries them. Each list gives the chosen
-/// alternative of each `or`, in the order a left-to-right walk reaches them.
+/**
+Every way to pick one alternative of each `or` pattern met along the
+way, in the order matching tries them. Each list gives the chosen
+alternative of each `or`, in the order a left-to-right walk reaches them.
+*/
 fn choice_lists(pattern: &hir::Pattern) -> Vec<Vec<usize>> {
     let sequence = |patterns: &[hir::Pattern]| {
         patterns.iter().fold(vec![Vec::new()], |lists, pattern| {
@@ -212,20 +218,20 @@ struct Lowerer<'p> {
     diagnostics: Vec<Diagnostic>,
     union_members: Vec<Type>,
     union_tags: HashMap<Type, u32>,
-    /// The program's structures and enums, then closure environments.
+    /** The program's structures and enums, then closure environments. */
     types: Vec<TypeDef>,
     envs: HashMap<(hir::FuncId, Vec<Type>), Option<Type>>,
-    /// The code behind each named function used as a value.
+    /** The code behind each named function used as a value. */
     thunks: HashMap<(hir::FuncId, Vec<Type>), FunctionId>,
-    /// The generated functions reading each type from JSON, and writing it.
+    /** The generated functions reading each type from JSON, and writing it. */
     decoders: HashMap<Type, FunctionId>,
     encoders: HashMap<Type, FunctionId>,
-    /// The functions reported for type arguments that grow without end.
+    /** The functions reported for type arguments that grow without end. */
     unbounded: HashSet<hir::FuncId>,
 }
 
 impl<'p> Lowerer<'p> {
-    /// The program-wide tag of a union member type.
+    /** The program-wide tag of a union member type. */
     fn tag(&mut self, member: &Type) -> u32 {
         if let Some(tag) = self.union_tags.get(member) {
             return *tag;
@@ -257,8 +263,10 @@ impl<'p> Lowerer<'p> {
                     .help("give the calls the same type arguments the function has, or hold the growing part in an enum or a union"),
                 );
             }
-            // Another instance stands in, so that lowering ends; the
-            // program is not run.
+            /*
+            Another instance stands in, so that lowering ends; the
+            program is not run.
+            */
             if let Some(id) = self
                 .instances
                 .iter()
@@ -275,8 +283,10 @@ impl<'p> Lowerer<'p> {
         id
     }
 
-    /// The environment structure of a closure instance: one field per
-    /// captured variable. A closure that captures nothing has none.
+    /**
+    The environment structure of a closure instance: one field per
+    captured variable. A closure that captures nothing has none.
+    */
     fn env_type(&mut self, func: hir::FuncId, args: &[Type]) -> Option<Type> {
         let key = (func, args.to_vec());
         if let Some(env) = self.envs.get(&key) {
@@ -320,7 +330,7 @@ impl<'p> Lowerer<'p> {
         env
     }
 
-    /// The code a named function's value calls.
+    /** The code a named function's value calls. */
     fn thunk(&mut self, func: hir::FuncId, args: Vec<Type>) -> FunctionId {
         let key = (func, args.clone());
         if let Some(id) = self.thunks.get(&key) {
@@ -385,15 +395,19 @@ struct FnLower<'l, 'p> {
     loops: Vec<LoopCtx>,
     handlers: Vec<HandlerCtx>,
     finallies: Vec<FinallyCtx<'p>>,
-    /// Set while lowering a `finally` copy on a return path: the handler depth
-    /// of that `finally`, so errors escaping it also destroy the return value.
+    /**
+    Set while lowering a `finally` copy on a return path: the handler depth
+    of that `finally`, so errors escaping it also destroy the return value.
+    */
     returning: Option<usize>,
     cleanup_cache: HashMap<CleanupKey, BlockId>,
 }
 
-/// Identifies an error-cleanup block: the handler it goes to, if any,
-/// whether the return value is dropped, and the scopes (by identity and
-/// size) it destroys.
+/**
+Identifies an error-cleanup block: the handler it goes to, if any,
+whether the return value is dropped, and the scopes (by identity and
+size) it destroys.
+*/
 type CleanupKey = (Option<BlockId>, bool, Vec<(u32, usize)>);
 
 impl<'l, 'p> FnLower<'l, 'p> {
@@ -436,7 +450,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    // ----- infrastructure ----------------------------------------------------
+    /* ----- infrastructure ---------------------------------------------------- */
 
     fn ty(&self, ty: &Type) -> Type {
         if self.type_args.is_empty() {
@@ -503,7 +517,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// A temporary owned by the innermost scope.
+    /** A temporary owned by the innermost scope. */
     fn temp(&mut self, ty: Type) -> SlotId {
         let copy = ty.is_copy();
         let slot = self.new_slot(ty, SlotKind::Value, None);
@@ -537,8 +551,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// The block that failures at this point jump to: it destroys the scopes
-    /// being left and continues at the innermost handler, or returns the error.
+    /**
+    The block that failures at this point jump to: it destroys the scopes
+    being left and continues at the innermost handler, or returns the error.
+    */
     fn error_target(&mut self) -> BlockId {
         let handler = self.handlers.last().map(|h| (h.target, h.scope_depth));
         let depth = handler.map(|(_, depth)| depth).unwrap_or(0);
@@ -547,7 +563,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
             .iter()
             .map(|s| (s.id, s.slots.len()))
             .collect();
-        // Two handlers can share a depth and a scope, one after the other.
+        /* Two handlers can share a depth and a scope, one after the other. */
         let key = (handler.map(|(target, _)| target), drop_return, shape);
         if let Some(block) = self.cleanup_cache.get(&key) {
             return *block;
@@ -574,7 +590,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         block
     }
 
-    /// Emits an operation that may fail and continues in its normal successor.
+    /** Emits an operation that may fail and continues in its normal successor. */
     fn op(&mut self, op: Op, dest: Option<Place>, span: Span) {
         if self.terminated {
             return;
@@ -591,8 +607,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.switch_to(normal);
     }
 
-    /// Leaves scopes down to `scope_depth`, running the `finally` blocks of
-    /// regions down to `finally_depth`.
+    /**
+    Leaves scopes down to `scope_depth`, running the `finally` blocks of
+    regions down to `finally_depth`.
+    */
     fn leave(&mut self, scope_depth: usize, finally_depth: usize, returning: bool) {
         let mut index = self.finallies.len();
         while index > finally_depth {
@@ -622,7 +640,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.l.diagnostics.push(diagnostic);
     }
 
-    // ----- functions ------------------------------------------------------------
+    /* ----- functions ------------------------------------------------------------ */
 
     fn finish_slots(&mut self, ret: Type) {
         self.f.ret = ret.clone();
@@ -648,8 +666,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.f
     }
 
-    /// The code behind a named function's value: it takes the (empty)
-    /// environment first and passes its arguments on.
+    /**
+    The code behind a named function's value: it takes the (empty)
+    environment first and passes its arguments on.
+    */
     fn lower_thunk(mut self, callee: FunctionId, source: &'p hir::Function) -> Function {
         let env = self.new_slot(
             Type::Nothing,
@@ -700,8 +720,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.f
     }
 
-    /// Lowers a function body. A closure takes a reference to its
-    /// environment first, and its captured variables refer into it.
+    /**
+    Lowers a function body. A closure takes a reference to its
+    environment first, and its captured variables refer into it.
+    */
     fn lower_function(mut self, source: &'p hir::Function, env: Option<Type>) -> Function {
         self.f.is_entry = source.is_entry;
         let mut params = Vec::new();
@@ -766,7 +788,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
             }
         }
 
-        // Defaults for parameters the caller omitted.
+        /* Defaults for parameters the caller omitted. */
         for (index, param) in source.params.iter().enumerate() {
             let Some(default) = &param.default else {
                 continue;
@@ -794,7 +816,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
             match self.f.slots[slot.0 as usize].kind {
                 SlotKind::Value => self.expr_into(default, Place::slot(slot)),
                 SlotKind::Ref { mutable } => {
-                    // The callee owns a default value; the parameter refers to it.
+                    /* The callee owns a default value; the parameter refers to it. */
                     let ty = self.f.slots[slot.0 as usize].ty.clone();
                     let owned = self.new_slot(ty, SlotKind::Value, None);
                     self.scopes[0].slots.push(owned);
@@ -823,7 +845,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.f
     }
 
-    // ----- statements -------------------------------------------------------------
+    /* ----- statements ------------------------------------------------------------- */
 
     fn lower_block(&mut self, block: &'p hir::Block) {
         self.push_scope();
@@ -840,7 +862,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.pop_scope();
     }
 
-    /// Evaluates a boolean condition, destroying its temporaries before branching.
+    /** Evaluates a boolean condition, destroying its temporaries before branching. */
     fn condition(&mut self, condition: &'p hir::Expr) -> Operand {
         let slot = self.new_slot(Type::Boolean, SlotKind::Value, None);
         self.push_scope();
@@ -959,10 +981,12 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// Tests each arm's pattern in order; the first that matches (and whose
-    /// guard holds) binds its names and runs. A match that owns its value
-    /// keeps it in a temporary: unguarded arms move their bindings out of it,
-    /// and whatever remains is destroyed when the match ends.
+    /**
+    Tests each arm's pattern in order; the first that matches (and whose
+    guard holds) binds its names and runs. A match that owns its value
+    keeps it in a temporary: unguarded arms move their bindings out of it,
+    and whatever remains is destroyed when the match ends.
+    */
     fn match_stmt(&mut self, scrutinee: &'p hir::Expr, owned: bool, arms: &'p [hir::MatchArm]) {
         self.push_scope();
         let ty = self.ty(&scrutinee.ty);
@@ -976,8 +1000,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         };
         let consuming = owned && !copy;
         let end = self.new_block();
-        // An arm with `or` alternatives is lowered once for each combination
-        // of alternatives, in order, so a failed guard tries the next one.
+        /*
+        An arm with `or` alternatives is lowered once for each combination
+        of alternatives, in order, so a failed guard tries the next one.
+        */
         let expanded = arms.iter().flat_map(|arm| {
             choice_lists(&arm.pattern)
                 .into_iter()
@@ -994,8 +1020,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
             let take = consuming && arm.guard.is_none();
             self.bind_pattern(&place, &ty, &arm.pattern, take, &mut choices.iter());
             if let Some(guard) = &arm.guard {
-                // Guarded bindings only copy or borrow, so failing leaves
-                // nothing to clean up.
+                /*
+                Guarded bindings only copy or borrow, so failing leaves
+                nothing to clean up.
+                */
                 let condition = self.condition(guard);
                 let body = self.new_block();
                 self.terminate(Terminator::Branch {
@@ -1011,14 +1039,16 @@ impl<'l, 'p> FnLower<'l, 'p> {
             self.goto(end);
             self.switch_to(next);
         }
-        // Exhaustiveness checking makes this unreachable.
+        /* Exhaustiveness checking makes this unreachable. */
         self.terminate(Terminator::Unreachable);
         self.switch_to(end);
         self.pop_scope();
     }
 
-    /// Branches to `fail` unless the value at `place` matches `pattern`,
-    /// taking the alternative of each `or` pattern from `choices`.
+    /**
+    Branches to `fail` unless the value at `place` matches `pattern`,
+    taking the alternative of each `or` pattern from `choices`.
+    */
     fn test_pattern(
         &mut self,
         place: &Place,
@@ -1092,9 +1122,11 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// Binds a pattern's names to the parts of the value at `place`: Copy
-    /// values are copied; others are moved out when `take` is set, and
-    /// borrowed otherwise.
+    /**
+    Binds a pattern's names to the parts of the value at `place`: Copy
+    values are copied; others are moved out when `take` is set, and
+    borrowed otherwise.
+    */
     fn bind_pattern(
         &mut self,
         place: &Place,
@@ -1111,8 +1143,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
             }
             hir::Pattern::Record { fields, .. } => {
                 let field_types = self.record_field_types(ty);
-                // A structure that its finally function destroys keeps its
-                // parts, and the names borrow them.
+                /*
+                A structure that its finally function destroys keeps its
+                parts, and the names borrow them.
+                */
                 let take = take
                     && !matches!(ty, Type::Named(named) if self.l.types[named.id.0 as usize].finally);
                 for (index, (field, field_ty)) in fields.iter().zip(&field_types).enumerate() {
@@ -1181,7 +1215,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// An operand that reads the value at `place` without taking it.
+    /** An operand that reads the value at `place` without taking it. */
     fn read_operand(&self, place: &Place, ty: &Type) -> Operand {
         if ty.is_copy() {
             Operand::Copy(place.clone())
@@ -1193,7 +1227,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// Continues in a new block when the flag is true, else jumps to `fail`.
+    /** Continues in a new block when the flag is true, else jumps to `fail`. */
     fn branch_unless(&mut self, flag: SlotId, fail: BlockId) {
         let next = self.new_block();
         self.terminate(Terminator::Branch {
@@ -1211,8 +1245,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         let index = self.new_slot(Type::INTEGER, SlotKind::Value, None);
         let below = self.new_slot(Type::Boolean, SlotKind::Value, None);
 
-        // The collection is read in place when it is a place, otherwise owned
-        // by the loop for its duration.
+        /*
+        The collection is read in place when it is a place, otherwise owned
+        by the loop for its duration.
+        */
         let collection = match &iterable_ty {
             Type::Range => {
                 let range = self.new_slot(Type::Range, SlotKind::Value, None);
@@ -1243,12 +1279,16 @@ impl<'l, 'p> FnLower<'l, 'p> {
             mutable: false,
         };
         if iterable_ty == Type::String {
-            // A string loop steps through the UTF-8 bytes; `index` is the
-            // byte offset of the next character.
+            /*
+            A string loop steps through the UTF-8 bytes; `index` is the
+            byte offset of the next character.
+            */
             self.assign(Place::slot(count), Rvalue::ByteLength(borrowed));
         } else if let Type::Dict(..) = iterable_ty {
-            // A dictionary loop goes through the places of its entries,
-            // stepping over those of removed entries.
+            /*
+            A dictionary loop goes through the places of its entries,
+            stepping over those of removed entries.
+            */
             self.assign(
                 Place::slot(index),
                 Rvalue::DictNext {
@@ -1258,7 +1298,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
             );
             self.assign(Place::slot(count), Rvalue::DictSlots(borrowed));
         } else if iterable_ty != Type::Range {
-            // Re-read each time; the loop's borrow keeps the length fixed.
+            /* Re-read each time; the loop's borrow keeps the length fixed. */
             self.assign(
                 Place::slot(count),
                 Rvalue::Length {
@@ -1351,9 +1391,11 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.pop_scope();
     }
 
-    /// A loop over an iterator: each iteration calls `next`, and the loop
-    /// ends when it returns `nothing`; otherwise the loop variable owns the
-    /// value until the iteration ends.
+    /**
+    A loop over an iterator: each iteration calls `next`, and the loop
+    ends when it returns `nothing`; otherwise the loop variable owns the
+    value until the iteration ends.
+    */
     fn iterator_loop(
         &mut self,
         bindings: &[LocalId],
@@ -1422,9 +1464,11 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.pop_scope();
     }
 
-    /// One iteration of a loop over a string: the loop variable owns the
-    /// next character and is destroyed when the iteration ends, however it
-    /// ends.
+    /**
+    One iteration of a loop over a string: the loop variable owns the
+    next character and is destroyed when the iteration ends, however it
+    ends.
+    */
     fn string_loop_body(
         &mut self,
         bindings: &[LocalId],
@@ -1533,9 +1577,11 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.switch_to(after);
     }
 
-    /// At a handler: continues when the pending error is an ordinary one,
-    /// and jumps to `exiting` when it is the program exiting (`os.exit`),
-    /// which `catch` and `try` never stop.
+    /**
+    At a handler: continues when the pending error is an ordinary one,
+    and jumps to `exiting` when it is the program exiting (`os.exit`),
+    which `catch` and `try` never stop.
+    */
     fn unless_exiting(&mut self, exiting: BlockId) {
         self.push_scope();
         let code = self.temp(Type::String);
@@ -1547,7 +1593,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
                 mutable: false,
             }),
         );
-        // `Exit` ends the program and `Cancelled` a task; neither stops.
+        /* `Exit` ends the program and `Cancelled` a task; neither stops. */
         let mut flags = Vec::new();
         for passing in [EXIT_CODE, CANCELLED_CODE] {
             let flag = self.new_slot(Type::Boolean, SlotKind::Value, None);
@@ -1577,7 +1623,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// Runs the `finally` block of the region at `depth` on a normal exit.
+    /** Runs the `finally` block of the region at `depth` on a normal exit. */
     fn run_finally_inline(&mut self, depth: usize) {
         if let Some(finally) = self.finallies.get(depth).copied() {
             let saved = self.finallies.split_off(depth);
@@ -1586,8 +1632,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// On a failure path: keeps the pending error aside, runs the `finally`
-    /// block, then continues propagating the error.
+    /**
+    On a failure path: keeps the pending error aside, runs the `finally`
+    block, then continues propagating the error.
+    */
     fn finally_then_propagate(&mut self, depth: usize) {
         if let Some(finally) = self.finallies.get(depth).copied() {
             self.push_scope();
@@ -1614,7 +1662,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
             hir::Place::Local(local) => {
                 let slot = self.local_slots[local];
                 let ty = self.f.slots[slot.0 as usize].ty.clone();
-                // `text = text + more` adds to the text where it is.
+                /* `text = text + more` adds to the text where it is. */
                 if ty == Type::String
                     && let hir::ExprKind::Binary {
                         op: BinaryOp::Add,
@@ -1645,8 +1693,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
                 target_ty,
                 index,
             } => {
-                // The value comes first, so that the positions checked on the
-                // way to the element are still valid when it is stored.
+                /*
+                The value comes first, so that the positions checked on the
+                way to the element are still valid when it is stored.
+                */
                 let value_operand = self.value_temp(value);
                 let target_ty = self.ty(target_ty);
                 let base = self.hir_place_read(target);
@@ -1688,8 +1738,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// Evaluates a value into a temporary and returns the operand that
-    /// transfers (or copies) it out.
+    /**
+    Evaluates a value into a temporary and returns the operand that
+    transfers (or copies) it out.
+    */
     fn value_temp(&mut self, value: &'p hir::Expr) -> Operand {
         let ty = self.ty(&value.ty);
         let temp = self.temp(ty.clone());
@@ -1752,8 +1804,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// The projection reading `name` of a value: a structure's field, or
-    /// the value of a `Shared` handle.
+    /**
+    The projection reading `name` of a value: a structure's field, or
+    the value of a `Shared` handle.
+    */
     fn field_projection(&self, ty: &Type, name: &str) -> Projection {
         match ty {
             Type::Wrapper(Wrapper::Shared, _) => Projection::Deref,
@@ -1761,7 +1815,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// The position and type of a structure's field.
+    /** The position and type of a structure's field. */
     fn field_of(&self, ty: &Type, name: &str) -> (u32, Type) {
         let Type::Named(named) = ty else {
             panic!("field `{name}` of {ty}");
@@ -1771,7 +1825,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         (index as u32, def.fields()[index].ty.substitute(&named.args))
     }
 
-    /// Resolves a HIR place, checking every index and key on the way.
+    /** Resolves a HIR place, checking every index and key on the way. */
     fn hir_place_read(&mut self, place: &'p hir::Place) -> Place {
         match place {
             hir::Place::Local(local) => Place::slot(self.local_slots[local]),
@@ -1811,7 +1865,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// `base[index]`, with the bounds or key check.
+    /** `base[index]`, with the bounds or key check. */
     fn element_place(
         &mut self,
         base: Place,
@@ -1854,10 +1908,12 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    // ----- expressions --------------------------------------------------------
+    /* ----- expressions -------------------------------------------------------- */
 
-    /// A place holding the expression's value: the variable itself for names
-    /// and elements, or a temporary for computed values.
+    /**
+    A place holding the expression's value: the variable itself for names
+    and elements, or a temporary for computed values.
+    */
     fn place_of(&mut self, expr: &'p hir::Expr, want: Want) -> Place {
         match &expr.kind {
             hir::ExprKind::Local { local, .. } => Place::slot(self.local_slots[local]),
@@ -1891,15 +1947,17 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// The place of a local narrowed to `ty`.
+    /** The place of a local narrowed to `ty`. */
     fn narrowed_place(&mut self, local: Place, ty: &Type) -> Place {
         let local_ty = self.place_ty(&local);
         self.narrow(local, &local_ty, ty)
     }
 
-    /// A place holding a value of type `from`, seen as the narrower type
-    /// `to`: the payload for a single member of a union, or the union itself
-    /// for a smaller union (tags are program-wide).
+    /**
+    A place holding a value of type `from`, seen as the narrower type
+    `to`: the payload for a single member of a union, or the union itself
+    for a smaller union (tags are program-wide).
+    */
     fn narrow(&mut self, place: Place, from: &Type, to: &Type) -> Place {
         if from == to || matches!(to, Type::Union(_)) || !matches!(from, Type::Union(_)) {
             return place;
@@ -1938,7 +1996,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
             hir::ExprKind::Local { .. }
             | hir::ExprKind::Constant(_)
             | hir::ExprKind::Field { .. } => true,
-            // A character of a string is computed, not stored.
+            /* A character of a string is computed, not stored. */
             hir::ExprKind::Index { target, .. } => self.ty(&target.ty) != Type::String,
             hir::ExprKind::Narrow(inner) | hir::ExprKind::VariantPayload { value: inner, .. } => {
                 matches!(inner.kind, hir::ExprKind::Local { .. })
@@ -1966,7 +2024,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         if ty.is_copy() && want != Want::Mut {
             return Operand::Copy(place);
         }
-        // Using a counted handle again retains it: the owner gets a clone.
+        /* Using a counted handle again retains it: the owner gets a clone. */
         if want == Want::Owned && ty.is_retained() && usage != Some(Usage::Move) {
             let slot = self.temp(ty.clone());
             self.assign(
@@ -1983,7 +2041,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
         match (usage, want) {
             (Some(Usage::Move), _) => Operand::Move(place),
-            // The checker only allows taking a field of a temporary.
+            /* The checker only allows taking a field of a temporary. */
             (None, Want::Owned) if matches!(expr.kind, hir::ExprKind::Field { .. }) => {
                 Operand::Move(place)
             }
@@ -1992,7 +2050,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
                 mutable: true,
             },
             (_, Want::Owned) => {
-                // The checker only lets owned values be consumed.
+                /* The checker only lets owned values be consumed. */
                 debug_assert!(false, "owned use of a borrowed value in {}", self.f.name);
                 Operand::Move(place)
             }
@@ -2003,8 +2061,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// A generic function's instance can make a dictionary whose key type,
-    /// filled in from the type arguments, cannot be a key.
+    /**
+    A generic function's instance can make a dictionary whose key type,
+    filled in from the type arguments, cannot be a key.
+    */
     fn check_key_type(&mut self, key: &Type, span: Span) {
         if let Some(part) = sayon_check::types::non_key_part(&self.l.program.types, key) {
             self.report(
@@ -2032,7 +2092,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// Evaluates an expression and initializes `dest` with its value.
+    /** Evaluates an expression and initializes `dest` with its value. */
     fn expr_into(&mut self, expr: &'p hir::Expr, dest: Place) {
         use hir::ExprKind as H;
         let ty = self.ty(&expr.ty);
@@ -2101,8 +2161,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
                 self.assign(dest, Rvalue::Use(operand));
             }
             H::Record(fields) => {
-                // Fields are evaluated in the order written, then laid out in
-                // declaration order.
+                /*
+                Fields are evaluated in the order written, then laid out in
+                declaration order.
+                */
                 let mut operands: Vec<Option<Operand>> = vec![None; fields.len()];
                 for (index, value) in fields {
                     operands[*index as usize] = Some(self.operand(value, Want::Owned));
@@ -2174,7 +2236,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
                 );
             }
             H::Closure { function, captures } => {
-                // A closure shares the type parameters of the function it is in.
+                /* A closure shares the type parameters of the function it is in. */
                 let args = self.type_args.clone();
                 let code = self.l.instance(*function, args.clone());
                 let env = self.l.env_type(*function, &args);
@@ -2351,7 +2413,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
                     || matches!(inner_ty, Type::Union(_))
                     || !matches!(ty, Type::Union(_))
                 {
-                    // Program-wide tags make a smaller union a valid larger one.
+                    /* Program-wide tags make a smaller union a valid larger one. */
                     self.assign(dest, Rvalue::Use(value));
                 } else {
                     let tag = self.l.tag(&inner_ty);
@@ -2406,9 +2468,11 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// `try value`: evaluates the value with a handler of its own, so that an
-    /// error raised on the way becomes `failure(error)` instead of
-    /// propagating; otherwise the result is `success(value)`.
+    /**
+    `try value`: evaluates the value with a handler of its own, so that an
+    error raised on the way becomes `failure(error)` instead of
+    propagating; otherwise the result is `success(value)`.
+    */
     fn try_expr(&mut self, inner: &'p hir::Expr, ty: &Type, dest: Place) {
         let inner_ty = self.ty(&inner.ty);
         let on_error = self.new_block();
@@ -2437,7 +2501,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.handlers.pop();
         self.goto(join);
 
-        // The error edge has already destroyed the temporaries of the value.
+        /* The error edge has already destroyed the temporaries of the value. */
         self.switch_to(on_error);
         let exiting = self.new_block();
         self.unless_exiting(exiting);
@@ -2457,9 +2521,11 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.switch_to(join);
     }
 
-    /// `mutex.change(function)`: takes the value under the lock, lets
-    /// the function change it in place, and puts it back, also when it
-    /// fails, so that the lock is always released.
+    /**
+    `mutex.change(function)`: takes the value under the lock, lets
+    the function change it in place, and puts it back, also when it
+    fails, so that the lock is always released.
+    */
     fn mutex_change(&mut self, args: &'p [hir::Arg], dest: Place, span: Span) {
         let mutex = self.operand(&args[0].expr, Want::Read);
         let change = self.place_of(&args[1].expr, Want::Mut);
@@ -2476,8 +2542,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         );
         let on_error = self.new_block();
         let join = self.new_block();
-        // The value lives in the scope around the handler, so the error edge
-        // keeps it to put back.
+        /*
+        The value lives in the scope around the handler, so the error edge
+        keeps it to put back.
+        */
         self.handlers.push(HandlerCtx {
             target: on_error,
             scope_depth: self.scopes.len(),
@@ -2509,10 +2577,12 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.switch_to(join);
     }
 
-    /// `channel_send_result`: `sent` (variant 0) once the channel takes the
-    /// message, or `unsent(message, problem)` (variant 1) when it is closed,
-    /// which leaves the message with the sender. Any other error, such as
-    /// a cancellation while it waits, goes on as for `send`.
+    /**
+    `channel_send_result`: `sent` (variant 0) once the channel takes the
+    message, or `unsent(message, problem)` (variant 1) when it is closed,
+    which leaves the message with the sender. Any other error, such as
+    a cancellation while it waits, goes on as for `send`.
+    */
     fn send_result(&mut self, args: &'p [hir::Arg], ty: &Type, dest: Place, span: Span) {
         let channel = self.operand(&args[0].expr, Want::Read);
         let message_ty = self.ty(&args[1].expr.ty);
@@ -2522,8 +2592,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         };
         let on_error = self.new_block();
         let join = self.new_block();
-        // The message lives in the scope around the handler, so the error
-        // edge keeps it.
+        /*
+        The message lives in the scope around the handler, so the error
+        edge keeps it.
+        */
         self.handlers.push(HandlerCtx {
             target: on_error,
             scope_depth: self.scopes.len(),
@@ -2572,8 +2644,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.switch_to(join);
     }
 
-    /// Goes on when the error in the error slot has the code `code`, and
-    /// branches to `otherwise` when it has another.
+    /**
+    Goes on when the error in the error slot has the code `code`, and
+    branches to `otherwise` when it has another.
+    */
     fn unless_code(&mut self, code: &str, otherwise: BlockId) {
         self.push_scope();
         let found = self.temp(Type::String);
@@ -2607,7 +2681,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.switch_to(next);
     }
 
-    /// `union == member`: true when the union holds that member with an equal value.
+    /** `union == member`: true when the union holds that member with an equal value. */
     fn member_equality(
         &mut self,
         union: &'p hir::Expr,
@@ -2930,7 +3004,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
                 self.push(Inst::MutexPut { mutex, value: back });
             }
             Builtin::MutexSet | Builtin::MutexReplace => {
-                // The new value first, in case it reads the mutex.
+                /* The new value first, in case it reads the mutex. */
                 let new = self.value_temp(&args[1].expr);
                 let mutex = self.operand(&args[0].expr, Want::Read);
                 let inner = self.ty(&args[1].expr.ty);
@@ -2947,13 +3021,13 @@ impl<'l, 'p> FnLower<'l, 'p> {
                     let taken = moved(&inner, Place::slot(old));
                     self.assign(dest, Rvalue::Use(taken));
                 } else {
-                    // The old value goes once the lock is free.
+                    /* The old value goes once the lock is free. */
                     self.push(Inst::Drop(Place::slot(old)));
                     self.assign(dest, Rvalue::Use(Operand::Const(Constant::Nothing)));
                 }
             }
             Builtin::MutexChange => self.mutex_change(args, dest, span),
-            // A cell is laid out like its value.
+            /* A cell is laid out like its value. */
             Builtin::MakeCell => {
                 let value = self.operand(&args[0].expr, Want::Owned);
                 self.assign(dest, Rvalue::Use(value));
@@ -2994,7 +3068,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
                 self.assign(dest, value);
             }
             Builtin::CellSet | Builtin::CellReplace => {
-                // The new value first, in case it reads the cell.
+                /* The new value first, in case it reads the cell. */
                 let value = self.value_temp(&args[1].expr);
                 let cell = self.place_of(&args[0].expr, Want::Read);
                 let inner = self.ty(&args[1].expr.ty);
@@ -3039,8 +3113,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
                     span,
                 );
             }
-            // A task waited for is read in place, so that waiting again
-            // finds it; it is destroyed with its variable.
+            /*
+            A task waited for is read in place, so that waiting again
+            finds it; it is destroyed with its variable.
+            */
             Builtin::TaskJoin | Builtin::TaskDetach => {
                 let task = self.place_of(&args[0].expr, Want::Read);
                 if builtin == Builtin::TaskJoin {
@@ -3105,7 +3181,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
             }
             Builtin::ChannelSend => {
                 let channel = self.operand(&args[0].expr, Want::Read);
-                // The message stays in place until the channel takes it.
+                /* The message stays in place until the channel takes it. */
                 let message = self.value_temp(&args[1].expr);
                 let message = match message {
                     Operand::Copy(place) | Operand::Move(place) => place,

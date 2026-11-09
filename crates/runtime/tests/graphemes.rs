@@ -1,5 +1,7 @@
-//! Checks grapheme clusters against the cases in graphemes.txt, whose
-//! expected clusters come from an independent implementation of the rules.
+/*!
+Checks grapheme clusters against the cases in graphemes.txt, whose
+expected clusters come from an independent implementation of the rules.
+*/
 
 use sayon_runtime::graphemes::clusters;
 

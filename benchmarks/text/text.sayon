@@ -1,5 +1,7 @@
-# Text: format many lines into one string, split it back into lines, and
-# look through them. String formatting, joining, splitting, and searching.
+##
+Text: format many lines into one string, split it back into lines, and
+look through them. String formatting, joining, splitting, and searching.
+##
 
 os = import("standard/os.sayon")
 strings = import("standard/strings.sayon")

@@ -1,4 +1,4 @@
-//! The `sayon` command.
+/*! The `sayon` command. */
 
 mod commands;
 mod compile;
@@ -11,20 +11,20 @@ mod sandbox;
 use std::collections::HashMap;
 use std::process::ExitCode;
 
-/// Exit statuses. A program's own `main` result is passed through unchanged.
+/** Exit statuses. A program's own `main` result is passed through unchanged. */
 pub mod status {
     pub const SUCCESS: u8 = 0;
-    /// The program raised an error nothing caught, or a test failed.
+    /** The program raised an error nothing caught, or a test failed. */
     pub const PROGRAM_FAILED: u8 = 1;
-    /// The source has errors; nothing ran.
+    /** The source has errors; nothing ran. */
     pub const COMPILE_FAILED: u8 = 2;
-    /// Execution stopped without cleanup (for example runaway recursion).
+    /** Execution stopped without cleanup (for example runaway recursion). */
     pub const FATAL: u8 = 3;
-    /// The native build could not run (toolchain missing or linking failed).
+    /** The native build could not run (toolchain missing or linking failed). */
     pub const BUILD_FAILED: u8 = 4;
-    /// The command line was invalid.
+    /** The command line was invalid. */
     pub const USAGE: u8 = 64;
-    /// An input file could not be read.
+    /** An input file could not be read. */
     pub const INPUT: u8 = 66;
 }
 
@@ -105,15 +105,15 @@ Exit status:
     66  an input file could not be read
 ";
 
-/// Parsed command-line arguments for one command.
+/** Parsed command-line arguments for one command. */
 pub struct Args {
     pub positional: Vec<String>,
     pub flags: Vec<String>,
-    /// The last value of each valued option.
+    /** The last value of each valued option. */
     pub values: HashMap<String, String>,
-    /// Every value of each valued option, in order, for those that repeat.
+    /** Every value of each valued option, in order, for those that repeat. */
     pub repeated: Vec<(String, String)>,
-    /// Words after `--`.
+    /** Words after `--`. */
     pub rest: Vec<String>,
 }
 
@@ -122,7 +122,7 @@ impl Args {
         self.flags.iter().any(|f| f == name)
     }
 
-    /// Every value given for an option that can repeat.
+    /** Every value given for an option that can repeat. */
     pub fn all(&self, name: &str) -> Vec<&str> {
         self.repeated
             .iter()
@@ -132,8 +132,10 @@ impl Args {
     }
 }
 
-/// Splits arguments into positionals, known flags, and known valued options
-/// (written `--name value` or `--name=value`).
+/**
+Splits arguments into positionals, known flags, and known valued options
+(written `--name value` or `--name=value`).
+*/
 fn parse_args(
     args: &[String],
     flags: &[&str],

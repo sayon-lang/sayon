@@ -1,9 +1,11 @@
-# Operations on text. Positions and lengths count Unicode characters (code
-# points); `graphemes` works with what readers see as characters, and
-# `bytes` with the UTF-8 encoding.
-#
-#     strings = import("standard/strings.sayon")
-#     words = strings.split("a,b,c", ",")
+##
+Operations on text. Positions and lengths count Unicode characters (code
+points); `graphemes` works with what readers see as characters, and
+`bytes` with the UTF-8 encoding.
+
+    strings = import("standard/strings.sayon")
+    words = strings.split("a,b,c", ",")
+##
 
 # Splits text at every occurrence of a non-empty separator.
 function split(text: string, separator: string) -> Array<string>
@@ -17,8 +19,10 @@ function lines(text: string) -> Array<string>
 function join(parts: Array<string>, separator: string) -> string
     return host_join(parts, separator)
 
-# The text without leading and trailing whitespace: the characters Unicode
-# calls white space, such as spaces, tabs, and line breaks.
+##
+The text without leading and trailing whitespace: the characters Unicode
+calls white space, such as spaces, tabs, and line breaks.
+##
 function trim(text: string) -> string
     return host_trim(text)
 
@@ -65,14 +69,18 @@ function find(text: string, part: string) -> integer or nothing
 function repeat(text: string, count: integer) -> string
     return host_repeat(text, count)
 
-# The text with `fill`, one character, put before it until it is `width`
-# characters long: `pad_start("7", 3, "0")` is "007". Longer text stays as
-# it is.
+##
+The text with `fill`, one character, put before it until it is `width`
+characters long: `pad_start("7", 3, "0")` is "007". Longer text stays as
+it is.
+##
 function pad_start(text: string, width: integer, fill = " ") -> string
     return padding(text, width, fill) + text
 
-# The text with `fill`, one character, put after it until it is `width`
-# characters long: `pad_end("ab", 4)` is "ab  ". Longer text stays as it is.
+##
+The text with `fill`, one character, put after it until it is `width`
+characters long: `pad_end("ab", 4)` is "ab  ". Longer text stays as it is.
+##
 function pad_end(text: string, width: integer, fill = " ") -> string
     return text + padding(text, width, fill)
 
@@ -84,10 +92,12 @@ function slice(text: string, start: integer, end: integer) -> string
 function characters(text: string) -> Array<string>
     return host_characters(text)
 
-# The user-perceived characters of a text, its extended grapheme clusters:
-# a letter with its accents, a whole emoji sequence, or a flag is one, so
-# `graphemes("e\u{301}")` is ["é"] while `characters` gives two strings.
-# The rules are those of Unicode 17.0.
+##
+The user-perceived characters of a text, its extended grapheme clusters:
+a letter with its accents, a whole emoji sequence, or a flag is one, so
+`graphemes("e\u{301}")` is ["é"] while `characters` gives two strings.
+The rules are those of Unicode 17.0.
+##
 function graphemes(text: string) -> Array<string>
     return host_graphemes(text)
 
@@ -99,35 +109,47 @@ function grapheme_count(text: string) -> integer
 function bytes(text: string) -> Array<byte>
     return host_bytes(text)
 
-# The UTF-8 bytes of a text from `start` up to, but not including, `end`,
-# without copying them. The view borrows the text for as long as it is used.
+##
+The UTF-8 bytes of a text from `start` up to, but not including, `end`,
+without copying them. The view borrows the text for as long as it is used.
+##
 function byte_view(text: string, start = 0, end = bytelength(text)) -> View<byte>
     return view(text, start, end)
 
-# The text that UTF-8 bytes encode. Fails with EncodingError when they are
-# not valid UTF-8.
+##
+The text that UTF-8 bytes encode. Fails with EncodingError when they are
+not valid UTF-8.
+##
 function from_bytes(bytes: Array<byte>) -> string
     return host_from_bytes(bytes)
 
-# The text that UTF-8 bytes encode, with U+FFFD, the replacement character,
-# in place of each invalid sequence.
+##
+The text that UTF-8 bytes encode, with U+FFFD, the replacement character,
+in place of each invalid sequence.
+##
 function from_bytes_lossy(bytes: Array<byte>) -> string
     return host_from_bytes_lossy(bytes)
 
-# Text in an encoding: "utf-8", "utf-16" (little-endian after a byte-order
-# mark), "utf-16le", "utf-16be", "latin-1", "ascii", or "windows-1252".
-# Fails with EncodingError for a character the encoding has no form for.
+##
+Text in an encoding: "utf-8", "utf-16" (little-endian after a byte-order
+mark), "utf-16le", "utf-16be", "latin-1", "ascii", or "windows-1252".
+Fails with EncodingError for a character the encoding has no form for.
+##
 function encode(text: string, encoding: string) -> Array<byte>
     return host_encode(text, encoding)
 
-# Bytes of an encoding as text; "utf-16" follows a byte-order mark, and is
-# little-endian without one. Fails with EncodingError for bytes that are not
-# valid in the encoding.
+##
+Bytes of an encoding as text; "utf-16" follows a byte-order mark, and is
+little-endian without one. Fails with EncodingError for bytes that are not
+valid in the encoding.
+##
 function decode(bytes: Array<byte>, encoding: string) -> string
     return host_decode(bytes, encoding)
 
-# Bytes of an encoding as text, with U+FFFD for the bytes that are not
-# valid in it.
+##
+Bytes of an encoding as text, with U+FFFD for the bytes that are not
+valid in it.
+##
 function decode_lossy(bytes: Array<byte>, encoding: string) -> string
     return host_decode_lossy(bytes, encoding)
 
@@ -139,11 +161,13 @@ function code(character: string) -> integer
 function character(code: integer) -> string
     return host_character(code)
 
-# The integer that `text` writes in `base`, from 2 to 36: an optional `+` or
-# `-`, then digits, which from 10 on are the letters `a` to `z` in either
-# case. `parse_integer("ff", 16)` is 255, and `parse_integer("-101", 2)` is
-# -5. Fails with ParseError for other text, and for a number that does not
-# fit in an integer.
+##
+The integer that `text` writes in `base`, from 2 to 36: an optional `+` or
+`-`, then digits, which from 10 on are the letters `a` to `z` in either
+case. `parse_integer("ff", 16)` is 255, and `parse_integer("-101", 2)` is
+-5. Fails with ParseError for other text, and for a number that does not
+fit in an integer.
+##
 function parse_integer(text: string, base = 10) -> integer
     if base < 2 or base > 36
         host_value_fail("a base is from 2 to 36, not {base}")
@@ -158,8 +182,10 @@ function parse_integer(text: string, base = 10) -> integer
         digit = digit_value(character)
         if digit >= base
             host_parse_error("\"{text}\" is not an integer in base {base}")
-        # A negative number is built on the negative side, which reaches one
-        # further than the positive.
+        ##
+        A negative number is built on the negative side, which reaches one
+        further than the positive.
+        ##
         if negative
             if value < (-9223372036854775807 - 1 + digit) / base
                 host_parse_error("\"{text}\" does not fit in an integer")
@@ -170,11 +196,13 @@ function parse_integer(text: string, base = 10) -> integer
             value = value * base + digit
     return value
 
-# The number written with `places` digits after the decimal point, from 0 to
-# 100, rounded to the nearest: `decimal(3.14159, 2)` is "3.14". A tie goes
-# to the even digit, and since the float nearest a decimal is a little more
-# or less than it, `decimal(2.675, 2)` is "2.67". NaN and the infinities are
-# written as `tostring` writes them.
+##
+The number written with `places` digits after the decimal point, from 0 to
+100, rounded to the nearest: `decimal(3.14159, 2)` is "3.14". A tie goes
+to the even digit, and since the float nearest a decimal is a little more
+or less than it, `decimal(2.675, 2)` is "2.67". NaN and the infinities are
+written as `tostring` writes them.
+##
 function decimal(value: float, places: integer) -> string
     return host_decimal_text(value, places)
 
@@ -186,8 +214,10 @@ private function padding(text: string, width: integer, fill: string) -> string
         return ""
     return repeat(fill, width - length(text))
 
-# A digit's value: 0 to 9 for `0` to `9`, and 10 to 35 for the letters `a`
-# to `z` in either case; 36, a digit of no base, for any other character.
+##
+A digit's value: 0 to 9 for `0` to `9`, and 10 to 35 for the letters `a`
+to `z` in either case; 36, a digit of no base, for any other character.
+##
 private function digit_value(character: string) -> integer
     if character >= "0" and character <= "9"
         return code(character) - code("0")

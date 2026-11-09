@@ -1,4 +1,4 @@
-//! Finding what to compile, compiling it, and reporting diagnostics.
+/*! Finding what to compile, compiling it, and reporting diagnostics. */
 
 use crate::{status, usage_error};
 use sayon_driver::manifest::Manifest;
@@ -17,7 +17,7 @@ pub fn color_default() -> bool {
         return false;
     }
     if cfg!(windows) {
-        // Classic consoles show escape codes literally; modern terminals set these.
+        /* Classic consoles show escape codes literally; modern terminals set these. */
         std::env::var_os("WT_SESSION").is_some() || std::env::var_os("TERM").is_some()
     } else {
         true
@@ -29,11 +29,13 @@ pub struct Project {
     pub manifest: Manifest,
 }
 
-/// The program a command works on: a file named on the command line, or the
-/// entry file of the project around the current directory.
+/**
+The program a command works on: a file named on the command line, or the
+entry file of the project around the current directory.
+*/
 pub struct Source {
     pub entry: PathBuf,
-    /// The directory imports resolve from, for a project.
+    /** The directory imports resolve from, for a project. */
     pub root: Option<PathBuf>,
     pub project: Option<Project>,
 }
@@ -65,9 +67,11 @@ impl Source {
     }
 }
 
-/// The targets `--target` names, `all` being the project's targets or the
-/// default set; this computer's when there is none. Each must provide
-/// what the project's manifest requires.
+/**
+The targets `--target` names, `all` being the project's targets or the
+default set; this computer's when there is none. Each must provide
+what the project's manifest requires.
+*/
 pub fn targets(
     names: &[&str],
     source: &Source,
@@ -128,8 +132,10 @@ pub fn targets(
     Ok(targets)
 }
 
-/// The project around the current directory, if there is one. A manifest
-/// with errors is reported and stops the command.
+/**
+The project around the current directory, if there is one. A manifest
+with errors is reported and stops the command.
+*/
 pub fn current_project(options: &Options) -> Result<Option<Project>, u8> {
     let cwd = std::env::current_dir().map_err(|_| status::INPUT)?;
     let Some(root) = sayon_driver::find_project(&cwd) else {
@@ -177,13 +183,15 @@ pub fn print_diagnostics(
 pub struct Compiled {
     pub sources: SourceMap,
     pub module: sayon_ir::Module,
-    /// The capabilities the program needs.
+    /** The capabilities the program needs. */
     pub needs: Vec<sayon_target::Capability>,
 }
 
-/// The standard library directory: `SAYON_STDLIB`, then `stdlib` next to
-/// the executable or up to two levels above it (an installation's `bin`
-/// directory, or a development build in `target/<profile>`).
+/**
+The standard library directory: `SAYON_STDLIB`, then `stdlib` next to
+the executable or up to two levels above it (an installation's `bin`
+directory, or a development build in `target/<profile>`).
+*/
 pub fn stdlib_dir() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("SAYON_STDLIB") {
         return Some(PathBuf::from(path));
@@ -200,7 +208,7 @@ pub fn stdlib_dir() -> Option<PathBuf> {
     None
 }
 
-/// Prints a problem with the dependencies like a diagnostic.
+/** Prints a problem with the dependencies like a diagnostic. */
 pub fn print_package_error(error: &sayon_driver::packages::PackageError, options: &Options) {
     let label = if options.color {
         "\x1b[1;31merror\x1b[0m"
@@ -213,8 +221,10 @@ pub fn print_package_error(error: &sayon_driver::packages::PackageError, options
     }
 }
 
-/// The project a file belongs to: the nearest directory above it with a
-/// manifest. A file of a project imports from the project's root.
+/**
+The project a file belongs to: the nearest directory above it with a
+manifest. A file of a project imports from the project's root.
+*/
 fn project_root(entry: &Path, root: Option<&Path>) -> Option<PathBuf> {
     if let Some(root) = root {
         return Some(root.to_path_buf());
@@ -223,8 +233,10 @@ fn project_root(entry: &Path, root: Option<&Path>) -> Option<PathBuf> {
     sayon_driver::find_project(absolute.parent()?)
 }
 
-/// The driver's options for a program: the project's root and the packages
-/// its lock provides.
+/**
+The driver's options for a program: the project's root and the packages
+its lock provides.
+*/
 fn driver_options(
     entry: &Path,
     root: Option<&Path>,
@@ -266,10 +278,12 @@ fn driver_options(
     })
 }
 
-/// The driver's options for checking `entry` in an editor, as `sayon lint`
-/// checks it for this computer: with its project's manifest and packages,
-/// and what is wrong with them told rather than printed, since the editor
-/// shows it.
+/**
+The driver's options for checking `entry` in an editor, as `sayon lint`
+checks it for this computer: with its project's manifest and packages,
+and what is wrong with them told rather than printed, since the editor
+shows it.
+*/
 pub fn editor_options(entry: &Path) -> Result<sayon_driver::Options, String> {
     let root = project_root(entry, None);
     let mut packages = sayon_driver::packages::Packages::default();
@@ -302,8 +316,10 @@ pub fn editor_options(entry: &Path) -> Result<sayon_driver::Options, String> {
     })
 }
 
-/// Loads, checks, and lowers a program for `target`, printing any
-/// diagnostics.
+/**
+Loads, checks, and lowers a program for `target`, printing any
+diagnostics.
+*/
 pub fn compile(
     entry: &Path,
     root: Option<&Path>,
@@ -315,9 +331,11 @@ pub fn compile(
     compile_with(entry, &driver_options, options)
 }
 
-/// Loads, checks, and lowers one file for the sandbox, printing any
-/// diagnostics: on its own, outside any project around it, importing only
-/// the standard library, for the sandbox's target.
+/**
+Loads, checks, and lowers one file for the sandbox, printing any
+diagnostics: on its own, outside any project around it, importing only
+the standard library, for the sandbox's target.
+*/
 pub fn compile_sandboxed(entry: &Path, options: &Options) -> Result<Compiled, u8> {
     let root = entry
         .parent()
@@ -366,8 +384,10 @@ fn compile_with(
     }
 }
 
-/// Checks a program with the lint warnings, printing the diagnostics.
-/// Returns the error and warning counts, or the status for a missing entry.
+/**
+Checks a program with the lint warnings, printing the diagnostics.
+Returns the error and warning counts, or the status for a missing entry.
+*/
 pub fn lint(
     entry: &Path,
     root: Option<&Path>,
@@ -393,8 +413,10 @@ pub fn lint(
     Ok((errors, warnings))
 }
 
-/// Where native build intermediates go: a fresh directory under the system
-/// temporary directory, removed afterwards.
+/**
+Where native build intermediates go: a fresh directory under the system
+temporary directory, removed afterwards.
+*/
 pub struct WorkDir(pub PathBuf);
 
 impl WorkDir {
@@ -416,8 +438,10 @@ impl Drop for WorkDir {
     }
 }
 
-/// Compiles a checked program to a native executable at `output`, or the
-/// library of an Android app.
+/**
+Compiles a checked program to a native executable at `output`, or the
+library of an Android app.
+*/
 pub fn compile_native(
     compiled: &Compiled,
     output: &Path,
@@ -445,9 +469,11 @@ pub fn compile_native(
     sayon_codegen::link(&toolchain, &ir_path, output, release, &libraries, product)
 }
 
-/// Builds an Android app's package at `output`, named `name`: the program
-/// as the library it holds, then the package around it. Without
-/// `release`, the package is debuggable.
+/**
+Builds an Android app's package at `output`, named `name`: the program
+as the library it holds, then the package around it. Without
+`release`, the package is debuggable.
+*/
 pub fn compile_android_app(
     compiled: &Compiled,
     output: &Path,
@@ -456,7 +482,7 @@ pub fn compile_android_app(
 ) -> Result<(), String> {
     use sayon_target::Capability;
     let target = compiled.module.target;
-    // Every tool is found before anything is compiled.
+    /* Every tool is found before anything is compiled. */
     let tools = sayon_codegen::android::Sdk::locate(target)?.packaging(target)?;
     let work = WorkDir::create()?;
     let library = work.0.join("libmain.so");

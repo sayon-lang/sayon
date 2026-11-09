@@ -1,4 +1,4 @@
-//! Source files, byte spans, and line/column lookup.
+/*! Source files, byte spans, and line/column lookup. */
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FileId(pub u32);
 
-/// A half-open byte range `[start, end)` inside one source file.
+/** A half-open byte range `[start, end)` inside one source file. */
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
     pub file: FileId,
@@ -23,7 +23,7 @@ impl Span {
         }
     }
 
-    /// The smallest span covering both `self` and `other`.
+    /** The smallest span covering both `self` and `other`. */
     pub fn to(self, other: Span) -> Span {
         debug_assert_eq!(self.file, other.file);
         Span {
@@ -58,9 +58,9 @@ impl fmt::Debug for Span {
 
 pub struct SourceFile {
     pub id: FileId,
-    /// Path used when reporting, normally relative to the project or script root.
+    /** Path used when reporting, normally relative to the project or script root. */
     pub name: String,
-    /// Full path on disk, when the file came from disk.
+    /** Full path on disk, when the file came from disk. */
     pub path: Option<PathBuf>,
     pub text: String,
     line_starts: Vec<u32>,
@@ -83,7 +83,7 @@ impl SourceFile {
         }
     }
 
-    /// Zero-based line index containing the byte offset.
+    /** Zero-based line index containing the byte offset. */
     pub fn line_index(&self, offset: u32) -> usize {
         match self.line_starts.binary_search(&offset) {
             Ok(line) => line,
@@ -91,11 +91,7 @@ impl SourceFile {
         }
     }
 
-    pub fn line_count(&self) -> usize {
-        self.line_starts.len()
-    }
-
-    /// The text of a zero-based line without its line terminator.
+    /** The text of a zero-based line without its line terminator. */
     pub fn line_text(&self, line: usize) -> &str {
         let start = self.line_starts[line] as usize;
         let end = self
@@ -110,7 +106,7 @@ impl SourceFile {
         self.line_starts[line]
     }
 
-    /// One-based line and column. Columns count Unicode scalar values.
+    /** One-based line and column. Columns count Unicode scalar values. */
     pub fn line_col(&self, offset: u32) -> (usize, usize) {
         let line = self.line_index(offset);
         let start = self.line_starts[line] as usize;
@@ -156,13 +152,6 @@ impl SourceMap {
     pub fn files(&self) -> impl Iterator<Item = &SourceFile> {
         self.files.iter()
     }
-
-    pub fn find_by_path(&self, path: &Path) -> Option<FileId> {
-        self.files
-            .iter()
-            .find(|file| file.path.as_deref() == Some(path))
-            .map(|file| file.id)
-    }
 }
 
 #[cfg(test)]
@@ -174,10 +163,10 @@ mod tests {
         let mut map = SourceMap::new();
         let id = map.add("a.sayon", None, "first\nsécond line\r\nthird".to_string());
         let file = map.get(id);
-        assert_eq!(file.line_count(), 3);
+        assert_eq!(file.line_index(file.text.len() as u32), 2);
         assert_eq!(file.line_col(0), (1, 1));
         assert_eq!(file.line_col(6), (2, 1));
-        // "sé" is three bytes; the column counts scalar values.
+        /* "sé" is three bytes; the column counts scalar values. */
         assert_eq!(file.line_col(9), (2, 3));
         assert_eq!(file.line_text(1), "sécond line");
         assert_eq!(file.line_text(2), "third");

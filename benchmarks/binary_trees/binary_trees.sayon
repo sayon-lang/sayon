@@ -1,12 +1,16 @@
-# Binary trees: build many complete binary trees, walk each one, and let
-# it go, while one long-lived tree stays. Lots of small allocations that
-# are freed as soon as their owner goes away.
+##
+Binary trees: build many complete binary trees, walk each one, and let
+it go, while one long-lived tree stays. Lots of small allocations that
+are freed as soon as their owner goes away.
+##
 
 os = import("standard/os.sayon")
 strings = import("standard/strings.sayon")
 
-# A node holds its two children, or none at a leaf. A structure cannot
-# contain itself directly, so the children live in an array.
+##
+A node holds its two children, or none at a leaf. A structure cannot
+contain itself directly, so the children live in an array.
+##
 type Tree = [children: Array<Tree>]
 
 function make(depth: integer) -> Tree

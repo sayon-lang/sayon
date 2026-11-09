@@ -1,5 +1,7 @@
-# Compile-time platform branches: only the branch the target selects is
-# checked and compiled, so the others can name what this target lacks.
+##
+Compile-time platform branches: only the branch the target selects is
+checked and compiled, so the others can name what this target lacks.
+##
 
 function on_an_iphone() -> boolean
     if platform == "ios"

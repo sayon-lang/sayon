@@ -1,6 +1,8 @@
-# Spectral norm: the largest singular value of an infinite matrix, worked
-# out with the power method on an n by n corner of it. Floating point math
-# and many small function calls.
+##
+Spectral norm: the largest singular value of an infinite matrix, worked
+out with the power method on an n by n corner of it. Floating point math
+and many small function calls.
+##
 
 math = import("standard/math.sayon")
 os = import("standard/os.sayon")

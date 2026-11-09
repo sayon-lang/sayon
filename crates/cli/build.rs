@@ -1,8 +1,10 @@
-//! Embeds the Sayon icon and version information into `sayon.exe` on Windows.
-//!
-//! The resource compiler is `llvm-rc` (or `rc.exe`), found through
-//! `SAYON_RC`, `PATH`, or the default LLVM location. Without one the build
-//! continues and the executable simply has no icon.
+/*!
+Embeds the Sayon icon and version information into `sayon.exe` on Windows.
+
+The resource compiler is `llvm-rc` (or `rc.exe`), found through
+`SAYON_RC`, `PATH`, or the default LLVM location. Without one the build
+continues and the executable simply has no icon.
+*/
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

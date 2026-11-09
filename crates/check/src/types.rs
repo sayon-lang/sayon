@@ -1,4 +1,4 @@
-//! Semantic types.
+/*! Semantic types. */
 
 use sayon_syntax::ast::ParamMode;
 use sayon_target::Target;
@@ -89,31 +89,37 @@ impl FloatType {
     }
 }
 
-/// An inference variable.
+/** An inference variable. */
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TyVar(pub u32);
 
-/// A structure or enum declared in the program; an index into the program's
-/// type definitions.
+/**
+A structure or enum declared in the program; an index into the program's
+type definitions.
+*/
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeId(pub u32);
 
-/// The type of a function value: how it takes each argument, and what it
-/// returns.
+/**
+The type of a function value: how it takes each argument, and what it
+returns.
+*/
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FunctionType {
     pub params: Vec<(ParamMode, Type)>,
     pub ret: Type,
 }
 
-/// A use of a declared structure or enum with its type arguments.
+/** A use of a declared structure or enum with its type arguments. */
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NamedType {
     pub id: TypeId,
     pub name: String,
     pub args: Vec<Type>,
-    /// Whether the definition is Copy when its type arguments are: every
-    /// field is Copy, treating the type parameters as Copy.
+    /**
+    Whether the definition is Copy when its type arguments are: every
+    field is Copy, treating the type parameters as Copy.
+    */
     pub copy: bool,
 }
 
@@ -127,50 +133,60 @@ pub enum Type {
     Error,
     Array(Box<Type>),
     Dict(Box<Type>, Box<Type>),
-    /// A normalized union: flat, deduplicated, sorted, at least two members.
+    /** A normalized union: flat, deduplicated, sorted, at least two members. */
     Union(Vec<Type>),
-    /// A declared structure or enum.
+    /** A declared structure or enum. */
     Named(Box<NamedType>),
-    /// A function value: a named function or a closure with its captures.
+    /** A function value: a named function or a closure with its captures. */
     Function(Box<FunctionType>),
-    /// A borrowed slice of an array's elements: `View<T>`, or with `true`,
-    /// the exclusive `MutableView<T>`.
+    /**
+    A borrowed slice of an array's elements: `View<T>`, or with `true`,
+    the exclusive `MutableView<T>`.
+    */
     View(Box<Type>, bool),
-    /// An open file, `HostStream` in the standard library's code: a counted
-    /// reference to the runtime's stream, closed when the last is dropped.
+    /**
+    An open file, `HostStream` in the standard library's code: a counted
+    reference to the runtime's stream, closed when the last is dropped.
+    */
     Stream,
-    /// A raw address for C code: `pointer`, which `null_pointer` is one of.
+    /** A raw address for C code: `pointer`, which `null_pointer` is one of. */
     Pointer,
-    /// An owned NUL-terminated copy of a string for C code: `c_string`.
+    /** An owned NUL-terminated copy of a string for C code: `c_string`. */
     CString,
-    /// `Shared<T>`, `Weak<T>`, or `Cell<T>`.
+    /** `Shared<T>`, `Weak<T>`, or `Cell<T>`. */
     Wrapper(Wrapper, Box<Type>),
-    /// A type parameter of a generic function.
+    /** A type parameter of a generic function. */
     Param(u32),
     Var(TyVar),
-    /// Produced after an error so that checking can continue quietly.
+    /** Produced after an error so that checking can continue quietly. */
     Unknown,
-    /// Declared last so that unions list `nothing` after every other member.
+    /** Declared last so that unions list `nothing` after every other member. */
     Nothing,
 }
 
-/// The types that hold one value in a particular way.
+/** The types that hold one value in a particular way. */
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Wrapper {
-    /// A counted handle to a value many owners share; it cannot change.
+    /** A counted handle to a value many owners share; it cannot change. */
     Shared,
-    /// A handle to a shared value that does not keep it alive.
+    /** A handle to a shared value that does not keep it alive. */
     Weak,
-    /// A value that can be replaced through a read-only path, such as
-    /// inside a shared value. Nothing inside it can be borrowed.
+    /**
+    A value that can be replaced through a read-only path, such as
+    inside a shared value. Nothing inside it can be borrowed.
+    */
     Cell,
-    /// A task of `standard/threads`: its one owner joins it for its result.
+    /** A task of `standard/threads`: its one owner joins it for its result. */
     Task,
-    /// A channel of `standard/threads`, a counted handle every task holding
-    /// it sends and receives through.
+    /**
+    A channel of `standard/threads`, a counted handle every task holding
+    it sends and receives through.
+    */
     Channel,
-    /// A value that tasks on several threads share, one at a time: a
-    /// counted handle to the value and its lock.
+    /**
+    A value that tasks on several threads share, one at a time: a
+    counted handle to the value and its lock.
+    */
     Mutex,
 }
 
@@ -194,9 +210,11 @@ impl Type {
         Type::Wrapper(kind, Box::new(inner))
     }
 
-    /// Whether a copy of a value of this type is a counted handle that a
-    /// copy retains, so that using the value again keeps it alive:
-    /// `Shared`, `Weak`, and unions of them with Copy types.
+    /**
+    Whether a copy of a value of this type is a counted handle that a
+    copy retains, so that using the value again keeps it alive:
+    `Shared`, `Weak`, and unions of them with Copy types.
+    */
     pub fn is_retained(&self) -> bool {
         match self {
             Type::Wrapper(
@@ -211,8 +229,10 @@ impl Type {
         }
     }
 
-    /// Whether a value can still be used after it is assigned or passed on:
-    /// a Copy value, which is copied, or a counted handle, which is retained.
+    /**
+    Whether a value can still be used after it is assigned or passed on:
+    a Copy value, which is copied, or a counted handle, which is retained.
+    */
     pub fn is_duplicable(&self) -> bool {
         self.is_copy() || self.is_retained()
     }
@@ -226,7 +246,7 @@ impl Type {
         Type::Dict(Box::new(key), Box::new(value))
     }
 
-    /// Builds a normalized union from arbitrary members.
+    /** Builds a normalized union from arbitrary members. */
     pub fn union(members: impl IntoIterator<Item = Type>) -> Type {
         let mut flat = Vec::new();
         for member in members {
@@ -265,22 +285,11 @@ impl Type {
         }
     }
 
-    pub fn has_params(&self) -> bool {
-        match self {
-            Type::Param(_) => true,
-            Type::Array(element) => element.has_params(),
-            Type::Dict(key, value) => key.has_params() || value.has_params(),
-            Type::Union(members) => members.iter().any(Type::has_params),
-            Type::Named(named) => named.args.iter().any(Type::has_params),
-            Type::Function(function) => function.types().any(Type::has_params),
-            Type::View(element, _) | Type::Wrapper(_, element) => element.has_params(),
-            _ => false,
-        }
-    }
-
-    /// Whether values of this type are duplicated on assignment rather than moved.
-    /// Unknown for unresolved variables and generic parameters, which are
-    /// treated as owned.
+    /**
+    Whether values of this type are duplicated on assignment rather than moved.
+    Unknown for unresolved variables and generic parameters, which are
+    treated as owned.
+    */
     pub fn is_copy(&self) -> bool {
         match self {
             Type::Int(_)
@@ -291,14 +300,14 @@ impl Type {
             | Type::Pointer => true,
             Type::Union(members) => members.iter().all(Type::is_copy),
             Type::Named(named) => named.copy && named.args.iter().all(Type::is_copy),
-            // A read-only view is copied; a mutable one is exclusive.
+            /* A read-only view is copied; a mutable one is exclusive. */
             Type::View(_, mutable) => !mutable,
             Type::Unknown => true,
             _ => false,
         }
     }
 
-    /// Replaces generic parameters with the given arguments.
+    /** Replaces generic parameters with the given arguments. */
     pub fn substitute(&self, args: &[Type]) -> Type {
         match self {
             Type::Param(index) => args.get(*index as usize).cloned().unwrap_or(Type::Unknown),
@@ -320,8 +329,10 @@ impl Type {
         Type::View(Box::new(element), mutable)
     }
 
-    /// Whether a view appears inside this type, somewhere a view cannot be
-    /// kept: in a collection, structure, enum, union, or function result.
+    /**
+    Whether a view appears inside this type, somewhere a view cannot be
+    kept: in a collection, structure, enum, union, or function result.
+    */
     pub fn holds_view(&self) -> bool {
         fn inside(ty: &Type) -> bool {
             match ty {
@@ -350,7 +361,7 @@ impl Type {
         Type::Function(Box::new(function))
     }
 
-    /// The structure or enum this type names, if any.
+    /** The structure or enum this type names, if any. */
     pub fn as_named(&self) -> Option<&NamedType> {
         match self {
             Type::Named(named) => Some(named),
@@ -365,7 +376,7 @@ impl Type {
         }
     }
 
-    /// Canonical name reported by `typeof`.
+    /** Canonical name reported by `typeof`. */
     pub fn type_name(&self) -> String {
         self.to_string()
     }
@@ -445,7 +456,7 @@ impl fmt::Display for Type {
 }
 
 impl FunctionType {
-    /// The parameter types and the result type.
+    /** The parameter types and the result type. */
     pub fn types(&self) -> impl Iterator<Item = &Type> {
         self.params
             .iter()
@@ -453,7 +464,7 @@ impl FunctionType {
             .chain(std::iter::once(&self.ret))
     }
 
-    /// The same function type with `f` applied to every type in it.
+    /** The same function type with `f` applied to every type in it. */
     pub fn map(&self, mut f: impl FnMut(&Type) -> Type) -> FunctionType {
         FunctionType {
             params: self
@@ -466,19 +477,23 @@ impl FunctionType {
     }
 }
 
-/// A declared structure or enum. Field types refer to the definition's own
-/// type parameters as `Type::Param(0..generics)`.
+/**
+A declared structure or enum. Field types refer to the definition's own
+type parameters as `Type::Param(0..generics)`.
+*/
 #[derive(Clone, Debug)]
 pub struct TypeDef {
     pub name: String,
     pub generics: u32,
     pub kind: TypeDefKind,
-    /// Whether values are Copy when the type arguments are.
+    /** Whether values are Copy when the type arguments are. */
     pub copy: bool,
-    /// A structure declared with `foreign type`, laid out as C lays it out.
+    /** A structure declared with `foreign type`, laid out as C lays it out. */
     pub foreign: bool,
-    /// A structure with a `finally function`, which runs when a value of it
-    /// is destroyed: it is neither Copy nor cloned, and is destroyed whole.
+    /**
+    A structure with a `finally function`, which runs when a value of it
+    is destroyed: it is neither Copy nor cloned, and is destroyed whole.
+    */
     pub finally: bool,
 }
 
@@ -505,7 +520,7 @@ impl TypeDef {
         matches!(self.kind, TypeDefKind::Enum(_))
     }
 
-    /// The fields of a structure; empty for an enum.
+    /** The fields of a structure; empty for an enum. */
     pub fn fields(&self) -> &[FieldDef] {
         match &self.kind {
             TypeDefKind::Structure(fields) => fields,
@@ -513,7 +528,7 @@ impl TypeDef {
         }
     }
 
-    /// The variants of an enum; empty for a structure.
+    /** The variants of an enum; empty for a structure. */
     pub fn variants(&self) -> &[VariantDef] {
         match &self.kind {
             TypeDefKind::Enum(variants) => variants,
@@ -530,7 +545,7 @@ impl TypeDef {
     }
 }
 
-/// The field types of a structure value, with its type arguments applied.
+/** The field types of a structure value, with its type arguments applied. */
 pub fn structure_fields(types: &[TypeDef], named: &NamedType) -> Vec<Type> {
     types[named.id.0 as usize]
         .fields()
@@ -539,15 +554,17 @@ pub fn structure_fields(types: &[TypeDef], named: &NamedType) -> Vec<Type> {
         .collect()
 }
 
-/// Where C puts the fields of a structure: each at the next multiple of its
-/// alignment, in order, and the whole rounded up to the largest alignment.
+/**
+Where C puts the fields of a structure: each at the next multiple of its
+alignment, in order, and the whole rounded up to the largest alignment.
+*/
 pub struct CLayout {
     pub fields: Vec<(u64, Type)>,
     pub size: u64,
     pub align: u64,
 }
 
-/// The C layout on `target` of a structure declared with `foreign type`.
+/** The C layout on `target` of a structure declared with `foreign type`. */
 pub fn c_layout(types: &[TypeDef], named: &NamedType, target: &Target) -> CLayout {
     let mut fields = Vec::new();
     let mut offset = 0;
@@ -566,25 +583,31 @@ pub fn c_layout(types: &[TypeDef], named: &NamedType, target: &Target) -> CLayou
     }
 }
 
-/// Whether Windows x64 passes and returns a structure of this size in a
-/// register, as an integer of its size; any other goes by its address.
+/**
+Whether Windows x64 passes and returns a structure of this size in a
+register, as an integer of its size; any other goes by its address.
+*/
 pub fn win64_in_register(size: u64) -> bool {
     matches!(size, 1 | 2 | 4 | 8)
 }
 
-/// The kind of register an eightbyte of a structure goes in, under the
-/// System V convention of x86-64 (Linux, macOS).
+/**
+The kind of register an eightbyte of a structure goes in, under the
+System V convention of x86-64 (Linux, macOS).
+*/
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Eightbyte {
-    /// A general register: the eightbyte holds an integer or a pointer.
+    /** A general register: the eightbyte holds an integer or a pointer. */
     Integer,
-    /// A vector register: it holds only floats.
+    /** A vector register: it holds only floats. */
     Sse,
 }
 
-/// How the System V convention of x86-64 passes and returns a structure:
-/// each of its eightbytes in a register of the kind it needs, or, for one
-/// of more than 16 bytes, in memory (`None`).
+/**
+How the System V convention of x86-64 passes and returns a structure:
+each of its eightbytes in a register of the kind it needs, or, for one
+of more than 16 bytes, in memory (`None`).
+*/
 pub fn sysv_eightbytes(types: &[TypeDef], ty: &Type, target: &Target) -> Option<Vec<Eightbyte>> {
     fn visit(
         types: &[TypeDef],
@@ -604,7 +627,7 @@ pub fn sysv_eightbytes(types: &[TypeDef], ty: &Type, target: &Target) -> Option<
             _ => Eightbyte::Integer,
         };
         let slot = &mut classes[(offset / 8) as usize];
-        // An integer anywhere in an eightbyte makes it an integer one.
+        /* An integer anywhere in an eightbyte makes it an integer one. */
         *slot = match (*slot, class) {
             (Some(Eightbyte::Integer), _) | (_, Eightbyte::Integer) => Some(Eightbyte::Integer),
             _ => Some(Eightbyte::Sse),
@@ -624,11 +647,13 @@ pub fn sysv_eightbytes(types: &[TypeDef], ty: &Type, target: &Target) -> Option<
     )
 }
 
-/// How many floats, and of what type, a homogeneous floating-point
-/// aggregate of the procedure call standard for ARM64 (AAPCS64) holds: a
-/// structure of one to four floats, or one to four doubles, with nothing
-/// else however nested, which goes in that many vector registers. `None`
-/// for any other type.
+/**
+How many floats, and of what type, a homogeneous floating-point
+aggregate of the procedure call standard for ARM64 (AAPCS64) holds: a
+structure of one to four floats, or one to four doubles, with nothing
+else however nested, which goes in that many vector registers. `None`
+for any other type.
+*/
 pub fn aapcs64_floats(types: &[TypeDef], ty: &Type, target: &Target) -> Option<(usize, FloatType)> {
     fn leaves(types: &[TypeDef], ty: &Type, out: &mut Vec<Type>, target: &Target) {
         match ty {
@@ -655,8 +680,10 @@ pub fn aapcs64_floats(types: &[TypeDef], ty: &Type, target: &Target) -> Option<(
     (same && found.len() <= 4 && size == each * found.len() as u64).then_some((found.len(), kind))
 }
 
-/// The size and alignment C gives on `target` a value of a type C functions
-/// take: a number, a pointer, or a `foreign type` structure.
+/**
+The size and alignment C gives on `target` a value of a type C functions
+take: a number, a pointer, or a `foreign type` structure.
+*/
 pub fn c_size_align(types: &[TypeDef], ty: &Type, target: &Target) -> (u64, u64) {
     match ty {
         Type::Int(int) => {
@@ -669,17 +696,19 @@ pub fn c_size_align(types: &[TypeDef], ty: &Type, target: &Target) -> (u64, u64)
             let layout = c_layout(types, named, target);
             (layout.size, layout.align)
         }
-        // A pointer, a C string, or a function C calls back: an address.
+        /* A pointer, a C string, or a function C calls back: an address. */
         _ => (target.pointer_size, target.pointer_size),
     }
 }
 
-/// The part of a type that keeps its values from being dictionary keys, if
-/// any. Keys are compared by value and must keep their identity: integers,
-/// booleans, strings, `nothing`, and structures, enums, and unions of those.
-/// Floats (NaN is unequal to itself), collections, function values, errors,
-/// and ranges are not keys. Type parameters and unknown types are decided
-/// where they are filled in.
+/**
+The part of a type that keeps its values from being dictionary keys, if
+any. Keys are compared by value and must keep their identity: integers,
+booleans, strings, `nothing`, and structures, enums, and unions of those.
+Floats (NaN is unequal to itself), collections, function values, errors,
+and ranges are not keys. Type parameters and unknown types are decided
+where they are filled in.
+*/
 pub fn non_key_part(types: &[TypeDef], ty: &Type) -> Option<Type> {
     fn search(types: &[TypeDef], ty: &Type, seen: &mut Vec<TypeId>) -> Option<Type> {
         match ty {
@@ -719,7 +748,7 @@ pub fn non_key_part(types: &[TypeDef], ty: &Type) -> Option<Type> {
     search(types, ty, &mut Vec::new())
 }
 
-/// Whether a value of the type can contain a function value.
+/** Whether a value of the type can contain a function value. */
 pub fn holds_function(types: &[TypeDef], ty: &Type) -> bool {
     fn search(types: &[TypeDef], ty: &Type, seen: &mut Vec<TypeId>) -> bool {
         match ty {
@@ -748,8 +777,10 @@ pub fn holds_function(types: &[TypeDef], ty: &Type) -> bool {
     search(types, ty, &mut Vec::new())
 }
 
-/// The field types of one variant of an enum value, with its type arguments
-/// applied.
+/**
+The field types of one variant of an enum value, with its type arguments
+applied.
+*/
 pub fn variant_fields(types: &[TypeDef], named: &NamedType, variant: u32) -> Vec<Type> {
     types[named.id.0 as usize].variants()[variant as usize]
         .fields

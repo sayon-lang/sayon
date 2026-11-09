@@ -1,6 +1,8 @@
-//! `sayon run --sandbox`: a program from anyone runs, kept from what the
-//! sandbox does not give it, before it runs and while it does, and within
-//! its limits of time, memory, and output.
+/*!
+`sayon run --sandbox`: a program from anyone runs, kept from what the
+sandbox does not give it, before it runs and while it does, and within
+its limits of time, memory, and output.
+*/
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -13,7 +15,7 @@ struct Outcome {
     took: Duration,
 }
 
-/// A folder of its own for a test, empty.
+/** A folder of its own for a test, empty. */
 fn folder(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("sayon-sandbox-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -21,7 +23,7 @@ fn folder(name: &str) -> PathBuf {
     dir
 }
 
-/// Runs `main.sayon` of `dir` in the sandbox.
+/** Runs `main.sayon` of `dir` in the sandbox. */
 fn run_in(dir: &Path) -> Outcome {
     let started = Instant::now();
     let output = Command::new(env!("CARGO_BIN_EXE_sayon"))
@@ -37,7 +39,7 @@ fn run_in(dir: &Path) -> Outcome {
     }
 }
 
-/// Runs `source` as `main.sayon` in a folder of its own, in the sandbox.
+/** Runs `source` as `main.sayon` in a folder of its own, in the sandbox. */
 fn run(name: &str, source: &str) -> Outcome {
     let dir = folder(name);
     std::fs::write(dir.join("main.sayon"), source).expect("the program");
@@ -46,7 +48,7 @@ fn run(name: &str, source: &str) -> Outcome {
     outcome
 }
 
-/// The program was refused before any of it ran, for `needing`.
+/** The program was refused before any of it ran, for `needing`. */
 fn refused(outcome: &Outcome, needing: &str) {
     assert_eq!(outcome.status, 2, "{}", outcome.stderr);
     assert!(outcome.stdout.is_empty(), "{}", outcome.stdout);
@@ -58,7 +60,7 @@ fn refused(outcome: &Outcome, needing: &str) {
     );
 }
 
-/// The sandbox stopped the program, saying one of `reasons`.
+/** The sandbox stopped the program, saying one of `reasons`. */
 fn stopped(outcome: &Outcome, reasons: &[&str]) {
     assert_eq!(outcome.status, 3, "{}", outcome.stderr);
     let said = outcome
@@ -217,8 +219,10 @@ fn a_project_around_the_file_is_not_used() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// On a busy computer the program may not get its processor time before
-/// its time in all runs out; either stops it.
+/**
+On a busy computer the program may not get its processor time before
+its time in all runs out; either stops it.
+*/
 #[test]
 fn an_endless_loop_is_stopped() {
     let outcome = run("loop", "count = 0\nwhile true\n    count += 1\n");

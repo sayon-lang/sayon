@@ -1,11 +1,13 @@
-//! Clocks: the system's, or in a web page the host's, since Rust's clocks
-//! are not there (`std::time::Instant::now` fails on a bare WebAssembly
-//! module).
+/*!
+Clocks: the system's, or in a web page the host's, since Rust's clocks
+are not there (`std::time::Instant::now` fails on a bare WebAssembly
+module).
+*/
 
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub use std::time::Instant;
 
-/// Nanoseconds since the start of 1970 in UTC, negative before it.
+/** Nanoseconds since the start of 1970 in UTC, negative before it. */
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub fn unix_nanoseconds() -> i64 {
     let now = std::time::SystemTime::now();
@@ -15,7 +17,7 @@ pub fn unix_nanoseconds() -> i64 {
     }
 }
 
-/// A seed for the program's random numbers, never 0.
+/** A seed for the program's random numbers, never 0. */
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub fn random_seed() -> u64 {
     unix_nanoseconds() as u64 | 1
@@ -29,7 +31,7 @@ mod web {
     use crate::console::web::{monotonic_milliseconds, random_bytes, unix_milliseconds};
     use std::time::Duration;
 
-    /// A moment on the host's monotonic clock: the time since its origin.
+    /** A moment on the host's monotonic clock: the time since its origin. */
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Instant(Duration);
 

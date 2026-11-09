@@ -1,5 +1,7 @@
-//! Function values: named functions used as values, function literals and
-//! the variables they capture, and calls through function values.
+/*!
+Function values: named functions used as values, function literals and
+the variables they capture, and calls through function values.
+*/
 
 use crate::checker::{Checker, FnCtx, FunctionEntry};
 use crate::hir::{self, Arg, Capture, ExprKind, FuncId, LocalId, LocalKind};
@@ -13,8 +15,10 @@ fn expr(kind: ExprKind, ty: Type, span: Span) -> hir::Expr {
 }
 
 impl<'a> Checker<'a> {
-    /// Calls a function value: a variable, a field, or any expression whose
-    /// value is a function.
+    /**
+    Calls a function value: a variable, a field, or any expression whose
+    value is a function.
+    */
     pub(crate) fn call_value(
         &mut self,
         cx: &mut FnCtx,
@@ -28,8 +32,10 @@ impl<'a> Checker<'a> {
         let function = match resolved {
             Type::Function(function) => *function,
             Type::Var(_) if !literal => {
-                // Calling an unknown value makes it a function of these
-                // arguments, taken as read borrows.
+                /*
+                Calling an unknown value makes it a function of these
+                arguments, taken as read borrows.
+                */
                 let params = args
                     .iter()
                     .map(|arg| (ParamMode::Read, self.fresh_var(arg.span)))
@@ -103,8 +109,10 @@ impl<'a> Checker<'a> {
         )
     }
 
-    /// A named function used as a value, such as `apply(add, 1, 2)`. A
-    /// generic function is instantiated as for a call.
+    /**
+    A named function used as a value, such as `apply(add, 1, 2)`. A
+    generic function is instantiated as for a call.
+    */
     pub(crate) fn function_value(&mut self, id: FuncId, span: Span) -> hir::Expr {
         let (signature, params, type_args, ret) = self.instantiate(id, &[], span);
         let params = params
@@ -122,9 +130,11 @@ impl<'a> Checker<'a> {
         )
     }
 
-    /// `function(x) ...` in an expression: a closure. Its body is checked as
-    /// part of the enclosing function, with the enclosing variables it uses
-    /// captured into its environment.
+    /**
+    `function(x) ...` in an expression: a closure. Its body is checked as
+    part of the enclosing function, with the enclosing variables it uses
+    captured into its environment.
+    */
     pub(crate) fn check_function_literal(
         &mut self,
         cx: &mut FnCtx,
@@ -132,8 +142,10 @@ impl<'a> Checker<'a> {
         expected: Option<&Type>,
         span: Span,
     ) -> hir::Expr {
-        // An expected union with one function member, such as an optional
-        // callback, gives the literal that member's type.
+        /*
+        An expected union with one function member, such as an optional
+        callback, gives the literal that member's type.
+        */
         let expected = expected.and_then(|ty| match self.unifier.resolve(ty) {
             Type::Function(function) => Some(*function),
             Type::Union(members) => {
@@ -167,8 +179,10 @@ impl<'a> Checker<'a> {
                 .primary(literal.header_span, ""),
             );
         }
-        // Without a usable type, the literal is checked for its own errors
-        // and then has no type of its own.
+        /*
+        Without a usable type, the literal is checked for its own errors
+        and then has no type of its own.
+        */
         let untyped = mismatched || !literal.generics.is_empty();
         if !literal.generics.is_empty() {
             self.error(
@@ -238,7 +252,7 @@ impl<'a> Checker<'a> {
             if let Some((expected_mode, _)) = expected_param
                 && *expected_mode != mode
             {
-                // Reported once here rather than again as a type mismatch.
+                /* Reported once here rather than again as a type mismatch. */
                 mode = *expected_mode;
                 self.error(
                     Diagnostic::error(
@@ -292,8 +306,10 @@ impl<'a> Checker<'a> {
             types.push((mode, ty));
         }
 
-        // Check the body in the literal's own context, with the enclosing
-        // context set aside for capturing.
+        /*
+        Check the body in the literal's own context, with the enclosing
+        context set aside for capturing.
+        */
         let parent = std::mem::replace(cx, child);
         self.enclosing.push(parent);
         let body = self.check_block(cx, &literal.body);
@@ -391,8 +407,10 @@ impl<'a> Checker<'a> {
     }
 }
 
-/// Whether a block assigns to `local` or passes it for change, which makes a
-/// closure take the variable over rather than a copy of it.
+/**
+Whether a block assigns to `local` or passes it for change, which makes a
+closure take the variable over rather than a copy of it.
+*/
 fn changes_local(block: &mut hir::Block, local: LocalId) -> bool {
     let mut changed = assigns_to(block, local);
     hir::visit_block_mut(block, &mut |expr| {
@@ -402,7 +420,7 @@ fn changes_local(block: &mut hir::Block, local: LocalId) -> bool {
         };
         changed |= match &expr.kind {
             ExprKind::Call { args, .. } | ExprKind::Builtin { args, .. } => updates(args),
-            // Calling a captured function value may change its own captures.
+            /* Calling a captured function value may change its own captures. */
             ExprKind::CallValue { callee, args } => {
                 root_local(callee) == Some(local) || updates(args)
             }

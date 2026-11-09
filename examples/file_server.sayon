@@ -1,11 +1,13 @@
-# Serves the files of a directory over HTTP, with a task for each
-# connection.
-#
-#     sayon run examples/file_server.sayon -- path/to/directory 8080
-#
-# Then open http://localhost:8080/ in a browser. Without a port it serves
-# on a free one, asks itself for a few pages, prints what came back, and
-# stops: a quick way to see it work.
+##
+Serves the files of a directory over HTTP, with a task for each
+connection.
+
+    sayon run examples/file_server.sayon -- path/to/directory 8080
+
+Then open http://localhost:8080/ in a browser. Without a port it serves
+on a free one, asks itself for a few pages, prints what came back, and
+stops: a quick way to see it work.
+##
 
 filesystem = import("standard/filesystem.sayon")
 io = import("standard/io.sayon")
@@ -16,8 +18,10 @@ threads = import("standard/threads.sayon")
 
 type Request = [method: string, path: string]
 
-# The request line, such as `GET /notes.txt HTTP/1.1`. The headers after it
-# are read and left unused.
+##
+The request line, such as `GET /notes.txt HTTP/1.1`. The headers after it
+are read and left unused.
+##
 function read_request(update connection: network.Connection) -> Request or nothing
     line = connection.read_line()
     if line == nothing
@@ -49,8 +53,10 @@ function kind_of(path: string) -> string
         case _
             return "application/octet-stream"
 
-# Answers one request: a file, the list of a directory's files, or an
-# error. The connection closes when its task ends.
+##
+Answers one request: a file, the list of a directory's files, or an
+error. The connection closes when its task ends.
+##
 function answer(update connection: network.Connection, root: string)
     request = read_request(connection)
     if request == nothing
@@ -70,8 +76,10 @@ function answer(update connection: network.Connection, root: string)
         else
             respond(connection, "404 Not Found", "text/plain", strings.bytes("not found\n"))
 
-# Accepts connections, each answered by a task of its own, `count` of them
-# or without end.
+##
+Accepts connections, each answered by a task of its own, `count` of them
+or without end.
+##
 function serve(update listener: network.Listener, root: string, count: integer or nothing)
     served = 0
     while count == nothing or served < count

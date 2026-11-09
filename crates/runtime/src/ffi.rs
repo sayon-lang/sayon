@@ -1,17 +1,19 @@
-//! Functions called by compiled Sayon programs.
-//!
-//! Conventions:
-//! - Strings are `SayonStr` values; `cap == 0` marks static or empty text
-//!   that is never freed.
-//! - Arrays are `SayonArray` values whose elements the generated code reads
-//!   and writes directly; this module only manages their storage.
-//! - Dictionaries and errors are heap objects referred to by pointer. An
-//!   error slot is a `*mut *mut SayonError`; a null pointer means empty.
-//! - Fallible functions return 0 on success and 1 after storing an error.
-//! - Integer type codes are the indexes of `text::INTEGER_TYPE_NAMES`.
-//!
-//! Every function here is called only by generated code that upholds these
-//! conventions, so the individual functions do not repeat them.
+/*!
+Functions called by compiled Sayon programs.
+
+Conventions:
+- Strings are `SayonStr` values; `cap == 0` marks static or empty text
+  that is never freed.
+- Arrays are `SayonArray` values whose elements the generated code reads
+  and writes directly; this module only manages their storage.
+- Dictionaries and errors are heap objects referred to by pointer. An
+  error slot is a `*mut *mut SayonError`; a null pointer means empty.
+- Fallible functions return 0 on success and 1 after storing an error.
+- Integer type codes are the indexes of `text::INTEGER_TYPE_NAMES`.
+
+Every function here is called only by generated code that upholds these
+conventions, so the individual functions do not repeat them.
+*/
 
 #![allow(clippy::missing_safety_doc)]
 
@@ -21,16 +23,20 @@ use std::ffi::{CStr, c_char};
 use std::io::Write;
 use std::sync::atomic::{AtomicI64, AtomicU8, Ordering};
 
-/// Heap objects the runtime has created and not yet released: owned string
-/// data, array storage, dictionaries, errors, text builders, and closure
-/// environments. With `SAYON_DEBUG_ALLOC` set, a program reports the count
-/// when it exits; a correct program reports zero.
+/**
+Heap objects the runtime has created and not yet released: owned string
+data, array storage, dictionaries, errors, text builders, and closure
+environments. With `SAYON_DEBUG_ALLOC` set, a program reports the count
+when it exits; a correct program reports zero.
+*/
 static LIVE: AtomicI64 = AtomicI64::new(0);
-/// Whether `LIVE` counts: only with `SAYON_DEBUG_ALLOC`, since counting
-/// from several threads costs every allocation a locked instruction. It is
-/// 0 until the first count decides, then 1 for no and 2 for yes. Deciding
-/// then, not when `main` starts, counts what comes before: a web page's
-/// `main` allocates its own frame before its first line.
+/**
+Whether `LIVE` counts: only with `SAYON_DEBUG_ALLOC`, since counting
+from several threads costs every allocation a locked instruction. It is
+0 until the first count decides, then 1 for no and 2 for yes. Deciding
+then, not when `main` starts, counts what comes before: a web page's
+`main` allocates its own frame before its first line.
+*/
 static COUNTING_LIVE: AtomicU8 = AtomicU8::new(0);
 
 #[inline]
@@ -63,11 +69,13 @@ pub(crate) fn released() {
     }
 }
 
-/// A string. Text up to `INLINE` bytes long lies inside the structure
-/// itself, in its bytes but the last, which holds the text's length with
-/// its top bit set. Longer text lies at `ptr`, in a buffer of `cap` bytes the
-/// string owns, or with `cap` 0 in the program's constants. A capacity never
-/// has its top bit set, so the last byte tells the two apart.
+/**
+A string. Text up to `INLINE` bytes long lies inside the structure
+itself, in its bytes but the last, which holds the text's length with
+its top bit set. Longer text lies at `ptr`, in a buffer of `cap` bytes the
+string owns, or with `cap` 0 in the program's constants. A capacity never
+has its top bit set, so the last byte tells the two apart.
+*/
 #[repr(C)]
 pub struct SayonStr {
     pub ptr: *const u8,
@@ -75,10 +83,12 @@ pub struct SayonStr {
     pub cap: i64,
 }
 
-/// The most text a string keeps inside itself. Every target is
-/// little-endian, so a capacity's top bit is the structure's last bit. On
-/// WebAssembly an address takes 4 of the first 8 bytes and leaves a gap that
-/// copying the structure skips, so strings there keep their text outside.
+/**
+The most text a string keeps inside itself. Every target is
+little-endian, so a capacity's top bit is the structure's last bit. On
+WebAssembly an address takes 4 of the first 8 bytes and leaves a gap that
+copying the structure skips, so strings there keep their text outside.
+*/
 #[cfg(target_pointer_width = "64")]
 pub const INLINE: usize = 23;
 #[cfg(not(target_pointer_width = "64"))]
@@ -93,15 +103,17 @@ impl SayonStr {
         cap: 0,
     };
 
-    /// Whether the text lies inside the structure.
+    /** Whether the text lies inside the structure. */
     fn is_inline(&self) -> bool {
         INLINE > 0 && self.cap < 0
     }
 
-    /// The text's bytes, wherever they lie.
+    /** The text's bytes, wherever they lie. */
     fn bytes(&self) -> &[u8] {
-        // SAFETY: the structure is a valid string: inside it, its length's
-        // worth of bytes; otherwise `len` bytes at `ptr`.
+        /*
+        SAFETY: the structure is a valid string: inside it, its length's
+        worth of bytes; otherwise `len` bytes at `ptr`.
+        */
         unsafe {
             if self.is_inline() {
                 let length = ((self.cap as u64) >> 56) as usize & 0x7f;
@@ -114,8 +126,10 @@ impl SayonStr {
         }
     }
 
-    /// A string holding `text` inside itself. `text` is at most `INLINE`
-    /// bytes, and none is the empty string.
+    /**
+    A string holding `text` inside itself. `text` is at most `INLINE`
+    bytes, and none is the empty string.
+    */
     fn inline(text: &[u8]) -> SayonStr {
         if text.is_empty() || text.len() > INLINE {
             return SayonStr::EMPTY;
@@ -123,12 +137,12 @@ impl SayonStr {
         let mut bytes = [0u8; 24];
         bytes[..text.len()].copy_from_slice(text);
         bytes[23] = 0x80 | text.len() as u8;
-        // SAFETY: a string is 24 bytes of plain data, which any bytes are.
+        /* SAFETY: a string is 24 bytes of plain data, which any bytes are. */
         unsafe { std::mem::transmute::<[u8; 24], SayonStr>(bytes) }
     }
 }
 
-/// A string holding a copy of `text`: inside itself when it fits.
+/** A string holding a copy of `text`: inside itself when it fits. */
 fn copied(text: &str) -> SayonStr {
     if text.len() <= INLINE {
         SayonStr::inline(text.as_bytes())
@@ -157,43 +171,51 @@ pub struct SayonError {
     pub location: Option<String>,
 }
 
-/// An insertion-ordered dictionary: keys and values in insertion order, and
-/// an open-addressing table of positions found by the keys' hashes.
-///
-/// Removing an entry leaves its place empty, with the hash `REMOVED`, so
-/// that the entries after it keep their positions and removing costs no
-/// more than adding. The empty places are closed up once they outnumber
-/// the entries, or when the table grows: both change the dictionary, so no
-/// position found before is still in use. A loop over the entries steps
-/// over the empty places (`sayon_dict_next`).
+/**
+An insertion-ordered dictionary: keys and values in insertion order, and
+an open-addressing table of positions found by the keys' hashes.
+
+Removing an entry leaves its place empty, with the hash `REMOVED`, so
+that the entries after it keep their positions and removing costs no
+more than adding. The empty places are closed up once they outnumber
+the entries, or when the table grows: both change the dictionary, so no
+position found before is still in use. A loop over the entries steps
+over the empty places (`sayon_dict_next`).
+*/
 pub struct SayonDict {
     ops: *const KeyOps,
-    /// Key storage in 8-byte words, `key_stride` words per key.
+    /** Key storage in 8-byte words, `key_stride` words per key. */
     keys: Vec<u64>,
     key_stride: usize,
     hashes: Vec<u64>,
-    /// Positions plus one, or 0 for a free slot; the length is a power of two.
-    /// A removed entry's slot keeps its position, so lookups go on past it.
+    /**
+    Positions plus one, or 0 for a free slot; the length is a power of two.
+    A removed entry's slot keeps its position, so lookups go on past it.
+    */
     table: Vec<u32>,
-    /// Value storage in 8-byte words, `stride` words per value.
+    /** Value storage in 8-byte words, `stride` words per value. */
     values: Vec<u64>,
     stride: usize,
     value_size: usize,
-    /// Where the last key found is, or `usize::MAX`. A lookup tries it
-    /// first, so that `haskey(d, k)` and then `d[k]` hash `k` once.
+    /**
+    Where the last key found is, or `usize::MAX`. A lookup tries it
+    first, so that `haskey(d, k)` and then `d[k]` hash `k` once.
+    */
     last: std::cell::Cell<usize>,
-    /// How many places hold a removed entry.
+    /** How many places hold a removed entry. */
     removed: usize,
 }
 
-/// The hash kept in the place of a removed entry, which no key's hash is.
+/** The hash kept in the place of a removed entry, which no key's hash is. */
 const REMOVED: u64 = u64::MAX;
 
-/// Text being put together, as `sayon_builder_*` append to it. Compiled code
-/// keeps one on its own stack, the size of a string, from
-/// `sayon_builder_start` to `sayon_builder_end`.
-/// The builder is a string itself, so short text stays inside it, and the
-/// string it ends with is the builder's own.
+/**
+Text being put together, as `sayon_builder_*` append to it. Compiled code
+keeps one on its own stack, the size of a string, from
+`sayon_builder_start` to `sayon_builder_end`.
+The builder is a string itself, so short text stays inside it, and the
+string it ends with is the builder's own.
+*/
 #[repr(C)]
 pub struct Builder(SayonStr);
 
@@ -201,7 +223,7 @@ const _: () = assert!(std::mem::size_of::<Builder>() == std::mem::size_of::<Sayo
 
 impl Builder {
     fn push_str(&mut self, text: &str) {
-        // SAFETY: the builder holds a valid string, and `text` is not in it.
+        /* SAFETY: the builder holds a valid string, and `text` is not in it. */
         unsafe { add_bytes(&mut self.0, text.as_bytes()) }
     }
 
@@ -223,11 +245,13 @@ type EqFn = unsafe extern "C" fn(*const u8, *const u8) -> bool;
 
 const ELEMENT_ALIGN: usize = 8;
 
-// ----- helpers ---------------------------------------------------------------
+/* ----- helpers --------------------------------------------------------------- */
 
 unsafe fn as_str<'a>(s: *const SayonStr) -> &'a str {
-    // SAFETY: callers pass a valid SayonStr holding UTF-8 text, which stays
-    // where it is while they use the text.
+    /*
+    SAFETY: callers pass a valid SayonStr holding UTF-8 text, which stays
+    where it is while they use the text.
+    */
     unsafe { std::str::from_utf8_unchecked((*s).bytes()) }
 }
 
@@ -235,14 +259,16 @@ unsafe fn c_str<'a>(text: *const c_char) -> &'a str {
     if text.is_null() {
         return "";
     }
-    // SAFETY: the generated code passes NUL-terminated UTF-8 constants.
+    /* SAFETY: the generated code passes NUL-terminated UTF-8 constants. */
     unsafe { CStr::from_ptr(text).to_str().unwrap_or("") }
 }
 
-/// The string of `text`: inside the string when it fits, and otherwise the
-/// string takes over `text`'s buffer. A little room to spare stays, as
-/// moving the text to a buffer of its exact size would cost more than the
-/// bytes saved; more than that is given back.
+/**
+The string of `text`: inside the string when it fits, and otherwise the
+string takes over `text`'s buffer. A little room to spare stays, as
+moving the text to a buffer of its exact size would cost more than the
+bytes saved; more than that is given back.
+*/
 fn owned(mut text: String) -> SayonStr {
     if text.len() <= INLINE {
         return SayonStr::inline(text.as_bytes());
@@ -260,8 +286,10 @@ fn owned(mut text: String) -> SayonStr {
     }
 }
 
-/// One-byte strings for every ASCII character, so that most characters
-/// taken from a string need no allocation.
+/**
+One-byte strings for every ASCII character, so that most characters
+taken from a string need no allocation.
+*/
 static ASCII: [u8; 128] = {
     let mut table = [0u8; 128];
     let mut index = 0;
@@ -272,7 +300,7 @@ static ASCII: [u8; 128] = {
     table
 };
 
-/// A string holding one character.
+/** A string holding one character. */
 fn character(ch: char) -> SayonStr {
     if ch.is_ascii() {
         SayonStr {
@@ -291,7 +319,7 @@ pub(crate) unsafe fn set_error(
     message: String,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: `slot` points to the caller's error slot.
+    /* SAFETY: `slot` points to the caller's error slot. */
     unsafe {
         if !(*slot).is_null() {
             drop(Box::from_raw(*slot));
@@ -327,14 +355,16 @@ fn widen(value: i64, code: u32) -> i128 {
     }
 }
 
-// ----- strings ---------------------------------------------------------------------
+/* ----- strings --------------------------------------------------------------------- */
 
-/// Releases an owned string and leaves it empty.
+/** Releases an owned string and leaves it empty. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_str_drop(s: *mut SayonStr) {
-    // SAFETY: `s` is a valid string; owned data came from `owned` or a
-    // clone, a buffer of `cap` bytes, of which only the first `len` need
-    // hold text.
+    /*
+    SAFETY: `s` is a valid string; owned data came from `owned` or a
+    clone, a buffer of `cap` bytes, of which only the first `len` need
+    hold text.
+    */
     unsafe {
         let value = &mut *s;
         if value.cap > 0 {
@@ -354,8 +384,10 @@ pub unsafe extern "C" fn sayon_str_drop(s: *mut SayonStr) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_str_clone(src: *const SayonStr, dst: *mut SayonStr) {
-    // SAFETY: both pointers are valid. Text in the program's constants can
-    // be shared, and text inside a string is copied with it.
+    /*
+    SAFETY: both pointers are valid. Text in the program's constants can
+    be shared, and text inside a string is copied with it.
+    */
     unsafe {
         let source = &*src;
         *dst = if source.cap <= 0 {
@@ -370,8 +402,10 @@ pub unsafe extern "C" fn sayon_str_clone(src: *const SayonStr, dst: *mut SayonSt
     }
 }
 
-/// Two texts one after the other, in a string of its own: inside it when the
-/// whole fits, or in a buffer of `room` bytes, at least as many as the text.
+/**
+Two texts one after the other, in a string of its own: inside it when the
+whole fits, or in a buffer of `room` bytes, at least as many as the text.
+*/
 fn joined(first: &[u8], second: &[u8], room: usize) -> SayonStr {
     let total = first.len() + second.len();
     if total <= INLINE {
@@ -398,23 +432,25 @@ pub unsafe extern "C" fn sayon_str_concat(
     b: *const SayonStr,
     out: *mut SayonStr,
 ) {
-    // SAFETY: valid strings in, `out` is writable.
+    /* SAFETY: valid strings in, `out` is writable. */
     unsafe {
         let (a, b) = ((*a).bytes(), (*b).bytes());
         *out = joined(a, b, 0);
     }
 }
 
-/// Adds the text of `more` to the end of `text`, inside the string while the
-/// whole fits, then in a buffer of its own, which grows twice as big when it
-/// runs out of room, so that adding piece after piece takes time in
-/// proportion to the text's length. `more` may be `text` itself.
+/**
+Adds the text of `more` to the end of `text`, inside the string while the
+whole fits, then in a buffer of its own, which grows twice as big when it
+runs out of room, so that adding piece after piece takes time in
+proportion to the text's length. `more` may be `text` itself.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_str_append(text: *mut SayonStr, more: *const SayonStr) {
-    // SAFETY: valid strings; an owned one's buffer holds `cap` bytes.
+    /* SAFETY: valid strings; an owned one's buffer holds `cap` bytes. */
     unsafe {
         if std::ptr::eq(text, more) {
-            // The same text twice: take a copy of it first.
+            /* The same text twice: take a copy of it first. */
             let twice = (*more).bytes().to_vec();
             let doubled = SayonStr {
                 ptr: twice.as_ptr(),
@@ -427,19 +463,23 @@ pub unsafe extern "C" fn sayon_str_append(text: *mut SayonStr, more: *const Sayo
     }
 }
 
-/// Adds `addition` to the end of `target`'s text, as `sayon_str_append`
-/// does. `addition` is not in `target`.
+/**
+Adds `addition` to the end of `target`'s text, as `sayon_str_append`
+does. `addition` is not in `target`.
+*/
 unsafe fn add_bytes(target: &mut SayonStr, addition: &[u8]) {
-    // SAFETY: a valid string; an owned one's buffer holds `cap` bytes.
+    /* SAFETY: a valid string; an owned one's buffer holds `cap` bytes. */
     unsafe {
         let count = addition.len();
         if count == 0 {
             return;
         }
         if target.cap <= 0 {
-            // Inside the string, among the program's constants, or none: the
-            // whole goes inside the string when it fits, and otherwise in a
-            // buffer with room to grow by half again.
+            /*
+            Inside the string, among the program's constants, or none: the
+            whole goes inside the string when it fits, and otherwise in a
+            buffer with room to grow by half again.
+            */
             let room = (target.bytes().len() + count) * 3 / 2;
             let whole = joined(target.bytes(), addition, room);
             *target = whole;
@@ -465,7 +505,7 @@ unsafe fn add_bytes(target: &mut SayonStr, addition: &[u8]) {
             target.ptr = buffer;
             target.cap = grown as i64;
         }
-        // `more` is another string, so its text is not in this buffer.
+        /* `more` is another string, so its text is not in this buffer. */
         std::ptr::copy_nonoverlapping(source, buffer.add(length), count);
         target.len = needed as i64;
     }
@@ -473,17 +513,17 @@ unsafe fn add_bytes(target: &mut SayonStr, addition: &[u8]) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_str_eq(a: *const SayonStr, b: *const SayonStr) -> bool {
-    // SAFETY: valid strings.
+    /* SAFETY: valid strings. */
     unsafe { as_str(a) == as_str(b) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_str_cmp(a: *const SayonStr, b: *const SayonStr) -> i32 {
-    // SAFETY: valid strings.
+    /* SAFETY: valid strings. */
     unsafe { as_str(a).cmp(as_str(b)) as i32 }
 }
 
-/// The character at a position, counted in characters, into `out`.
+/** The character at a position, counted in characters, into `out`. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_str_char_at(
     err: *mut *mut SayonError,
@@ -492,7 +532,7 @@ pub unsafe extern "C" fn sayon_str_char_at(
     out: *mut SayonStr,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: valid string, output place, and error slot.
+    /* SAFETY: valid string, output place, and error slot. */
     unsafe {
         let text = as_str(s);
         let found = usize::try_from(position)
@@ -511,15 +551,17 @@ pub unsafe extern "C" fn sayon_str_char_at(
     }
 }
 
-/// The character starting at byte `*offset` into `out`, advancing the offset.
+/** The character starting at byte `*offset` into `out`, advancing the offset. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_str_next_char(
     s: *const SayonStr,
     offset: *mut i64,
     out: *mut SayonStr,
 ) {
-    // SAFETY: valid string and places; the offset is a character boundary
-    // before the end of the string.
+    /*
+    SAFETY: valid string and places; the offset is a character boundary
+    before the end of the string.
+    */
     unsafe {
         let text = as_str(s);
         let ch = text[*offset as usize..]
@@ -533,18 +575,20 @@ pub unsafe extern "C" fn sayon_str_next_char(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_str_chars(s: *const SayonStr) -> i64 {
-    // SAFETY: valid string.
+    /* SAFETY: valid string. */
     unsafe { as_str(s).chars().count() as i64 }
 }
 
-// ----- building text -------------------------------------------------------------------
+/* ----- building text ------------------------------------------------------------------- */
 
-/// Starts a builder in the memory at `b`. `capacity` is the caller's guess
-/// of the text's length: text too long to lie inside a string gets a buffer
-/// of that size at once, which saves growing it a step at a time.
+/**
+Starts a builder in the memory at `b`. `capacity` is the caller's guess
+of the text's length: text too long to lie inside a string gets a buffer
+of that size at once, which saves growing it a step at a time.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_builder_start(b: *mut Builder, capacity: i64) {
-    // SAFETY: `b` is room for a builder, which nothing holds yet.
+    /* SAFETY: `b` is room for a builder, which nothing holds yet. */
     unsafe {
         let capacity = capacity.max(0) as usize;
         let text = if capacity > INLINE {
@@ -564,7 +608,7 @@ pub unsafe extern "C" fn sayon_builder_start(b: *mut Builder, capacity: i64) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_builder_bytes(b: *mut Builder, ptr: *const u8, len: i64) {
-    // SAFETY: `ptr` holds `len` bytes of UTF-8 text from a constant.
+    /* SAFETY: `ptr` holds `len` bytes of UTF-8 text from a constant. */
     unsafe {
         if len > 0 {
             let bytes = std::slice::from_raw_parts(ptr, len as usize);
@@ -575,7 +619,7 @@ pub unsafe extern "C" fn sayon_builder_bytes(b: *mut Builder, ptr: *const u8, le
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_builder_str(b: *mut Builder, s: *const SayonStr, quoted: bool) {
-    // SAFETY: valid builder and string.
+    /* SAFETY: valid builder and string. */
     unsafe {
         if quoted {
             text::quote(as_str(s), &mut *b);
@@ -587,7 +631,7 @@ pub unsafe extern "C" fn sayon_builder_str(b: *mut Builder, s: *const SayonStr, 
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_builder_int(b: *mut Builder, value: i64, code: u32) {
-    // SAFETY: valid builder.
+    /* SAFETY: valid builder. */
     unsafe {
         use std::fmt::Write as _;
         let _ = write!(*b, "{}", widen(value, code));
@@ -596,19 +640,19 @@ pub unsafe extern "C" fn sayon_builder_int(b: *mut Builder, value: i64, code: u3
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_builder_f64(b: *mut Builder, value: f64) {
-    // SAFETY: valid builder.
+    /* SAFETY: valid builder. */
     unsafe { (*b).push_str(&text::format_f64(value)) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_builder_f32(b: *mut Builder, value: f32) {
-    // SAFETY: valid builder.
+    /* SAFETY: valid builder. */
     unsafe { (*b).push_str(&text::format_f32(value)) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_builder_bool(b: *mut Builder, value: bool) {
-    // SAFETY: valid builder.
+    /* SAFETY: valid builder. */
     unsafe { (*b).push_str(if value { "true" } else { "false" }) }
 }
 
@@ -618,7 +662,7 @@ pub unsafe extern "C" fn sayon_builder_error(
     e: *const *mut SayonError,
     nested: bool,
 ) {
-    // SAFETY: valid builder and error slot.
+    /* SAFETY: valid builder and error slot. */
     unsafe {
         let error = &**e;
         if nested {
@@ -633,29 +677,25 @@ pub unsafe extern "C" fn sayon_builder_error(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_builder_range(b: *mut Builder, r: *const SayonRange) {
-    // SAFETY: valid builder and range.
+    /* SAFETY: valid builder and range. */
     unsafe {
         use std::fmt::Write as _;
         let range = &*r;
         if range.step == 1 {
             let _ = write!(*b, "range({}, {})", range.start, range.end);
         } else {
-            let _ = write!(
-                *b,
-                "range({}, {}, {})",
-                range.start,
-                range.end,
-                range.step
-            );
+            let _ = write!(*b, "range({}, {}, {})", range.start, range.end, range.step);
         }
     }
 }
 
-/// Ends a builder, giving its text as a string. Short text moves inside the
-/// string, and a buffer with much room to spare shrinks to its text.
+/**
+Ends a builder, giving its text as a string. Short text moves inside the
+string, and a buffer with much room to spare shrinks to its text.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_builder_end(b: *mut Builder, out: *mut SayonStr) {
-    // SAFETY: `b` was started by `sayon_builder_start` and is not used again.
+    /* SAFETY: `b` was started by `sayon_builder_start` and is not used again. */
     unsafe {
         let mut text = b.read().0;
         if text.cap > 0 {
@@ -683,7 +723,7 @@ pub unsafe extern "C" fn sayon_builder_end(b: *mut Builder, out: *mut SayonStr) 
     }
 }
 
-// ----- output ----------------------------------------------------------------------------
+/* ----- output ---------------------------------------------------------------------------- */
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_print(
@@ -691,7 +731,7 @@ pub unsafe extern "C" fn sayon_print(
     s: *const SayonStr,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: valid string and error slot.
+    /* SAFETY: valid string and error slot. */
     unsafe {
         let mut stdout = crate::console::stdout().lock();
         let result = stdout
@@ -709,17 +749,17 @@ pub unsafe extern "C" fn sayon_print(
     }
 }
 
-// ----- closure environments ---------------------------------------------------------------
+/* ----- closure environments --------------------------------------------------------------- */
 
 fn block_layout(size: i64) -> Layout {
     Layout::from_size_align(size.max(1) as usize, ELEMENT_ALIGN).expect("block layout")
 }
 
-/// Allocates `size` bytes for a closure environment.
+/** Allocates `size` bytes for a closure environment. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_alloc(size: i64) -> *mut u8 {
     let layout = block_layout(size);
-    // SAFETY: the layout has a nonzero size.
+    /* SAFETY: the layout has a nonzero size. */
     let pointer = unsafe { alloc(layout) };
     if pointer.is_null() {
         std::alloc::handle_alloc_error(layout);
@@ -728,26 +768,28 @@ pub unsafe extern "C" fn sayon_alloc(size: i64) -> *mut u8 {
     pointer
 }
 
-/// Frees a block from `sayon_alloc` of the same size.
+/** Frees a block from `sayon_alloc` of the same size. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_free(pointer: *mut u8, size: i64) {
     released();
-    // SAFETY: `pointer` came from `sayon_alloc(size)`.
+    /* SAFETY: `pointer` came from `sayon_alloc(size)`. */
     unsafe { dealloc(pointer, block_layout(size)) }
 }
 
-// ----- arrays ------------------------------------------------------------------------------
+/* ----- arrays ------------------------------------------------------------------------------ */
 
 fn array_layout(capacity: usize, element_size: usize) -> Layout {
     Layout::from_size_align((capacity * element_size).max(1), ELEMENT_ALIGN).expect("array layout")
 }
 
-/// Gives an array room for exactly `count` elements, as an array written out
-/// in full or a clone holds from the start. Growing with `push` instead
-/// leaves room to spare (see `sayon_array_reserve`).
+/**
+Gives an array room for exactly `count` elements, as an array written out
+in full or a clone holds from the start. Growing with `push` instead
+leaves room to spare (see `sayon_array_reserve`).
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_array_exact(a: *mut SayonArray, count: i64, element_size: i64) {
-    // SAFETY: `a` is a valid array whose storage came from this module.
+    /* SAFETY: `a` is a valid array whose storage came from this module. */
     unsafe {
         let array = &mut *a;
         if count <= array.cap {
@@ -767,14 +809,14 @@ pub unsafe extern "C" fn sayon_array_exact(a: *mut SayonArray, count: i64, eleme
     }
 }
 
-/// Ensures room for `additional` more elements.
+/** Ensures room for `additional` more elements. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_array_reserve(
     a: *mut SayonArray,
     additional: i64,
     element_size: i64,
 ) {
-    // SAFETY: `a` is a valid array whose storage came from this module.
+    /* SAFETY: `a` is a valid array whose storage came from this module. */
     unsafe {
         let array = &mut *a;
         let needed = array.len as usize + additional as usize;
@@ -802,10 +844,10 @@ pub unsafe extern "C" fn sayon_array_reserve(
     }
 }
 
-/// Releases array storage (elements must already be destroyed) and leaves it empty.
+/** Releases array storage (elements must already be destroyed) and leaves it empty. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_array_free(a: *mut SayonArray, element_size: i64) {
-    // SAFETY: valid array.
+    /* SAFETY: valid array. */
     unsafe {
         let array = &mut *a;
         if !array.ptr.is_null() && array.cap > 0 {
@@ -823,7 +865,7 @@ pub unsafe extern "C" fn sayon_array_free(a: *mut SayonArray, element_size: i64)
     }
 }
 
-/// Checks the bounds of a view of an array or view of `length` elements.
+/** Checks the bounds of a view of an array or view of `length` elements. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_check_view(
     err: *mut *mut SayonError,
@@ -836,11 +878,11 @@ pub unsafe extern "C" fn sayon_check_view(
         return 0;
     }
     let message = text::view_bounds_message(start as i128, end as i128, length as usize);
-    // SAFETY: valid error slot.
+    /* SAFETY: valid error slot. */
     unsafe { set_error(err, "BoundsError", message, location) }
 }
 
-/// Fails unless a view of `length` elements has `count` to split off.
+/** Fails unless a view of `length` elements has `count` to split off. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_check_split(
     err: *mut *mut SayonError,
@@ -852,12 +894,14 @@ pub unsafe extern "C" fn sayon_check_split(
         return 0;
     }
     let message = text::split_bounds_message(count as i128, length as usize);
-    // SAFETY: valid error slot.
+    /* SAFETY: valid error slot. */
     unsafe { set_error(err, "BoundsError", message, location) }
 }
 
-/// Exchanges two elements, or fails when either position is outside the
-/// array.
+/**
+Exchanges two elements, or fails when either position is outside the
+array.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_array_swap(
     err: *mut *mut SayonError,
@@ -867,7 +911,7 @@ pub unsafe extern "C" fn sayon_array_swap(
     element_size: i64,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: valid array and error slot.
+    /* SAFETY: valid array and error slot. */
     unsafe {
         let array = &mut *a;
         for index in [first, second] {
@@ -887,8 +931,10 @@ pub unsafe extern "C" fn sayon_array_swap(
     }
 }
 
-/// Moves the element at `index` into `out` and the later elements down by
-/// one, or fails outside the array.
+/**
+Moves the element at `index` into `out` and the later elements down by
+one, or fails outside the array.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_array_remove(
     err: *mut *mut SayonError,
@@ -898,7 +944,7 @@ pub unsafe extern "C" fn sayon_array_remove(
     out: *mut u8,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: valid array, output of `element_size` bytes, and error slot.
+    /* SAFETY: valid array, output of `element_size` bytes, and error slot. */
     unsafe {
         let array = &mut *a;
         if index < 0 || index >= array.len {
@@ -929,26 +975,26 @@ pub unsafe extern "C" fn sayon_check_index(
     } else {
         format!("index {index} is out of bounds for an array of length {length}")
     };
-    // SAFETY: valid error slot.
+    /* SAFETY: valid error slot. */
     unsafe { set_error(err, "BoundsError", message, location) }
 }
 
-// ----- dictionaries ------------------------------------------------------------------------
+/* ----- dictionaries ------------------------------------------------------------------------ */
 
-/// The generated helpers a dictionary uses for its key type.
+/** The generated helpers a dictionary uses for its key type. */
 #[repr(C)]
 pub struct KeyOps {
     pub size: i64,
     pub hash: unsafe extern "C" fn(*const u8) -> i64,
     pub eq: EqFn,
-    /// `None` for keys that are copied bit for bit.
+    /** `None` for keys that are copied bit for bit. */
     pub clone: CloneFn,
-    /// `None` for keys that own nothing.
+    /** `None` for keys that own nothing. */
     pub drop: DropFn,
     pub display: unsafe extern "C" fn(*mut Builder, *const u8, bool),
 }
 
-/// Spreads the bits of a key hash over the table.
+/** Spreads the bits of a key hash over the table. */
 fn mix(hash: i64) -> u64 {
     let mut x = hash as u64;
     x ^= x >> 30;
@@ -959,12 +1005,12 @@ fn mix(hash: i64) -> u64 {
 }
 
 impl SayonDict {
-    /// The entries the dictionary holds.
+    /** The entries the dictionary holds. */
     fn len(&self) -> usize {
         self.hashes.len() - self.removed
     }
 
-    /// The places for entries, those of removed entries among them.
+    /** The places for entries, those of removed entries among them. */
     fn slots(&self) -> usize {
         self.hashes.len()
     }
@@ -973,8 +1019,10 @@ impl SayonDict {
         self.hashes[position] != REMOVED
     }
 
-    /// Moves the entries down over the places of removed ones, keeping
-    /// their order, and finds each a slot in the table again.
+    /**
+    Moves the entries down over the places of removed ones, keeping
+    their order, and finds each a slot in the table again.
+    */
     fn close_up(&mut self) {
         let (key_stride, stride) = (self.key_stride, self.stride);
         let mut kept = 0;
@@ -983,10 +1031,14 @@ impl SayonDict {
                 continue;
             }
             if kept != position {
-                // The entry's bytes move; it is not copied, so nothing is
-                // destroyed or kept twice.
-                self.keys
-                    .copy_within(position * key_stride..(position + 1) * key_stride, kept * key_stride);
+                /*
+                The entry's bytes move; it is not copied, so nothing is
+                destroyed or kept twice.
+                */
+                self.keys.copy_within(
+                    position * key_stride..(position + 1) * key_stride,
+                    kept * key_stride,
+                );
                 self.values
                     .copy_within(position * stride..(position + 1) * stride, kept * stride);
                 self.hashes[kept] = self.hashes[position];
@@ -1005,19 +1057,19 @@ impl SayonDict {
     }
 
     fn key(&self, position: usize) -> *const u8 {
-        // SAFETY: the position is below the length.
+        /* SAFETY: the position is below the length. */
         unsafe { self.keys.as_ptr().add(position * self.key_stride) as *const u8 }
     }
 
     fn value(&mut self, position: usize) -> *mut u8 {
-        // SAFETY: the position is below the length.
+        /* SAFETY: the position is below the length. */
         unsafe { self.values.as_mut_ptr().add(position * self.stride) as *mut u8 }
     }
 
     unsafe fn hash_of(&self, key: *const u8) -> u64 {
-        // SAFETY: the key is a valid value of the key type.
+        /* SAFETY: the key is a valid value of the key type. */
         let hash = unsafe { mix(((*self.ops).hash)(key)) };
-        // `REMOVED` marks the place of a removed entry.
+        /* `REMOVED` marks the place of a removed entry. */
         hash.min(REMOVED - 1)
     }
 
@@ -1025,13 +1077,14 @@ impl SayonDict {
         if self.table.is_empty() {
             return None;
         }
-        // SAFETY: valid key; the table holds positions of stored keys.
+        /* SAFETY: valid key; the table holds positions of stored keys. */
         unsafe {
-            // The key found last, tried first. Keys are unique, so an equal
-            // one is the entry asked for, wherever entries have moved since.
+            /*
+            The key found last, tried first. Keys are unique, so an equal
+            one is the entry asked for, wherever entries have moved since.
+            */
             let last = self.last.get();
-            if last < self.slots() && self.holds(last) && ((*self.ops).eq)(self.key(last), key)
-            {
+            if last < self.slots() && self.holds(last) && ((*self.ops).eq)(self.key(last), key) {
                 return Some(last);
             }
             let hash = self.hash_of(key);
@@ -1061,11 +1114,13 @@ impl SayonDict {
         self.table[slot] = position as u32 + 1;
     }
 
-    /// Appends a copy of the key with an empty value, returning its position.
+    /** Appends a copy of the key with an empty value, returning its position. */
     unsafe fn push(&mut self, key: *const u8, hash: u64) -> usize {
         if (self.slots() + 1) * 4 > self.table.len() * 3 {
-            // Closing up the places of removed entries may leave room
-            // enough; otherwise the table doubles.
+            /*
+            Closing up the places of removed entries may leave room
+            enough; otherwise the table doubles.
+            */
             if self.removed > 0 {
                 self.close_up();
             }
@@ -1078,7 +1133,7 @@ impl SayonDict {
         }
         let position = self.slots();
         self.keys.resize(self.keys.len() + self.key_stride, 0);
-        // SAFETY: the new key storage is `key_stride` words.
+        /* SAFETY: the new key storage is `key_stride` words. */
         unsafe {
             let target = self.keys.as_mut_ptr().add(position * self.key_stride) as *mut u8;
             match (*self.ops).clone {
@@ -1094,7 +1149,7 @@ impl SayonDict {
 
     unsafe fn describe(&self, key: *const u8) -> String {
         let mut builder = Builder(SayonStr::EMPTY);
-        // SAFETY: valid key and builder.
+        /* SAFETY: valid key and builder. */
         unsafe {
             ((*self.ops).display)(&mut builder, key, true);
             let text = as_str(&builder.0).to_string();
@@ -1111,7 +1166,7 @@ pub unsafe extern "C" fn sayon_dict_new(
     value_size: i64,
 ) {
     let value_size = value_size.max(0) as usize;
-    // SAFETY: `ops` is a static table from the generated code.
+    /* SAFETY: `ops` is a static table from the generated code. */
     let key_size = unsafe { (*ops).size.max(0) as usize };
     let dict = SayonDict {
         ops,
@@ -1125,31 +1180,35 @@ pub unsafe extern "C" fn sayon_dict_new(
         last: std::cell::Cell::new(usize::MAX),
         removed: 0,
     };
-    // SAFETY: `out` is writable.
+    /* SAFETY: `out` is writable. */
     allocated();
     unsafe { *out = Box::into_raw(Box::new(dict)) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_dict_len(d: *const SayonDict) -> i64 {
-    // SAFETY: valid dictionary.
+    /* SAFETY: valid dictionary. */
     unsafe { (*d).len() as i64 }
 }
 
-/// The places for entries, those of removed entries among them: where a
-/// loop over the entries ends.
+/**
+The places for entries, those of removed entries among them: where a
+loop over the entries ends.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_dict_slots(d: *const SayonDict) -> i64 {
-    // SAFETY: valid dictionary.
+    /* SAFETY: valid dictionary. */
     unsafe { (*d).slots() as i64 }
 }
 
-/// The first place at or after `position` that holds an entry, or the
-/// number of places when none does: a loop over the entries steps over the
-/// places of removed ones.
+/**
+The first place at or after `position` that holds an entry, or the
+number of places when none does: a loop over the entries steps over the
+places of removed ones.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_dict_next(d: *const SayonDict, position: i64) -> i64 {
-    // SAFETY: valid dictionary.
+    /* SAFETY: valid dictionary. */
     let dict = unsafe { &*d };
     let mut position = position.max(0) as usize;
     while position < dict.slots() && !dict.holds(position) {
@@ -1160,7 +1219,7 @@ pub unsafe extern "C" fn sayon_dict_next(d: *const SayonDict, position: i64) -> 
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_dict_find(d: *const SayonDict, key: *const u8) -> i64 {
-    // SAFETY: valid dictionary and key.
+    /* SAFETY: valid dictionary and key. */
     unsafe { (*d).find(key).map(|i| i as i64).unwrap_or(-1) }
 }
 
@@ -1172,7 +1231,7 @@ pub unsafe extern "C" fn sayon_dict_find_checked(
     location: *const c_char,
     out: *mut i64,
 ) -> i32 {
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe {
         match (*d).find(key) {
             Some(position) => {
@@ -1194,18 +1253,20 @@ pub unsafe extern "C" fn sayon_dict_find_checked(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_dict_key_ptr(d: *const SayonDict, position: i64) -> *const u8 {
-    // SAFETY: valid dictionary and position.
+    /* SAFETY: valid dictionary and position. */
     unsafe { (*d).key(position as usize) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_dict_value_ptr(d: *mut SayonDict, position: i64) -> *mut u8 {
-    // SAFETY: valid dictionary and position.
+    /* SAFETY: valid dictionary and position. */
     unsafe { (*d).value(position as usize) }
 }
 
-/// Inserts or replaces an entry. The key is copied; the value's bytes are
-/// moved in, and a replaced value is destroyed with `drop_value`.
+/**
+Inserts or replaces an entry. The key is copied; the value's bytes are
+moved in, and a replaced value is destroyed with `drop_value`.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_dict_set(
     d: *mut SayonDict,
@@ -1213,7 +1274,7 @@ pub unsafe extern "C" fn sayon_dict_set(
     value: *const u8,
     drop_value: DropFn,
 ) {
-    // SAFETY: valid dictionary, key, and value of `value_size` bytes.
+    /* SAFETY: valid dictionary, key, and value of `value_size` bytes. */
     unsafe {
         let dict = &mut *d;
         let position = match dict.find(key) {
@@ -1233,15 +1294,17 @@ pub unsafe extern "C" fn sayon_dict_set(
     }
 }
 
-/// Removes a key's entry, moving its value into `out`; the other entries
-/// keep their order. Returns whether the key was there.
+/**
+Removes a key's entry, moving its value into `out`; the other entries
+keep their order. Returns whether the key was there.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_dict_remove(
     d: *mut SayonDict,
     key: *const u8,
     out: *mut u8,
 ) -> bool {
-    // SAFETY: valid dictionary, key, and output of `value_size` bytes.
+    /* SAFETY: valid dictionary, key, and output of `value_size` bytes. */
     unsafe {
         let dict = &mut *d;
         let Some(position) = dict.find(key) else {
@@ -1251,7 +1314,7 @@ pub unsafe extern "C" fn sayon_dict_remove(
         if let Some(drop_key) = (*dict.ops).drop {
             drop_key(dict.key(position) as *mut u8);
         }
-        // The place stays, empty, so that no other entry moves.
+        /* The place stays, empty, so that no other entry moves. */
         dict.hashes[position] = REMOVED;
         dict.removed += 1;
         if dict.last.get() == position {
@@ -1264,11 +1327,13 @@ pub unsafe extern "C" fn sayon_dict_remove(
     }
 }
 
-/// Destroys every key and value, frees the dictionary, and leaves the slot
-/// empty.
+/**
+Destroys every key and value, frees the dictionary, and leaves the slot
+empty.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_dict_drop(slot: *mut *mut SayonDict, drop_value: DropFn) {
-    // SAFETY: `slot` holds null or a dictionary from `sayon_dict_new`.
+    /* SAFETY: `slot` holds null or a dictionary from `sayon_dict_new`. */
     unsafe {
         let d = *slot;
         if d.is_null() {
@@ -1297,7 +1362,7 @@ pub unsafe extern "C" fn sayon_dict_clone(
     dst: *mut *mut SayonDict,
     clone_value: CloneFn,
 ) {
-    // SAFETY: valid source; `dst` is writable.
+    /* SAFETY: valid source; `dst` is writable. */
     unsafe {
         let source = &*src;
         sayon_dict_new(dst, source.ops, source.value_size as i64);
@@ -1323,7 +1388,7 @@ pub unsafe extern "C" fn sayon_dict_eq(
     b: *const SayonDict,
     eq_value: EqFn,
 ) -> bool {
-    // SAFETY: valid dictionaries of the same type.
+    /* SAFETY: valid dictionaries of the same type. */
     unsafe {
         let (x, y) = (&*a, &*b);
         if x.len() != y.len() {
@@ -1346,10 +1411,10 @@ pub unsafe extern "C" fn sayon_dict_eq(
     }
 }
 
-/// A hash of a string's bytes, for dictionary keys.
+/** A hash of a string's bytes, for dictionary keys. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_str_hash(s: *const SayonStr) -> i64 {
-    // SAFETY: valid string.
+    /* SAFETY: valid string. */
     let text = unsafe { as_str(s) };
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in text.bytes() {
@@ -1359,9 +1424,9 @@ pub unsafe extern "C" fn sayon_str_hash(s: *const SayonStr) -> i64 {
     hash as i64
 }
 
-// ----- errors ----------------------------------------------------------------------------------
+/* ----- errors ---------------------------------------------------------------------------------- */
 
-/// Stores a new error with a message string.
+/** Stores a new error with a message string. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_error_raise(
     err: *mut *mut SayonError,
@@ -1369,11 +1434,11 @@ pub unsafe extern "C" fn sayon_error_raise(
     message: *const SayonStr,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe { set_error(err, c_str(code), as_str(message).to_string(), location) }
 }
 
-/// Stores a new error with a constant message.
+/** Stores a new error with a constant message. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_error_raise_text(
     err: *mut *mut SayonError,
@@ -1381,7 +1446,7 @@ pub unsafe extern "C" fn sayon_error_raise_text(
     message: *const c_char,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe { set_error(err, c_str(code), c_str(message).to_string(), location) }
 }
 
@@ -1394,7 +1459,7 @@ pub unsafe extern "C" fn sayon_error_overflow(
     code: u32,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe {
         let message = format!(
             "{} {} {} does not fit in {}",
@@ -1414,7 +1479,7 @@ pub unsafe extern "C" fn sayon_error_negate(
     code: u32,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe {
         let message = format!("-({}) does not fit in {}", widen(a, code), type_name(code));
         set_error(err, "OverflowError", message, location)
@@ -1423,7 +1488,7 @@ pub unsafe extern "C" fn sayon_error_negate(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_error_drop(slot: *mut *mut SayonError) {
-    // SAFETY: the slot holds null or an error from this module.
+    /* SAFETY: the slot holds null or an error from this module. */
     unsafe {
         if !(*slot).is_null() {
             drop(Box::from_raw(*slot));
@@ -1435,7 +1500,7 @@ pub unsafe extern "C" fn sayon_error_drop(slot: *mut *mut SayonError) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_error_clone(src: *const *mut SayonError, dst: *mut *mut SayonError) {
-    // SAFETY: valid slots.
+    /* SAFETY: valid slots. */
     unsafe {
         let error = &**src;
         allocated();
@@ -1449,13 +1514,13 @@ pub unsafe extern "C" fn sayon_error_clone(src: *const *mut SayonError, dst: *mu
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_error_message(e: *const *mut SayonError, out: *mut SayonStr) {
-    // SAFETY: valid error slot.
+    /* SAFETY: valid error slot. */
     unsafe { *out = owned((**e).message.clone()) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_error_code(e: *const *mut SayonError, out: *mut SayonStr) {
-    // SAFETY: valid error slot.
+    /* SAFETY: valid error slot. */
     unsafe { *out = owned((**e).code.clone()) }
 }
 
@@ -1464,18 +1529,18 @@ pub unsafe extern "C" fn sayon_error_eq(
     a: *const *mut SayonError,
     b: *const *mut SayonError,
 ) -> bool {
-    // SAFETY: valid error slots.
+    /* SAFETY: valid error slots. */
     unsafe {
         let (x, y) = (&**a, &**b);
         x.code == y.code && x.message == y.message
     }
 }
 
-/// Reports an error nothing caught and releases it. Returns the exit status.
+/** Reports an error nothing caught and releases it. Returns the exit status. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_report_uncaught(e: *mut SayonError) -> i32 {
     let _ = crate::console::stdout().flush();
-    // SAFETY: `e` came from this module and is not used again.
+    /* SAFETY: `e` came from this module and is not used again. */
     unsafe {
         if e.is_null() {
             report!("error: uncaught error");
@@ -1494,7 +1559,7 @@ pub unsafe extern "C" fn sayon_report_uncaught(e: *mut SayonError) -> i32 {
     1
 }
 
-// ----- checks and conversions ---------------------------------------------------------------
+/* ----- checks and conversions --------------------------------------------------------------- */
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_int_convert(
@@ -1507,7 +1572,7 @@ pub unsafe extern "C" fn sayon_int_convert(
 ) -> i32 {
     let wide = widen(value, from);
     let (min, max) = text::integer_type_range(to);
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe {
         if wide < min || wide > max {
             return set_error(
@@ -1530,7 +1595,7 @@ pub unsafe extern "C" fn sayon_float_to_int(
     location: *const c_char,
     out: *mut i64,
 ) -> i32 {
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe {
         if !value.is_finite() {
             let message = format!(
@@ -1563,7 +1628,7 @@ pub unsafe extern "C" fn sayon_f64_to_f32(
     out: *mut f32,
 ) -> i32 {
     let narrowed = value as f32;
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe {
         if value.is_finite() && narrowed.is_infinite() {
             let message = format!("{} is too large for float32", text::format_f64(value));
@@ -1583,7 +1648,7 @@ pub unsafe extern "C" fn sayon_tonumber(
     integer: *mut i64,
     float: *mut f64,
 ) -> i32 {
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe {
         match text::parse_number(as_str(s)) {
             Ok(text::Number::Integer(value)) => {
@@ -1610,7 +1675,7 @@ pub unsafe extern "C" fn sayon_range_new(
     location: *const c_char,
     out: *mut SayonRange,
 ) -> i32 {
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe {
         if step == 0 {
             return set_error(
@@ -1627,7 +1692,7 @@ pub unsafe extern "C" fn sayon_range_new(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_range_length(r: *const SayonRange) -> i64 {
-    // SAFETY: valid range.
+    /* SAFETY: valid range. */
     unsafe {
         let range = &*r;
         text::range_length(range.start, range.end, range.step)
@@ -1640,7 +1705,7 @@ pub unsafe extern "C" fn sayon_assert_failed(
     message: *const SayonStr,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: valid pointers; `message` may be null.
+    /* SAFETY: valid pointers; `message` may be null. */
     unsafe {
         let text = if message.is_null() {
             "assertion failed".to_string()
@@ -1651,7 +1716,7 @@ pub unsafe extern "C" fn sayon_assert_failed(
     }
 }
 
-// ----- files -------------------------------------------------------------------------------------
+/* ----- files ------------------------------------------------------------------------------------- */
 
 fn io_message(error: &std::io::Error) -> String {
     match error.kind() {
@@ -1668,7 +1733,7 @@ pub unsafe extern "C" fn sayon_read_file(
     location: *const c_char,
     out: *mut SayonStr,
 ) -> i32 {
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe {
         let path = as_str(path);
         let bytes = match std::fs::read(path) {
@@ -1707,7 +1772,7 @@ pub unsafe extern "C" fn sayon_write_file(
     content: *const SayonStr,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: valid pointers.
+    /* SAFETY: valid pointers. */
     unsafe {
         let path = as_str(path);
         match std::fs::write(path, as_str(content).as_bytes()) {
@@ -1722,17 +1787,19 @@ pub unsafe extern "C" fn sayon_write_file(
     }
 }
 
-// ----- program lifecycle ----------------------------------------------------------------------------
+/* ----- program lifecycle ---------------------------------------------------------------------------- */
 
-// ----- shared values --------------------------------------------------------------------------------
-//
-// A shared value is one block: the count of `Shared` handles, the count of
-// `Weak` handles plus one for all the `Shared` handles together, the
-// block's size, and the value at `SHARED_HEADER` bytes. The value is
-// destroyed when the last `Shared` handle goes, and the block is freed when
-// the last handle of either kind goes, so it is freed exactly once.
+/*
+----- shared values --------------------------------------------------------------------------------
 
-/// The bytes before a shared value; the code generator uses the same.
+A shared value is one block: the count of `Shared` handles, the count of
+`Weak` handles plus one for all the `Shared` handles together, the
+block's size, and the value at `SHARED_HEADER` bytes. The value is
+destroyed when the last `Shared` handle goes, and the block is freed when
+the last handle of either kind goes, so it is freed exactly once.
+*/
+
+/** The bytes before a shared value; the code generator uses the same. */
 pub const SHARED_HEADER: i64 = 24;
 
 #[repr(C)]
@@ -1742,12 +1809,14 @@ struct SharedBlock {
     size: i64,
 }
 
-/// A block for a shared value of `size` bytes, with one `Shared` handle;
-/// the caller stores the value.
+/**
+A block for a shared value of `size` bytes, with one `Shared` handle;
+the caller stores the value.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_shared_new(size: i64) -> *mut u8 {
     let total = SHARED_HEADER + size;
-    // SAFETY: a fresh block of at least the header's size.
+    /* SAFETY: a fresh block of at least the header's size. */
     unsafe {
         let block = sayon_alloc(total);
         std::ptr::write(
@@ -1762,9 +1831,9 @@ pub unsafe extern "C" fn sayon_shared_new(size: i64) -> *mut u8 {
     }
 }
 
-/// Removes a weak count; the last frees the block.
+/** Removes a weak count; the last frees the block. */
 unsafe fn release_weak(block: *mut u8) {
-    // SAFETY: a live block from `sayon_shared_new`.
+    /* SAFETY: a live block from `sayon_shared_new`. */
     unsafe {
         let header = &mut *(block as *mut SharedBlock);
         header.weak -= 1;
@@ -1775,10 +1844,10 @@ unsafe fn release_weak(block: *mut u8) {
     }
 }
 
-/// Drops a `Shared` handle; null is a moved-from handle.
+/** Drops a `Shared` handle; null is a moved-from handle. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_shared_release(slot: *mut *mut u8, drop: DropFn) {
-    // SAFETY: the slot holds null or a live block.
+    /* SAFETY: the slot holds null or a live block. */
     unsafe {
         let block = *slot;
         if block.is_null() {
@@ -1798,7 +1867,7 @@ pub unsafe extern "C" fn sayon_shared_release(slot: *mut *mut u8, drop: DropFn) 
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_shared_clone(src: *const *mut u8, dst: *mut *mut u8) {
-    // SAFETY: the source holds a live block.
+    /* SAFETY: the source holds a live block. */
     unsafe {
         let block = *src;
         (*(block as *mut SharedBlock)).strong += 1;
@@ -1806,10 +1875,10 @@ pub unsafe extern "C" fn sayon_shared_clone(src: *const *mut u8, dst: *mut *mut 
     }
 }
 
-/// A new `Shared` handle from a `Weak` one, when a `Shared` handle is left.
+/** A new `Shared` handle from a `Weak` one, when a `Shared` handle is left. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_shared_upgrade(block: *mut u8) -> bool {
-    // SAFETY: a weak handle keeps its block allocated.
+    /* SAFETY: a weak handle keeps its block allocated. */
     unsafe {
         let header = &mut *(block as *mut SharedBlock);
         if header.strong == 0 {
@@ -1822,23 +1891,23 @@ pub unsafe extern "C" fn sayon_shared_upgrade(block: *mut u8) -> bool {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_weak_retain(block: *mut u8) {
-    // SAFETY: a live block.
+    /* SAFETY: a live block. */
     unsafe { (*(block as *mut SharedBlock)).weak += 1 }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_weak_clone(src: *const *mut u8, dst: *mut *mut u8) {
-    // SAFETY: the source holds a live block.
+    /* SAFETY: the source holds a live block. */
     unsafe {
         sayon_weak_retain(*src);
         *dst = *src;
     }
 }
 
-/// Drops a `Weak` handle; null is a moved-from handle.
+/** Drops a `Weak` handle; null is a moved-from handle. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_weak_release(slot: *mut *mut u8) {
-    // SAFETY: the slot holds null or a live block.
+    /* SAFETY: the slot holds null or a live block. */
     unsafe {
         let block = *slot;
         if block.is_null() {
@@ -1849,12 +1918,12 @@ pub unsafe extern "C" fn sayon_weak_release(slot: *mut *mut u8) {
     }
 }
 
-// ----- streams --------------------------------------------------------------------------------------
+/* ----- streams -------------------------------------------------------------------------------------- */
 
-/// Drops a stream reference; 0 is a moved-from stream.
+/** Drops a stream reference; 0 is a moved-from stream. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_stream_drop(slot: *mut i64) {
-    // SAFETY: the slot holds a stream number or 0.
+    /* SAFETY: the slot holds a stream number or 0. */
     unsafe {
         if *slot != 0 {
             crate::streams::release(*slot);
@@ -1864,10 +1933,10 @@ pub unsafe extern "C" fn sayon_stream_drop(slot: *mut i64) {
     }
 }
 
-/// A clone of a stream refers to the same open file.
+/** A clone of a stream refers to the same open file. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_stream_clone(src: *const i64, dst: *mut i64) {
-    // SAFETY: valid slots.
+    /* SAFETY: valid slots. */
     unsafe {
         crate::streams::share(*src);
         allocated();
@@ -1875,17 +1944,21 @@ pub unsafe extern "C" fn sayon_stream_clone(src: *const i64, dst: *mut i64) {
     }
 }
 
-// ----- program lifecycle ----------------------------------------------------------------------------
+/* ----- program lifecycle ---------------------------------------------------------------------------- */
 
-/// The bytes of a word before a C string's text: the size of its block.
+/** The bytes of a word before a C string's text: the size of its block. */
 const C_STRING_HEADER: usize = 8;
 
-/// A new C string holding `bytes` and a NUL: the address of its text,
-/// which follows a word holding the size of the whole block.
+/**
+A new C string holding `bytes` and a NUL: the address of its text,
+which follows a word holding the size of the whole block.
+*/
 fn c_string_buffer(bytes: &[u8]) -> *mut u8 {
     let size = C_STRING_HEADER + bytes.len() + 1;
-    // SAFETY: the block is `size` bytes, enough for the header, the bytes,
-    // and the NUL.
+    /*
+    SAFETY: the block is `size` bytes, enough for the header, the bytes,
+    and the NUL.
+    */
     unsafe {
         let block = sayon_alloc(size as i64);
         *(block as *mut u64) = size as u64;
@@ -1896,10 +1969,10 @@ fn c_string_buffer(bytes: &[u8]) -> *mut u8 {
     }
 }
 
-/// Releases the C string in a slot, unless the slot is empty.
+/** Releases the C string in a slot, unless the slot is empty. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_c_string_drop(slot: *mut *mut u8) {
-    // SAFETY: a non-null text pointer came from `c_string_buffer`.
+    /* SAFETY: a non-null text pointer came from `c_string_buffer`. */
     unsafe {
         let text = *slot;
         if text.is_null() {
@@ -1912,14 +1985,14 @@ pub unsafe extern "C" fn sayon_c_string_drop(slot: *mut *mut u8) {
     }
 }
 
-/// Shows a C string's text, quoted inside a collection like a string.
+/** Shows a C string's text, quoted inside a collection like a string. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_builder_c_string(
     b: *mut Builder,
     slot: *const *const u8,
     quoted: bool,
 ) {
-    // SAFETY: the slot holds the text of a live C string.
+    /* SAFETY: the slot holds the text of a live C string. */
     unsafe {
         let text = String::from_utf8_lossy(CStr::from_ptr(*slot as *const c_char).to_bytes());
         if quoted {
@@ -1932,9 +2005,9 @@ pub unsafe extern "C" fn sayon_builder_c_string(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_builder_pointer(b: *mut Builder, address: u64) {
-    // The address comes widened to 64 bits on every target.
+    /* The address comes widened to 64 bits on every target. */
     let address = address as usize;
-    // SAFETY: `b` is a live builder.
+    /* SAFETY: `b` is a live builder. */
     unsafe { (*b).push_str(&text::pointer_text(address)) }
 }
 
@@ -1942,15 +2015,19 @@ pub unsafe extern "C" fn sayon_builder_pointer(b: *mut Builder, address: u64) {
 pub extern "C" fn sayon_runtime_finish() {
     crate::streams::flush_all();
     let _ = crate::console::stdout().flush();
-    // In a web page the program's entry can be a coroutine, whose frame is
-    // freed only after this; `sayon_run` reports then.
+    /*
+    In a web page the program's entry can be a coroutine, whose frame is
+    freed only after this; `sayon_run` reports then.
+    */
     if !cfg!(all(target_family = "wasm", target_os = "unknown")) {
         sayon_runtime_report();
     }
 }
 
-/// With `SAYON_DEBUG_ALLOC`, reports the allocations still live as the
-/// program ends, which a program that released everything has none of.
+/**
+With `SAYON_DEBUG_ALLOC`, reports the allocations still live as the
+program ends, which a program that released everything has none of.
+*/
 #[unsafe(no_mangle)]
 pub extern "C" fn sayon_runtime_report() {
     if counting_live() {
@@ -1961,8 +2038,10 @@ pub extern "C" fn sayon_runtime_report() {
     }
 }
 
-/// Maps the integer `main` returned to the process exit status. Portable
-/// statuses are 0 to 255; anything else exits with 255 after a warning.
+/**
+Maps the integer `main` returned to the process exit status. Portable
+statuses are 0 to 255; anything else exits with 255 after a warning.
+*/
 #[unsafe(no_mangle)]
 pub extern "C" fn sayon_exit_status(code: i64) -> i32 {
     if (0..=255).contains(&code) {
@@ -1976,13 +2055,15 @@ pub extern "C" fn sayon_exit_status(code: i64) -> i32 {
     }
 }
 
-// ----- math --------------------------------------------------------------------
+/* ----- math -------------------------------------------------------------------- */
 
-/// The functions of `standard/math` that compiled code calls directly rather
-/// than through their entries as primitives, which gather their arguments
-/// first.
-/// They are the functions the interpreter's primitives use, so both give the
-/// same results.
+/**
+The functions of `standard/math` that compiled code calls directly rather
+than through their entries as primitives, which gather their arguments
+first.
+They are the functions the interpreter's primitives use, so both give the
+same results.
+*/
 macro_rules! math {
     ($($name:ident = |$($x:ident),+| $body:expr;)*) => {
         $(
@@ -2010,16 +2091,18 @@ math! {
     sayon_math_pow = |base, exponent| base.powf(exponent);
 }
 
-// ----- text --------------------------------------------------------------------
+/* ----- text -------------------------------------------------------------------- */
 
-// The functions of `standard/strings` that compiled code calls directly. The
-// primitives they stand for gather their arguments, and build their results,
-// as values of their own first; these read and write Sayon's strings and
-// arrays where they are. They give the same results as the primitives.
+/*
+The functions of `standard/strings` that compiled code calls directly. The
+primitives they stand for gather their arguments, and build their results,
+as values of their own first; these read and write Sayon's strings and
+arrays where they are. They give the same results as the primitives.
+*/
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_text_contains(text: *const SayonStr, part: *const SayonStr) -> bool {
-    // SAFETY: valid strings.
+    /* SAFETY: valid strings. */
     unsafe { as_str(text).contains(as_str(part)) }
 }
 
@@ -2028,7 +2111,7 @@ pub unsafe extern "C" fn sayon_text_starts_with(
     text: *const SayonStr,
     prefix: *const SayonStr,
 ) -> bool {
-    // SAFETY: valid strings.
+    /* SAFETY: valid strings. */
     unsafe { as_str(text).starts_with(as_str(prefix)) }
 }
 
@@ -2037,14 +2120,14 @@ pub unsafe extern "C" fn sayon_text_ends_with(
     text: *const SayonStr,
     suffix: *const SayonStr,
 ) -> bool {
-    // SAFETY: valid strings.
+    /* SAFETY: valid strings. */
     unsafe { as_str(text).ends_with(as_str(suffix)) }
 }
 
-/// Where `part` first starts in `text`, counted in characters, or -1.
+/** Where `part` first starts in `text`, counted in characters, or -1. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_text_find(text: *const SayonStr, part: *const SayonStr) -> i64 {
-    // SAFETY: valid strings.
+    /* SAFETY: valid strings. */
     unsafe {
         let text = as_str(text);
         match text.find(as_str(part)) {
@@ -2054,8 +2137,10 @@ pub unsafe extern "C" fn sayon_text_find(text: *const SayonStr, part: *const Say
     }
 }
 
-/// Splits `text` at each `separator` into a new array at `out`, made at its
-/// size at once, with each piece copied straight into it.
+/**
+Splits `text` at each `separator` into a new array at `out`, made at its
+size at once, with each piece copied straight into it.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_text_split(
     err: *mut *mut SayonError,
@@ -2064,7 +2149,7 @@ pub unsafe extern "C" fn sayon_text_split(
     out: *mut SayonArray,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: valid strings, an array to write, and the error slot.
+    /* SAFETY: valid strings, an array to write, and the error slot. */
     unsafe {
         let (text, separator) = (as_str(text), as_str(separator));
         if separator.is_empty() {
@@ -2087,15 +2172,17 @@ pub unsafe extern "C" fn sayon_text_split(
     }
 }
 
-/// The strings of `parts` joined by `separator`, into `out`, in a buffer
-/// made at its size at once.
+/**
+The strings of `parts` joined by `separator`, into `out`, in a buffer
+made at its size at once.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_text_join(
     parts: *const SayonArray,
     separator: *const SayonStr,
     out: *mut SayonStr,
 ) {
-    // SAFETY: a valid array of strings, a valid string, and a string to write.
+    /* SAFETY: a valid array of strings, a valid string, and a string to write. */
     unsafe {
         let separator = as_str(separator);
         let count = (*parts).len as usize;
@@ -2115,21 +2202,25 @@ pub unsafe extern "C" fn sayon_text_join(
     }
 }
 
-// ----- host primitives -------------------------------------------------------
+/* ----- host primitives ------------------------------------------------------- */
 
-/// Records the program's arguments (without the program name).
+/** Records the program's arguments (without the program name). */
 #[unsafe(no_mangle)]
 pub extern "C" fn sayon_runtime_init() {
     crate::host::set_arguments(std::env::args().skip(1).collect());
-    // A page has no standard errors of Rust's: a fault inside the runtime is
-    // reported through the host instead.
+    /*
+    A page has no standard errors of Rust's: a fault inside the runtime is
+    reported through the host instead.
+    */
     #[cfg(all(target_family = "wasm", target_os = "unknown"))]
     std::panic::set_hook(Box::new(|info| report!("fatal error: {info}")));
 }
 
-/// Runs a primitive, letting other tasks run while it waits for a socket:
-/// it runs again whenever the socket may be ready, until it finishes or
-/// waits longer than the socket's timeout.
+/**
+Runs a primitive, letting other tasks run while it waits for a socket:
+it runs again whenever the socket may be ready, until it finishes or
+waits longer than the socket's timeout.
+*/
 #[cfg_attr(not(debug_assertions), inline(always))]
 fn call_waiting(
     host: crate::host::Host,
@@ -2163,9 +2254,11 @@ fn call_waiting(
     }
 }
 
-/// In a web page: has the browser fetch the request `host_fetch`'s
-/// arguments describe, and lets the task wait for it while the others run.
-/// The stream holding the response goes through `out`.
+/**
+In a web page: has the browser fetch the request `host_fetch`'s
+arguments describe, and lets the task wait for it while the others run.
+The stream holding the response goes through `out`.
+*/
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 unsafe fn fetch(
     err: *mut *mut SayonError,
@@ -2173,7 +2266,7 @@ unsafe fn fetch(
     out: *mut u8,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: the caller's error slot, and its result of a stream.
+    /* SAFETY: the caller's error slot, and its result of a stream. */
     unsafe {
         let request = match crate::fetch::start(values) {
             Ok(request) => request,
@@ -2191,11 +2284,13 @@ unsafe fn fetch(
     }
 }
 
-/// What each primitive's entry does (see `host::entries`), inlined there in a
-/// release build so that only the primitive's own code stays. `args` points to one pointer per
-/// argument value, in the primitive's parameter order. The result is written
-/// through `out`; for an optional string, whether it is present is written
-/// through `present` and the text through `out` when it is.
+/**
+What each primitive's entry does (see `host::entries`), inlined there in a
+release build so that only the primitive's own code stays. `args` points to one pointer per
+argument value, in the primitive's parameter order. The result is written
+through `out`; for an optional string, whether it is present is written
+through `present` and the text through `out` when it is.
+*/
 #[cfg_attr(not(debug_assertions), inline(always))]
 pub(crate) unsafe fn host_entry(
     host: crate::host::Host,
@@ -2206,8 +2301,10 @@ pub(crate) unsafe fn host_entry(
     location: *const c_char,
 ) -> i32 {
     use crate::host::{HostArg, HostType, HostValue};
-    // SAFETY: the generated code passes valid pointers matching the
-    // primitive's parameter and result types.
+    /*
+    SAFETY: the generated code passes valid pointers matching the
+    primitive's parameter and result types.
+    */
     unsafe {
         let mut values = Vec::new();
         for (index, ty) in host.params().iter().enumerate() {
@@ -2235,7 +2332,7 @@ pub(crate) unsafe fn host_entry(
                     HostArg::Integers(integers)
                 }
                 HostType::Stream => HostArg::Stream(*(pointer as *const i64)),
-                // A C string is its buffer's address.
+                /* A C string is its buffer's address. */
                 HostType::Pointer | HostType::CString => {
                     HostArg::Pointer(*(pointer as *const usize))
                 }
@@ -2257,8 +2354,10 @@ pub(crate) unsafe fn host_entry(
         if host == crate::host::Host::Fetch {
             return fetch(err, &values, out, location);
         }
-        // Only a primitive that can wait for a socket brings in the
-        // scheduler's waiting.
+        /*
+        Only a primitive that can wait for a socket brings in the
+        scheduler's waiting.
+        */
         let result = if host.may_wait() {
             call_waiting(host, &values)
         } else {

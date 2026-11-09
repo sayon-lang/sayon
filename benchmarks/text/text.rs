@@ -1,6 +1,8 @@
-// Text: format many lines into one string, split it back into an array of
-// lines, and look through them, counting characters as Sayon's `length`
-// does.
+/*
+Text: format many lines into one string, split it back into an array of
+lines, and look through them, counting characters as Sayon's `length`
+does.
+*/
 
 fn main() {
     let total: u64 = std::env::args().nth(1).and_then(|a| a.parse().ok()).unwrap_or(100000);

@@ -1,4 +1,4 @@
-//! Item collection, dependency ordering, and per-function type inference.
+/*! Item collection, dependency ordering, and per-function type inference. */
 
 use crate::hir::{self, ConstId, ForeignId, FuncId, LocalId, LocalKind};
 use crate::infer::{Bounds, LiteralKind, Traits, Unifier, UnifyError};
@@ -14,17 +14,17 @@ pub(crate) enum Item {
     Function(FuncId),
     Constant(ConstId),
     Type(TypeId),
-    /// A C function of a `foreign` block.
+    /** A C function of a `foreign` block. */
     Foreign(ForeignId),
 }
 
-/// The source of a structure or enum declaration.
+/** The source of a structure or enum declaration. */
 pub(crate) enum TypeSource<'a> {
     Structure(&'a [ast::Field]),
-    /// A structure declared with `foreign type`.
+    /** A structure declared with `foreign type`. */
     Foreign(&'a [ast::Field]),
     Enum(&'a [ast::Variant]),
-    /// The prelude's `Outcome<T>`: `success(value: T)` or `failure(problem: Error)`.
+    /** The prelude's `Outcome<T>`: `success(value: T)` or `failure(problem: Error)`. */
     Outcome,
 }
 
@@ -37,21 +37,23 @@ pub(crate) struct TypeEntry<'a> {
     pub source: TypeSource<'a>,
 }
 
-/// The type a `try` expression produces; always the first type definition.
+/** The type a `try` expression produces; always the first type definition. */
 pub(crate) const OUTCOME: TypeId = TypeId(0);
-/// The positions of `Outcome`'s variants.
+/** The positions of `Outcome`'s variants. */
 pub(crate) const SUCCESS: u32 = 0;
 pub(crate) const FAILURE: u32 = 1;
-/// The module of prelude types, which no source file defines.
+/** The module of prelude types, which no source file defines. */
 pub(crate) const PRELUDE: ModuleId = ModuleId(u32::MAX);
 
-/// What a test has established about a local.
+/** What a test has established about a local. */
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Narrowing {
-    /// The type the local's value has when it is read.
+    /** The type the local's value has when it is read. */
     pub ty: Type,
-    /// For an `Outcome`, the variant it holds; reading the local reads that
-    /// variant's one field.
+    /**
+    For an `Outcome`, the variant it holds; reading the local reads that
+    variant's one field.
+    */
     pub variant: Option<u32>,
 }
 
@@ -68,32 +70,34 @@ impl Narrowing {
     }
 }
 
-/// A source file being checked. Each file is a module.
+/** A source file being checked. Each file is a module. */
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ModuleId(pub u32);
 
 pub(crate) struct ModuleInfo {
-    /// The source file the module is.
+    /** The source file the module is. */
     pub file: sayon_syntax::FileId,
-    /// The import path or file name shown in messages.
+    /** The import path or file name shown in messages. */
     pub name: String,
     pub items: HashMap<String, Item>,
-    /// Import aliases and the modules they name.
+    /** Import aliases and the modules they name. */
     pub imports: HashMap<String, (ModuleId, Span)>,
-    /// Standard library modules may use the host primitives.
+    /** Standard library modules may use the host primitives. */
     pub standard: bool,
     pub entry: bool,
 }
 
-/// A function signature. Inside a function's own strongly connected component
-/// the types may contain inference variables; afterwards generic parameters
-/// appear as `Type::Param`.
+/**
+A function signature. Inside a function's own strongly connected component
+the types may contain inference variables; afterwards generic parameters
+appear as `Type::Param`.
+*/
 #[derive(Clone, Debug)]
 pub(crate) struct Signature {
     pub params: Vec<Type>,
     pub param_names: Vec<String>,
     pub explicit_modes: Vec<Option<ParamMode>>,
-    /// Number of leading parameters without a default value.
+    /** Number of leading parameters without a default value. */
     pub required: usize,
     pub ret: Type,
     pub generic_count: u32,
@@ -101,8 +105,10 @@ pub(crate) struct Signature {
     pub bounds: Vec<Bounds>,
 }
 
-/// A C function declared in a `foreign` block, with its signature once the
-/// types are resolved.
+/**
+A C function declared in a `foreign` block, with its signature once the
+types are resolved.
+*/
 pub(crate) struct ForeignEntry<'a> {
     pub ast: &'a ast::ForeignFunction,
     pub module: ModuleId,
@@ -137,30 +143,30 @@ pub(crate) struct ConstantEntry<'a> {
     pub hir: Option<hir::Expr>,
 }
 
-/// A constraint whose shape depends on a type that may not be known yet.
+/** A constraint whose shape depends on a type that may not be known yet. */
 pub(crate) enum Deferred {
-    /// `container[index]` producing `result`.
+    /** `container[index]` producing `result`. */
     Index {
         container: Type,
         index: Type,
         result: Type,
         span: Span,
     },
-    /// `for item in iterable` (or `for key, value in iterable`).
+    /** `for item in iterable` (or `for key, value in iterable`). */
     Iterate {
         iterable: Type,
         items: Vec<Type>,
         span: Span,
     },
-    /// `[]` must become an array or a dictionary.
+    /** `[]` must become an array or a dictionary. */
     EmptyCollection { ty: Type, span: Span },
-    /// `target.name` producing `result`, in code of `module`.
+    /** `target.name` producing `result`, in code of `module`. */
     Field {
         target: Type,
         name: String,
         result: Type,
         span: Span,
-        /// The field's name as written, which the index notes.
+        /** The field's name as written, which the index notes. */
         name_span: Span,
         module: ModuleId,
     },
@@ -182,7 +188,7 @@ impl Scope {
     }
 }
 
-/// State for the function (or constant initializer) being checked.
+/** State for the function (or constant initializer) being checked. */
 pub(crate) struct FnCtx {
     pub module: ModuleId,
     pub func: Option<FuncId>,
@@ -190,26 +196,32 @@ pub(crate) struct FnCtx {
     pub scopes: Vec<Scope>,
     pub ret: Type,
     pub loop_depth: u32,
-    /// Loop depth at which the innermost `finally` began, if any.
+    /** Loop depth at which the innermost `finally` began, if any. */
     pub finally_loop_depth: Option<u32>,
     pub generics: HashMap<String, u32>,
     pub is_script: bool,
-    /// For the body of a function literal: the variables it has captured
-    /// from the function around it so far.
+    /**
+    For the body of a function literal: the variables it has captured
+    from the function around it so far.
+    */
     pub captures: Option<Vec<CaptureSlot>>,
-    /// The `unsafe` blocks and expressions around the code being checked,
-    /// innermost last, with whether anything in each needed it.
+    /**
+    The `unsafe` blocks and expressions around the code being checked,
+    innermost last, with whether anything in each needed it.
+    */
     pub unsafe_blocks: Vec<(Span, bool)>,
-    /// The body of an `unsafe function`, or of a function literal in unsafe
-    /// code, which is unsafe code throughout.
+    /**
+    The body of an `unsafe function`, or of a function literal in unsafe
+    code, which is unsafe code throughout.
+    */
     pub unsafe_body: bool,
 }
 
-/// A variable of an enclosing function that a function literal uses.
+/** A variable of an enclosing function that a function literal uses. */
 pub(crate) struct CaptureSlot {
-    /// The literal's local that holds the value.
+    /** The literal's local that holds the value. */
     pub inner: LocalId,
-    /// How the enclosing function reads the variable.
+    /** How the enclosing function reads the variable. */
     pub value: hir::Expr,
 }
 
@@ -261,7 +273,7 @@ impl FnCtx {
         id
     }
 
-    /// A local no name refers to.
+    /** A local no name refers to. */
     pub fn hidden(&mut self, ty: Type, span: Span) -> LocalId {
         let id = LocalId(self.locals.len() as u32);
         self.locals.push(hir::Local {
@@ -275,8 +287,10 @@ impl FnCtx {
         id
     }
 
-    /// Declares a local in the function's outermost scope, visible for the
-    /// rest of the body.
+    /**
+    Declares a local in the function's outermost scope, visible for the
+    rest of the body.
+    */
     pub fn declare_outermost(
         &mut self,
         name: &str,
@@ -315,54 +329,70 @@ pub(crate) struct Checker<'a> {
     pub functions: Vec<FunctionEntry<'a>>,
     pub constants: Vec<ConstantEntry<'a>>,
     pub foreign: Vec<ForeignEntry<'a>>,
-    /// Each structure that a `finally function` destroys, with the function.
+    /** Each structure that a `finally function` destroys, with the function. */
     pub finally_functions: Vec<(TypeId, FuncId)>,
     pub types: Vec<TypeEntry<'a>>,
-    /// The resolved definitions of `types`, indexed by `TypeId`.
+    /** The resolved definitions of `types`, indexed by `TypeId`. */
     pub type_defs: Vec<TypeDef>,
-    /// Names bound by top-level script statements, for a clearer error when a
-    /// function tries to use one.
+    /**
+    Names bound by top-level script statements, for a clearer error when a
+    function tries to use one.
+    */
     pub script_names: HashSet<String>,
     pub deferred: Vec<Deferred>,
-    /// Functions in the component currently being inferred.
+    /** Functions in the component currently being inferred. */
     pub current_component: Vec<FuncId>,
-    /// The function of that component whose body is being checked.
+    /** The function of that component whose body is being checked. */
     pub checking: Option<FuncId>,
-    /// Calls between functions of the component of a generic function with
-    /// a written signature: caller, callee, the callee's type arguments,
-    /// and where, for the type parameters' requirements to be passed on.
+    /**
+    Calls between functions of the component of a generic function with
+    a written signature: caller, callee, the callee's type arguments,
+    and where, for the type parameters' requirements to be passed on.
+    */
     pub component_calls: Vec<(FuncId, FuncId, Vec<Type>, Span)>,
     pub reported_vars: HashSet<TyVar>,
-    /// Where an unusable key type was reported, so each place is reported once.
+    /** Where an unusable key type was reported, so each place is reported once. */
     pub reported_key_spans: HashSet<Span>,
-    /// The same for views kept where they cannot be.
+    /** The same for views kept where they cannot be. */
     pub reported_view_spans: HashSet<Span>,
-    /// Functions declared inside functions whose bodies are being checked.
+    /** Functions declared inside functions whose bodies are being checked. */
     pub defining_nested: Vec<String>,
-    /// The result types of function literals whose bodies never return a
-    /// value, to be `nothing` if nothing else decides them.
+    /**
+    The result types of function literals whose bodies never return a
+    value, to be `nothing` if nothing else decides them.
+    */
     pub failing_results: Vec<TyVar>,
-    /// Types written with a view inside them, already reported where they
-    /// were written.
+    /**
+    Types written with a view inside them, already reported where they
+    were written.
+    */
     pub annotated_view_types: HashSet<Type>,
-    /// Dictionary literals whose key type came from the type expected there,
-    /// which was checked where it was written.
+    /**
+    Dictionary literals whose key type came from the type expected there,
+    which was checked where it was written.
+    */
     pub typed_dict_literals: HashSet<Span>,
     pub scc_order: Vec<Vec<FuncId>>,
-    /// Test blocks of the entry module: module, description, span, body.
+    /** Test blocks of the entry module: module, description, span, body. */
     pub test_blocks: Vec<(ModuleId, String, Span, &'a ast::Block)>,
-    /// The functions around the function literal being checked, innermost
-    /// last; the literal's context is the one passed around as `cx`.
+    /**
+    The functions around the function literal being checked, innermost
+    last; the literal's context is the one passed around as `cx`.
+    */
     pub enclosing: Vec<FnCtx>,
-    /// Function literal bodies checked so far, with the named function they
-    /// appear in (none in a script, a test, or a constant), finalized
-    /// together with it.
+    /**
+    Function literal bodies checked so far, with the named function they
+    appear in (none in a script, a test, or a constant), finalized
+    together with it.
+    */
     pub closures: Vec<(FuncId, Option<FuncId>)>,
-    /// The target the program is checked for, which decides `platform`,
-    /// `processor`, and `supports`, and so which platform branches are
-    /// checked.
+    /**
+    The target the program is checked for, which decides `platform`,
+    `processor`, and `supports`, and so which platform branches are
+    checked.
+    */
     pub target: &'static sayon_target::Target,
-    /// Whether to note what each name refers to, for [`crate::index`].
+    /** Whether to note what each name refers to, for [`crate::index`]. */
     pub indexing: bool,
     pub(crate) noted: Vec<(Span, crate::index::Noted)>,
 }
@@ -370,7 +400,7 @@ pub(crate) struct Checker<'a> {
 pub struct CheckOutput {
     pub program: Option<hir::Program>,
     pub diagnostics: Diagnostics,
-    /// What the program's names refer to, when it was asked for.
+    /** What the program's names refer to, when it was asked for. */
     pub index: Option<crate::index::Index>,
 }
 
@@ -417,9 +447,11 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The local a name refers to. Inside a function literal, a variable of
-    /// an enclosing function is captured: the literal gets its own local
-    /// for it, initialized from the enclosing one when the closure is made.
+    /**
+    The local a name refers to. Inside a function literal, a variable of
+    an enclosing function is captured: the literal gets its own local
+    for it, initialized from the enclosing one when the closure is made.
+    */
     pub fn find_local(&mut self, cx: &mut FnCtx, name: &str, span: Span) -> Option<LocalId> {
         if let Some(local) = cx.lookup(name) {
             let declared = cx.locals[local.0 as usize].span;
@@ -432,7 +464,7 @@ impl<'a> Checker<'a> {
         let inner = found.map(|outer| {
             let value = self.local_use(&parent, outer, span);
             let outer_info = &parent.locals[outer.0 as usize];
-            // A captured constant stays constant.
+            /* A captured constant stays constant. */
             let kind = if outer_info.kind == LocalKind::Constant {
                 LocalKind::Constant
             } else {
@@ -449,8 +481,10 @@ impl<'a> Checker<'a> {
         inner
     }
 
-    /// Whether a name is a local here or in an enclosing function, without
-    /// capturing it (for deciding whether it hides a module or type name).
+    /**
+    Whether a name is a local here or in an enclosing function, without
+    capturing it (for deciding whether it hides a module or type name).
+    */
     pub fn is_local_name(&self, cx: &FnCtx, name: &str) -> bool {
         cx.lookup(name).is_some()
             || (cx.captures.is_some()
@@ -460,19 +494,21 @@ impl<'a> Checker<'a> {
                     .any(|outer| outer.lookup(name).is_some()))
     }
 
-    // ----- diagnostics helpers ---------------------------------------------
+    /* ----- diagnostics helpers --------------------------------------------- */
 
     pub fn error(&mut self, diagnostic: Diagnostic) {
         self.diagnostics.push(diagnostic);
     }
 
-    /// Whether code checked in `cx` is unsafe code.
+    /** Whether code checked in `cx` is unsafe code. */
     pub fn in_unsafe(&self, cx: &FnCtx) -> bool {
         cx.unsafe_body || !cx.unsafe_blocks.is_empty()
     }
 
-    /// Reports `what`, which only unsafe code can do, outside unsafe code;
-    /// in unsafe code, records that the `unsafe` around it was needed.
+    /**
+    Reports `what`, which only unsafe code can do, outside unsafe code;
+    in unsafe code, records that the `unsafe` around it was needed.
+    */
     pub fn require_unsafe(&mut self, cx: &mut FnCtx, span: Span, what: String) {
         if !self.in_unsafe(cx) {
             self.error(
@@ -486,7 +522,7 @@ impl<'a> Checker<'a> {
         for block in &mut cx.unsafe_blocks {
             block.1 = true;
         }
-        // A function literal in unsafe code needs the code around it.
+        /* A function literal in unsafe code needs the code around it. */
         if cx.unsafe_blocks.is_empty() && cx.captures.is_some() {
             for outer in self.enclosing.iter_mut().rev() {
                 for block in &mut outer.unsafe_blocks {
@@ -499,8 +535,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Ends the innermost `unsafe` block or expression, warning when it was
-    /// not needed.
+    /**
+    Ends the innermost `unsafe` block or expression, warning when it was
+    not needed.
+    */
     pub fn leave_unsafe(&mut self, cx: &mut FnCtx) {
         let (span, used) = cx.unsafe_blocks.pop().expect("unsafe code");
         let message = if self.in_unsafe(cx) {
@@ -543,14 +581,16 @@ impl<'a> Checker<'a> {
         ty
     }
 
-    /// Unifies and reports a mismatch at `span`. Returns false on failure.
+    /** Unifies and reports a mismatch at `span`. Returns false on failure. */
     pub fn unify_at(&mut self, expected: &Type, found: &Type, span: Span, context: &str) -> bool {
         match self.unifier.unify(expected, found) {
             Ok(()) => true,
             Err(error) => {
-                // A type that lacks an operation is left unbound by the
-                // failed unification; it is unknown from here on, so that
-                // it is not also reported as impossible to infer.
+                /*
+                A type that lacks an operation is left unbound by the
+                failed unification; it is unknown from here on, so that
+                it is not also reported as impossible to infer.
+                */
                 if matches!(error, UnifyError::Unsupported { .. }) {
                     let mut free = Vec::new();
                     self.unifier.free_vars(expected, &mut free);
@@ -630,7 +670,7 @@ impl<'a> Checker<'a> {
         self.add_bounds_at(ty, Bounds::traits(traits), span, context);
     }
 
-    // ----- items --------------------------------------------------------------
+    /* ----- items -------------------------------------------------------------- */
 
     pub fn item(&self, module: ModuleId, name: &str) -> Option<Item> {
         self.modules[module.0 as usize].items.get(name).copied()
@@ -671,8 +711,10 @@ impl<'a> Checker<'a> {
         visibility == Some(ast::Visibility::Private)
     }
 
-    /// The type a function is a method of: the type its first parameter is
-    /// declared with, when the function's own module declares that type.
+    /**
+    The type a function is a method of: the type its first parameter is
+    declared with, when the function's own module declares that type.
+    */
     pub fn method_receiver(&self, id: FuncId) -> Option<TypeId> {
         let entry = &self.functions[id.0 as usize];
         let first = entry.ast?.params.first()?;
@@ -688,7 +730,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// `standard/json`, when the program uses it.
+    /** `standard/json`, when the program uses it. */
     fn json_module(&self) -> Option<ModuleId> {
         self.modules
             .iter()
@@ -696,7 +738,7 @@ impl<'a> Checker<'a> {
             .map(|index| ModuleId(index as u32))
     }
 
-    /// What typed JSON conversion needs from `standard/json`.
+    /** What typed JSON conversion needs from `standard/json`. */
     pub fn json_support(&self) -> Option<hir::JsonSupport> {
         let module = self.json_module()?;
         let function = |name: &str| match self.item(module, name) {
@@ -716,10 +758,12 @@ impl<'a> Checker<'a> {
         })
     }
 
-    /// The method `name` of a type, which `value.name(...)` calls: the
-    /// function `type_name` of the type's module (`set_add` for `Set`), or
-    /// else its function `name`, whose first parameter is declared with the
-    /// type.
+    /**
+    The method `name` of a type, which `value.name(...)` calls: the
+    function `type_name` of the type's module (`set_add` for `Set`), or
+    else its function `name`, whose first parameter is declared with the
+    type.
+    */
     pub fn method(&self, ty: TypeId, name: &str) -> Option<FuncId> {
         let entry = &self.types[ty.0 as usize];
         let prefixed = format!("{}_{name}", snake_case(&entry.name));
@@ -731,7 +775,7 @@ impl<'a> Checker<'a> {
         })
     }
 
-    /// Resolves `alias.member` from `module`, reporting missing and private members.
+    /** Resolves `alias.member` from `module`, reporting missing and private members. */
     pub fn module_member(
         &mut self,
         module: ModuleId,
@@ -769,9 +813,11 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Collects functions and constants from a module's top level and returns
-    /// the remaining script statements. Only the entry module may have script
-    /// statements; imports were resolved by the loader.
+    /**
+    Collects functions and constants from a module's top level and returns
+    the remaining script statements. Only the entry module may have script
+    statements; imports were resolved by the loader.
+    */
     pub fn collect_items(
         &mut self,
         module_id: ModuleId,
@@ -783,7 +829,7 @@ impl<'a> Checker<'a> {
             match &stmt.kind {
                 StmtKind::Assign { value, .. }
                     if matches!(value.kind, ast::ExprKind::Import { .. }) => {}
-                // Only the tests of the file being tested run.
+                /* Only the tests of the file being tested run. */
                 StmtKind::Test {
                     name,
                     name_span,
@@ -959,8 +1005,10 @@ impl<'a> Checker<'a> {
         true
     }
 
-    /// Orders functions and constants so that every item is checked after the
-    /// items it uses. Returns strongly connected components in dependency order.
+    /**
+    Orders functions and constants so that every item is checked after the
+    items it uses. Returns strongly connected components in dependency order.
+    */
     pub fn dependency_order(&mut self) -> Vec<Vec<Item>> {
         let mut nodes: Vec<Item> = Vec::new();
         nodes.extend((0..self.functions.len()).map(|i| Item::Function(FuncId(i as u32))));
@@ -968,8 +1016,10 @@ impl<'a> Checker<'a> {
         let index_of: HashMap<Item, usize> =
             nodes.iter().enumerate().map(|(i, n)| (*n, i)).collect();
 
-        // A method call names no module, so it may use any method of that
-        // name; `for` loops use `next`.
+        /*
+        A method call names no module, so it may use any method of that
+        name; `for` loops use `next`.
+        */
         let mut methods: HashMap<String, Vec<usize>> = HashMap::new();
         for index in 0..self.functions.len() {
             let id = FuncId(index as u32);
@@ -1013,14 +1063,14 @@ impl<'a> Checker<'a> {
                     }
                     continue;
                 }
-                // Qualified references are recorded as `alias.member`.
+                /* Qualified references are recorded as `alias.member`. */
                 let found = match name.split_once('.') {
                     Some((alias, member)) => self
                         .import(module, alias)
                         .and_then(|target| self.item(target, member)),
                     None => self.item(module, &name),
                 };
-                // Types are not checked as items, so they add no dependency.
+                /* Types are not checked as items, so they add no dependency. */
                 if let Some(&target) = found.and_then(|item| index_of.get(&item))
                     && !edges[index].contains(&target)
                 {
@@ -1036,11 +1086,13 @@ impl<'a> Checker<'a> {
             .collect()
     }
 
-    // ----- type annotations -----------------------------------------------------
+    /* ----- type annotations ----------------------------------------------------- */
 
-    /// Resolves a type annotation written in `module`.
-    /// Resolves a type annotation. A view written directly inside another
-    /// type, such as `Array<View<integer>>`, is reported where it is written.
+    /**
+    Resolves a type annotation written in `module`.
+    Resolves a type annotation. A view written directly inside another
+    type, such as `Array<View<integer>>`, is reported where it is written.
+    */
     pub fn resolve_type(
         &mut self,
         module: ModuleId,
@@ -1064,7 +1116,7 @@ impl<'a> Checker<'a> {
         resolved
     }
 
-    /// Reports a view kept somewhere it could outlive what it borrows.
+    /** Reports a view kept somewhere it could outlive what it borrows. */
     pub fn view_escape(&mut self, span: Span, message: String) {
         if self.reported_view_spans.insert(span) {
             self.error(
@@ -1200,7 +1252,7 @@ impl<'a> Checker<'a> {
                         let element = self.resolve_type(module, &args[0], generics);
                         Type::view(element, name.name == "MutableView")
                     }
-                    // A module's own type of the same name comes first.
+                    /* A module's own type of the same name comes first. */
                     "Shared" | "Weak" | "Cell" | "Task" | "Channel" | "Mutex"
                         if !matches!(self.item(module, &name.name), Some(Item::Type(_))) =>
                     {
@@ -1247,7 +1299,7 @@ impl<'a> Checker<'a> {
                         if other == "Outcome" {
                             return self.named_annotation(module, OUTCOME, ty, args, generics);
                         }
-                        // Library types are named through their module.
+                        /* Library types are named through their module. */
                         let library = match other {
                             "File" | "Lines" => Some(("io", "standard/io.sayon")),
                             "Set" | "Queue" | "Stack" | "List" | "Map" => {
@@ -1260,7 +1312,7 @@ impl<'a> Checker<'a> {
                             "Completed" => Some(("os", "standard/os.sayon")),
                             _ => None,
                         };
-                        // A built-in type that may be what was meant.
+                        /* A built-in type that may be what was meant. */
                         let built_in = match other {
                             "List" | "Stack" => Some("Array<T>"),
                             "Map" => Some("Dict<K, V>"),
@@ -1299,7 +1351,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// A declared structure or enum named in an annotation.
+    /** A declared structure or enum named in an annotation. */
     fn named_annotation(
         &mut self,
         module: ModuleId,
@@ -1334,7 +1386,7 @@ impl<'a> Checker<'a> {
         self.named_type(id, args)
     }
 
-    /// The type of a declared structure or enum with the given arguments.
+    /** The type of a declared structure or enum with the given arguments. */
     pub fn named_type(&self, id: TypeId, args: Vec<Type>) -> Type {
         Type::named(NamedType {
             id,
@@ -1347,7 +1399,7 @@ impl<'a> Checker<'a> {
         })
     }
 
-    /// The type of a declared structure or enum with fresh type arguments.
+    /** The type of a declared structure or enum with fresh type arguments. */
     pub fn instantiate_named(&mut self, id: TypeId, span: Span) -> Type {
         let count = self.types[id.0 as usize].generics.len();
         let args = (0..count).map(|_| self.fresh_var(span)).collect();
@@ -1358,8 +1410,10 @@ impl<'a> Checker<'a> {
         &self.type_defs[id.0 as usize]
     }
 
-    /// Resolves the signatures of the C functions of `foreign` blocks, which
-    /// can only hold the types C has.
+    /**
+    Resolves the signatures of the C functions of `foreign` blocks, which
+    can only hold the types C has.
+    */
     pub fn resolve_foreign(&mut self) {
         for index in 0..self.foreign.len() {
             let ast = self.foreign[index].ast;
@@ -1427,7 +1481,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The C functions, for the checked program.
+    /** The C functions, for the checked program. */
     pub fn foreign_functions(&self) -> Vec<hir::ForeignFunction> {
         self.foreign
             .iter()
@@ -1442,10 +1496,12 @@ impl<'a> Checker<'a> {
             .collect()
     }
 
-    /// Resolves the field types of every declared structure and enum, decides
-    /// which are Copy, and rejects types that contain themselves.
+    /**
+    Resolves the field types of every declared structure and enum, decides
+    which are Copy, and rejects types that contain themselves.
+    */
     pub fn resolve_type_defs(&mut self) {
-        // Placeholders so that named types can be built while fields resolve.
+        /* Placeholders so that named types can be built while fields resolve. */
         self.type_defs = self
             .types
             .iter()
@@ -1530,7 +1586,7 @@ impl<'a> Checker<'a> {
         }
 
         self.resolve_finally_functions();
-        // A definition is Copy when all its fields are; decreasing to a fixed point.
+        /* A definition is Copy when all its fields are; decreasing to a fixed point. */
         loop {
             let mut changed = false;
             for index in 0..self.type_defs.len() {
@@ -1616,8 +1672,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Finds each `finally function`'s structure, which it must have been
-    /// declared beside, and marks the structure as one destroyed by it.
+    /**
+    Finds each `finally function`'s structure, which it must have been
+    declared beside, and marks the structure as one destroyed by it.
+    */
     fn resolve_finally_functions(&mut self) {
         for index in 0..self.functions.len() {
             let Some(ast) = self.functions[index].ast else {
@@ -1694,13 +1752,15 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The `finally function` of each structure that has one.
+    /** The `finally function` of each structure that has one. */
     pub fn finally_functions(&self) -> Vec<(TypeId, FuncId)> {
         self.finally_functions.clone()
     }
 
-    /// A `foreign type` holds only what C structures hold, and has no type
-    /// parameters, so that it has one C layout.
+    /**
+    A `foreign type` holds only what C structures hold, and has no type
+    parameters, so that it has one C layout.
+    */
     fn check_foreign_types(&mut self) {
         for index in 0..self.types.len() {
             let TypeSource::Foreign(fields) = self.types[index].source else {
@@ -1746,8 +1806,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Whether C can hold a value of the type: a number, a pointer, or a
-    /// `foreign type` structure.
+    /**
+    Whether C can hold a value of the type: a number, a pointer, or a
+    `foreign type` structure.
+    */
     pub(crate) fn is_c_value(&self, ty: &Type) -> bool {
         match ty {
             Type::Int(_) | Type::Float(_) | Type::Pointer => true,
@@ -1793,7 +1855,7 @@ impl<'a> Checker<'a> {
         resolved
     }
 
-    /// Reports a dictionary key type whose values cannot be keys.
+    /** Reports a dictionary key type whose values cannot be keys. */
     pub fn check_key_type(&mut self, key: &Type, span: Span) {
         if let Some(part) = crate::types::non_key_part(&self.type_defs, key)
             && self.reported_key_spans.insert(span)
@@ -1811,12 +1873,12 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Whether a value of the type can contain a function value.
+    /** Whether a value of the type can contain a function value. */
     pub fn holds_function(&self, ty: &Type) -> bool {
         crate::types::holds_function(&self.type_defs, ty)
     }
 
-    /// Whether a field type is Copy when type parameters are.
+    /** Whether a field type is Copy when type parameters are. */
     fn copy_assuming_params(&self, ty: &Type) -> bool {
         match ty {
             Type::Param(_) => true,
@@ -1829,9 +1891,11 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Follows the fields a value of `ty` stores inline (not through a
-    /// collection), looking for a type already on `stack`. Returns the chain
-    /// of types that leads back.
+    /**
+    Follows the fields a value of `ty` stores inline (not through a
+    collection), looking for a type already on `stack`. Returns the chain
+    of types that leads back.
+    */
     fn inline_cycle(&self, ty: &Type, stack: &mut Vec<TypeId>) -> Option<Vec<TypeId>> {
         let Type::Named(named) = ty else {
             return None;
@@ -1844,8 +1908,10 @@ impl<'a> Checker<'a> {
                     return Some(stack.clone());
                 }
                 if stack.contains(&inner.id) {
-                    // A cycle that does not include the starting type is
-                    // reported when that type is checked.
+                    /*
+                    A cycle that does not include the starting type is
+                    reported when that type is checked.
+                    */
                     continue;
                 }
                 stack.push(inner.id);
@@ -1859,12 +1925,14 @@ impl<'a> Checker<'a> {
         None
     }
 
-    // ----- signatures and instantiation ---------------------------------------
+    /* ----- signatures and instantiation --------------------------------------- */
 
-    /// Creates the monomorphic signature used while a function's component is
-    /// being inferred.
-    /// Whether a function's parameters and result all have written types,
-    /// so that its signature is known before its body is checked.
+    /**
+    Creates the monomorphic signature used while a function's component is
+    being inferred.
+    Whether a function's parameters and result all have written types,
+    so that its signature is known before its body is checked.
+    */
     pub fn fully_annotated(&self, id: FuncId) -> bool {
         self.functions[id.0 as usize]
             .ast
@@ -1925,8 +1993,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Returns parameter types, the return type, and the type arguments for a
-    /// call to `id`.
+    /**
+    Returns parameter types, the return type, and the type arguments for a
+    call to `id`.
+    */
     pub fn instantiate(
         &mut self,
         id: FuncId,
@@ -1939,8 +2009,10 @@ impl<'a> Checker<'a> {
             .clone()
             .expect("signature available before use");
         if !entry.generalized {
-            // A recursive call inside the component being inferred; type
-            // arguments are filled in once the component is generalized.
+            /*
+            A recursive call inside the component being inferred; type
+            arguments are filled in once the component is generalized.
+            */
             if !explicit.is_empty() && !signature.params.is_empty() {
                 let _ = span;
             }
@@ -1952,9 +2024,11 @@ impl<'a> Checker<'a> {
         for bounds in &signature.bounds {
             type_args.push(self.fresh_bounded(*bounds, span));
         }
-        // A call inside the component of a generic function with a written
-        // signature, whose requirements are known only once every body of
-        // the component has been checked.
+        /*
+        A call inside the component of a generic function with a written
+        signature, whose requirements are known only once every body of
+        the component has been checked.
+        */
         if self.current_component.contains(&id)
             && let Some(caller) = self.checking
         {
@@ -1995,10 +2069,12 @@ impl<'a> Checker<'a> {
         (signature, params, type_args, ret)
     }
 
-    // ----- deferred constraints ---------------------------------------------------
+    /* ----- deferred constraints --------------------------------------------------- */
 
-    /// Applies deferred constraints whose types have become known. Returns the
-    /// constraints that remain unresolved.
+    /**
+    Applies deferred constraints whose types have become known. Returns the
+    constraints that remain unresolved.
+    */
     pub fn solve_deferred(&mut self, final_pass: bool) {
         loop {
             let pending = std::mem::take(&mut self.deferred);
@@ -2016,8 +2092,10 @@ impl<'a> Checker<'a> {
             }
         }
         if final_pass && !self.deferred.is_empty() {
-            // An unknown iterated or indexed value is taken to be an array, or a
-            // dictionary when it has key and value bindings or a string key.
+            /*
+            An unknown iterated or indexed value is taken to be an array, or a
+            dictionary when it has key and value bindings or a string key.
+            */
             let pending = std::mem::take(&mut self.deferred);
             let mut defaulted = false;
             for constraint in &pending {
@@ -2057,7 +2135,7 @@ impl<'a> Checker<'a> {
                         span,
                         ..
                     } => {
-                        // The one structure of the module with this field.
+                        /* The one structure of the module with this field. */
                         if let Type::Var(_) = self.unifier.shallow(target) {
                             let candidates = self.structures_with_field(*module, name);
                             if let [id] = candidates.as_slice() {
@@ -2119,7 +2197,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Structures declared in `module` that have a field called `name`.
+    /** Structures declared in `module` that have a field called `name`. */
     pub fn structures_with_field(&self, module: ModuleId, name: &str) -> Vec<TypeId> {
         (0..self.types.len())
             .map(|i| TypeId(i as u32))
@@ -2130,8 +2208,10 @@ impl<'a> Checker<'a> {
             .collect()
     }
 
-    /// The type of `target.name` when `target` has type `target_ty`; reports
-    /// unknown fields and defers the decision while the type is unknown.
+    /**
+    The type of `target.name` when `target` has type `target_ty`; reports
+    unknown fields and defers the decision while the type is unknown.
+    */
     pub fn field_type(
         &mut self,
         target_ty: &Type,
@@ -2159,7 +2239,7 @@ impl<'a> Checker<'a> {
     fn known_field_type(&mut self, ty: &Type, name: &str, span: Span, name_span: Span) -> Type {
         match ty {
             Type::Unknown => Type::Unknown,
-            // A shared value is read through `value`.
+            /* A shared value is read through `value`. */
             Type::Wrapper(Wrapper::Shared, inner) if name == "value" => (**inner).clone(),
             Type::Wrapper(kind, _) => {
                 let help = match kind {
@@ -2328,7 +2408,7 @@ impl<'a> Checker<'a> {
         );
     }
 
-    /// Unifies loop variable types with the element types of `iterable`.
+    /** Unifies loop variable types with the element types of `iterable`. */
     pub fn apply_iteration(&mut self, iterable: &Type, items: &[Type], span: Span) {
         let element_types: Vec<Type> = match iterable {
             Type::Array(element) | Type::View(element, _) => vec![(**element).clone()],
@@ -2340,7 +2420,7 @@ impl<'a> Checker<'a> {
                     vec![(**key).clone()]
                 }
             }
-            // Already reported; the loop variables are unknown too.
+            /* Already reported; the loop variables are unknown too. */
             Type::Unknown => {
                 for item in items {
                     if let Type::Var(var) = self.unifier.shallow(item) {
@@ -2373,9 +2453,9 @@ impl<'a> Checker<'a> {
         }
     }
 
-    // ----- generalization and finalization ----------------------------------------
+    /* ----- generalization and finalization ---------------------------------------- */
 
-    /// Generalizes the signature of a single-function component.
+    /** Generalizes the signature of a single-function component. */
     pub fn generalize(&mut self, id: FuncId) {
         let mut signature = self.functions[id.0 as usize]
             .signature
@@ -2385,8 +2465,10 @@ impl<'a> Checker<'a> {
         for param in &signature.params {
             self.unifier.free_vars(param, &mut free);
         }
-        // A result type that nothing constrains (a function that only fails)
-        // is `nothing` rather than a type parameter callers cannot determine.
+        /*
+        A result type that nothing constrains (a function that only fails)
+        is `nothing` rather than a type parameter callers cannot determine.
+        */
         if let Type::Var(var) = self.unifier.shallow(&signature.ret)
             && !free.contains(&var)
             && self.unifier.bounds(var) == Bounds::default()
@@ -2411,12 +2493,16 @@ impl<'a> Checker<'a> {
         entry.generalized = true;
     }
 
-    /// Defaults literal variables created since `first_var`, then reports any
-    /// variable that is still unresolved.
+    /**
+    Defaults literal variables created since `first_var`, then reports any
+    variable that is still unresolved.
+    */
     pub fn default_vars(&mut self, first_var: u32) {
-        // A function literal that only fails returns `nothing`, as a named
-        // function does, unless something else decided its result: bounds
-        // such as being sendable leave it to `nothing`.
+        /*
+        A function literal that only fails returns `nothing`, as a named
+        function does, unless something else decided its result: bounds
+        such as being sendable leave it to `nothing`.
+        */
         for var in std::mem::take(&mut self.failing_results) {
             if let Type::Var(var) = self.unifier.shallow(&Type::Var(var)) {
                 let bounds = self.unifier.bounds(var);
@@ -2593,7 +2679,7 @@ impl<'a> Checker<'a> {
     pub fn finalize_expr(&mut self, expr: &mut hir::Expr) {
         expr.ty = self.finalize_type(&expr.ty);
         use hir::ExprKind::*;
-        // Reported where such a value is made, not again where it is used.
+        /* Reported where such a value is made, not again where it is used. */
         let used = matches!(
             expr.kind,
             Local { .. }
@@ -2603,7 +2689,7 @@ impl<'a> Checker<'a> {
                 | Index { .. }
                 | VariantPayload { .. }
         );
-        // An empty `[]` takes its type from an annotation, reported there.
+        /* An empty `[]` takes its type from an annotation, reported there. */
         let annotated = matches!(&expr.kind, Array(items) if items.is_empty())
             && self.annotated_view_types.contains(&expr.ty);
         if !used && !annotated && expr.ty.holds_view() {
@@ -2669,7 +2755,7 @@ impl<'a> Checker<'a> {
                 for item in items {
                     self.finalize_expr(item);
                 }
-                // `[]` used as a dictionary.
+                /* `[]` used as a dictionary. */
                 if let Type::Dict(key, _) = &expr.ty
                     && !self.typed_dict_literals.contains(&expr.span)
                 {
@@ -2760,9 +2846,11 @@ fn conversion_help(expected: &Type, found: &Type) -> Option<String> {
     }
 }
 
-/// Every field type of a structure, or of all variants of an enum.
-/// Whether C can call back a function value of the type: one that takes
-/// numbers and pointers, and gives a number, a pointer, or nothing.
+/**
+Every field type of a structure, or of all variants of an enum.
+Whether C can call back a function value of the type: one that takes
+numbers and pointers, and gives a number, a pointer, or nothing.
+*/
 pub(crate) fn is_c_callback(ty: &Type) -> bool {
     let Type::Function(signature) = ty else {
         return false;
@@ -2785,7 +2873,7 @@ fn all_field_types(def: &TypeDef) -> Vec<Type> {
     }
 }
 
-/// Updates the Copy flag carried by every named type inside `ty`.
+/** Updates the Copy flag carried by every named type inside `ty`. */
 fn set_copy_flags(ty: &mut Type, flags: &[bool]) {
     match ty {
         Type::Named(named) => {
@@ -2803,13 +2891,15 @@ fn set_copy_flags(ty: &mut Type, flags: &[bool]) {
     }
 }
 
-/// The named types a value of `ty` stores inline: itself, or the members of
-/// a union. Collections store their elements elsewhere.
+/**
+The named types a value of `ty` stores inline: itself, or the members of
+a union. Collections store their elements elsewhere.
+*/
 fn inline_named(ty: &Type) -> Vec<&NamedType> {
     match ty {
         Type::Named(named) => vec![named],
         Type::Union(members) => members.iter().flat_map(inline_named).collect(),
-        // A cell holds its value inline; a shared value is elsewhere.
+        /* A cell holds its value inline; a shared value is elsewhere. */
         Type::Wrapper(Wrapper::Cell, inner) => inline_named(inner),
         _ => Vec::new(),
     }
@@ -2923,7 +3013,7 @@ pub(crate) fn collect_expr_names(expr: &ast::Expr, names: &mut Vec<String>) {
             .iter()
             .for_each(|(_, v)| collect_expr_names(v, names)),
         Call { callee, args, .. } => {
-            // A call of a member may be a method call, recorded as `.name`.
+            /* A call of a member may be a method call, recorded as `.name`. */
             if let Member { name, .. } = &callee.kind {
                 names.push(format!(".{}", name.name));
             }
@@ -2957,8 +3047,10 @@ pub(crate) fn collect_expr_names(expr: &ast::Expr, names: &mut Vec<String>) {
     }
 }
 
-/// A type name in snake_case, as it prefixes its methods: `JsonValue`
-/// becomes `json_value`.
+/**
+A type name in snake_case, as it prefixes its methods: `JsonValue`
+becomes `json_value`.
+*/
 pub(crate) fn snake_case(name: &str) -> String {
     let mut out = String::new();
     for (index, c) in name.chars().enumerate() {
@@ -2974,8 +3066,10 @@ pub(crate) fn snake_case(name: &str) -> String {
     out
 }
 
-/// Tarjan's algorithm; components are returned in reverse topological order
-/// of the edge relation, so dependencies come first.
+/**
+Tarjan's algorithm; components are returned in reverse topological order
+of the edge relation, so dependencies come first.
+*/
 fn tarjan(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
     struct State<'e> {
         edges: &'e [Vec<usize>],
@@ -3042,7 +3136,7 @@ mod tests {
 
     #[test]
     fn components_in_dependency_order() {
-        // 0 -> 1 -> 2 -> 1, 3 isolated
+        /* 0 -> 1 -> 2 -> 1, 3 isolated */
         let edges = vec![vec![1], vec![2], vec![1], vec![]];
         let components = tarjan(&edges);
         assert_eq!(components, vec![vec![1, 2], vec![0], vec![3]]);
