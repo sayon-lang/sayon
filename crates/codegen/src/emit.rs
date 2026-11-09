@@ -763,6 +763,37 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 SlotKind::Ref { .. } => "ptr".to_string(),
                 SlotKind::Value => self.cg.llvm(&definition.ty),
             };
+            // The place a parameter refers to holds a whole value, aligned for
+            // its type, for as long as the call lasts, so LLVM may read it
+            // before it must, such as an array's length and data, ahead of a
+            // loop. A parameter with a default is left out: a caller that
+            // omits it passes null.
+            let llvm = if matches!(definition.kind, SlotKind::Ref { .. })
+                && !environment
+                && position < f.required_params
+                && self.cg.layouts.size_of(&definition.ty) > 0
+            {
+                format!(
+                    "{llvm} dereferenceable({}) align {}",
+                    self.cg.layouts.size_of(&definition.ty),
+                    self.cg.layouts.align_of(&definition.ty)
+                )
+            } else {
+                llvm
+            };
+            // Nothing keeps the address of a place a parameter refers to past
+            // the call: a closure takes over what it captures instead of
+            // referring to it, and no function gives out a place's address.
+            // A coroutine's frame keeps its parameters while it waits, so it
+            // is left out.
+            let llvm = if matches!(definition.kind, SlotKind::Ref { .. })
+                && !environment
+                && !self.coroutine
+            {
+                format!("{llvm} nocapture")
+            } else {
+                llvm
+            };
             let plain = match definition.kind {
                 SlotKind::Ref { .. } => "ptr".to_string(),
                 SlotKind::Value => self.cg.llvm(&definition.ty),
@@ -2607,7 +2638,6 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 let Type::Array(element) = ty else {
                     panic!("swap in {ty}")
                 };
-                let size = self.cg.layouts.size_of(&element);
                 let (_, first, _) = self.value(first);
                 let (_, second, _) = self.value(second);
                 let length = self.array_length(&pointer);
@@ -2620,19 +2650,19 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 let inside = self.body.tmp();
                 self.body
                     .line(format!("{inside} = and i1 {first_inside}, {second_inside}"));
-                // The runtime names the position that is outside.
+                // The position outside: the first one if both are. The array
+                // itself is not passed on, so that LLVM knows nothing keeps
+                // its address and may read its length once, ahead of a loop.
+                let position = self.body.tmp();
+                self.body.line(format!(
+                    "{position} = select i1 {first_inside}, i64 {second}, i64 {first}"
+                ));
                 let location = self.cg.location(span);
                 self.check(
                     &inside,
-                    "sayon_array_swap",
-                    &["ptr", "i64", "i64", "i64", "ptr"],
-                    vec![
-                        pointer.clone(),
-                        first.clone(),
-                        second.clone(),
-                        size.to_string(),
-                        location,
-                    ],
+                    "sayon_check_index",
+                    &["i64", "i64", "ptr"],
+                    vec![position, length.clone(), location],
                     error,
                 );
                 // Each element is read before either is written, so a
