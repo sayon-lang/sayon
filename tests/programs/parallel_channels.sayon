@@ -101,8 +101,10 @@ for question in ["first", "second"]
 threads.close(requests)
 threads.join(server)
 
-# A channel made after the other thread started stays this thread's own:
-# waiting for it alone is still a deadlock.
+##
+A channel made after the other thread started stays this thread's own:
+waiting for it alone is still a deadlock.
+##
 sleeper = threads.spawn_parallel(function()
     time.sleep(time.milliseconds(50))
 )
@@ -112,8 +114,10 @@ if stuck is error
     print(stuck.code)
 threads.join(sleeper)
 
-# Once the tasks on other threads have finished, waiting for a channel they
-# held is a deadlock again.
+##
+Once the tasks on other threads have finished, waiting for a channel they
+held is a deadlock again.
+##
 shared: Channel<integer> = threads.new_channel()
 finished = threads.spawn_parallel(function()
     threads.send(shared, 1)

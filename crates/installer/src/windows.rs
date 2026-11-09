@@ -1,6 +1,8 @@
-//! Windows integration, for the current user only (no administrator rights):
-//! the user's `PATH`, the entry in Settings > Apps that runs the
-//! uninstaller, and the icon of `.sayon` files.
+/*!
+Windows integration, for the current user only (no administrator rights):
+the user's `PATH`, the entry in Settings > Apps that runs the
+uninstaller, and the icon of `.sayon` files.
+*/
 
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
@@ -97,15 +99,17 @@ fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// An open registry key under `HKEY_CURRENT_USER`.
+/** An open registry key under `HKEY_CURRENT_USER`. */
 struct Key(Hkey);
 
 impl Key {
     fn open(path: &str) -> Result<Option<Key>, String> {
         let mut key: Hkey = std::ptr::null_mut();
         let path_w = wide(path);
-        // SAFETY: the path is a valid null-terminated string and `key`
-        // receives the opened handle.
+        /*
+        SAFETY: the path is a valid null-terminated string and `key`
+        receives the opened handle.
+        */
         let status = unsafe {
             RegOpenKeyExW(
                 HKEY_CURRENT_USER,
@@ -127,7 +131,7 @@ impl Key {
     fn create(path: &str) -> Result<Key, String> {
         let mut key: Hkey = std::ptr::null_mut();
         let path_w = wide(path);
-        // SAFETY: as above; the optional arguments are null.
+        /* SAFETY: as above; the optional arguments are null. */
         let status = unsafe {
             RegCreateKeyExW(
                 HKEY_CURRENT_USER,
@@ -150,12 +154,12 @@ impl Key {
         }
     }
 
-    /// A string value and its type (`REG_SZ` or `REG_EXPAND_SZ`), unexpanded.
+    /** A string value and its type (`REG_SZ` or `REG_EXPAND_SZ`), unexpanded. */
     fn string(&self, name: &str) -> Result<Option<(String, u32)>, String> {
         let name_w = wide(name);
         let mut kind = 0u32;
         let mut length = 0u32;
-        // SAFETY: a null data pointer asks only for the type and size.
+        /* SAFETY: a null data pointer asks only for the type and size. */
         let status = unsafe {
             RegQueryValueExW(
                 self.0,
@@ -174,7 +178,7 @@ impl Key {
         }
         let mut buffer = vec![0u16; (length as usize).div_ceil(2) + 1];
         let mut size = (buffer.len() * 2) as u32;
-        // SAFETY: the buffer holds `size` bytes.
+        /* SAFETY: the buffer holds `size` bytes. */
         let status = unsafe {
             RegQueryValueExW(
                 self.0,
@@ -199,8 +203,10 @@ impl Key {
     fn set_string(&self, name: &str, value: &str, kind: u32) -> Result<(), String> {
         let name_w = wide(name);
         let value_w = wide(value);
-        // SAFETY: the data is the null-terminated UTF-16 value, with its
-        // length in bytes.
+        /*
+        SAFETY: the data is the null-terminated UTF-16 value, with its
+        length in bytes.
+        */
         let status = unsafe {
             RegSetValueExW(
                 self.0,
@@ -222,7 +228,7 @@ impl Key {
 
     fn set_dword(&self, name: &str, value: u32) -> Result<(), String> {
         let name_w = wide(name);
-        // SAFETY: the data is four bytes.
+        /* SAFETY: the data is four bytes. */
         let status = unsafe {
             RegSetValueExW(
                 self.0,
@@ -244,7 +250,7 @@ impl Key {
 
     fn delete_value(&self, name: &str) -> Result<(), String> {
         let name_w = wide(name);
-        // SAFETY: the name is a valid null-terminated string.
+        /* SAFETY: the name is a valid null-terminated string. */
         match unsafe { RegDeleteValueW(self.0, name_w.as_ptr()) } {
             ERROR_SUCCESS | ERROR_FILE_NOT_FOUND => Ok(()),
             code => Err(format!(
@@ -253,12 +259,12 @@ impl Key {
         }
     }
 
-    /// Whether the key has no values and no subkeys.
+    /** Whether the key has no values and no subkeys. */
     fn is_empty(&self) -> bool {
         let mut subkeys = 0u32;
         let mut values = 0u32;
         let none = std::ptr::null_mut::<u32>;
-        // SAFETY: only the two counts are requested; every other output is null.
+        /* SAFETY: only the two counts are requested; every other output is null. */
         let status = unsafe {
             RegQueryInfoKeyW(
                 self.0,
@@ -281,7 +287,7 @@ impl Key {
 
 impl Drop for Key {
     fn drop(&mut self) {
-        // SAFETY: the handle came from RegOpenKeyExW or RegCreateKeyExW.
+        /* SAFETY: the handle came from RegOpenKeyExW or RegCreateKeyExW. */
         unsafe {
             RegCloseKey(self.0);
         }
@@ -290,7 +296,7 @@ impl Drop for Key {
 
 fn delete_tree(path: &str) -> Result<(), String> {
     let path_w = wide(path);
-    // SAFETY: the path is a valid null-terminated string.
+    /* SAFETY: the path is a valid null-terminated string. */
     match unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, path_w.as_ptr()) } {
         ERROR_SUCCESS | ERROR_FILE_NOT_FOUND => Ok(()),
         code => Err(format!(
@@ -299,14 +305,14 @@ fn delete_tree(path: &str) -> Result<(), String> {
     }
 }
 
-// ----- PATH --------------------------------------------------------------------------
+/* ----- PATH -------------------------------------------------------------------------- */
 
 fn same_directory(a: &str, b: &str) -> bool {
     let clean = |s: &str| s.trim().trim_end_matches(['\\', '/']).to_lowercase();
     clean(a) == clean(b)
 }
 
-/// `PATH` with `entry` first, or `None` when it is already there.
+/** `PATH` with `entry` first, or `None` when it is already there. */
 pub fn path_with(path: &str, entry: &str) -> Option<String> {
     if path.split(';').any(|e| same_directory(e, entry)) {
         return None;
@@ -318,7 +324,7 @@ pub fn path_with(path: &str, entry: &str) -> Option<String> {
     }
 }
 
-/// `PATH` without `entry`, or `None` when it is not there.
+/** `PATH` without `entry`, or `None` when it is not there. */
 pub fn path_without(path: &str, entry: &str) -> Option<String> {
     let entries: Vec<&str> = path.split(';').collect();
     if !entries.iter().any(|e| same_directory(e, entry)) {
@@ -349,16 +355,20 @@ fn change_user_path(change: impl Fn(&str) -> Option<String>) -> Result<bool, Str
     Ok(true)
 }
 
-/// Tells running programs (Explorer in particular) that the environment
-/// changed, so terminals opened from now on see the new `PATH`.
+/**
+Tells running programs (Explorer in particular) that the environment
+changed, so terminals opened from now on see the new `PATH`.
+*/
 fn announce_environment() {
     const HWND_BROADCAST: isize = 0xFFFF;
     const WM_SETTINGCHANGE: u32 = 0x001A;
     const SMTO_ABORTIFHUNG: u32 = 0x0002;
     let name = wide(ENVIRONMENT);
     let mut result = 0usize;
-    // SAFETY: the message carries a pointer to a null-terminated string that
-    // outlives the call.
+    /*
+    SAFETY: the message carries a pointer to a null-terminated string that
+    outlives the call.
+    */
     unsafe {
         SendMessageTimeoutW(
             HWND_BROADCAST,
@@ -372,7 +382,7 @@ fn announce_environment() {
     }
 }
 
-// ----- registration -----------------------------------------------------------------------
+/* ----- registration ----------------------------------------------------------------------- */
 
 const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Sayon";
 const EXTENSION_KEY: &str = r"Software\Classes\.sayon";
@@ -381,10 +391,10 @@ const FILE_TYPE_KEY: &str = r"Software\Classes\Sayon.Source";
 
 pub const EXECUTABLE_SUFFIX: &str = ".exe";
 pub const UNINSTALLER: &str = "uninstall.exe";
-/// Where the system lists installed programs, for removing them.
+/** Where the system lists installed programs, for removing them. */
 pub const APP_SETTINGS: Option<&str> = Some("Settings > Apps");
 
-/// `%LOCALAPPDATA%\Programs\Sayon`, where per-user programs live.
+/** `%LOCALAPPDATA%\Programs\Sayon`, where per-user programs live. */
 pub fn default_prefix() -> Option<PathBuf> {
     let base = std::env::var_os("LOCALAPPDATA")?;
     Some(PathBuf::from(base).join("Programs").join("Sayon"))
@@ -394,7 +404,7 @@ pub fn bin_directory(prefix: &Path) -> PathBuf {
     prefix.join("bin")
 }
 
-/// What `register` changes, for the confirmation prompt.
+/** What `register` changes, for the confirmation prompt. */
 pub fn changes(prefix: &Path, modify_path: bool) -> Vec<String> {
     let mut lines = Vec::new();
     if modify_path {
@@ -411,7 +421,7 @@ pub fn changes(prefix: &Path, modify_path: bool) -> Vec<String> {
     lines
 }
 
-/// Makes the installation available to the user.
+/** Makes the installation available to the user. */
 pub fn register(prefix: &Path, version: &str, bytes: u64, modify_path: bool) -> Result<(), String> {
     let bin = bin_directory(prefix).display().to_string();
     if modify_path {
@@ -453,8 +463,10 @@ pub fn register(prefix: &Path, version: &str, bytes: u64, modify_path: bool) -> 
         &format!("\"{icon}\",0"),
         REG_SZ,
     )?;
-    // Claim `.sayon` only when no other program handles it, so a choice
-    // the user made (such as "Open with" an editor) is never replaced.
+    /*
+    Claim `.sayon` only when no other program handles it, so a choice
+    the user made (such as "Open with" an editor) is never replaced.
+    */
     let extension = Key::create(EXTENSION_KEY)?;
     let free = match extension.string("")? {
         None => true,
@@ -467,13 +479,15 @@ pub fn register(prefix: &Path, version: &str, bytes: u64, modify_path: bool) -> 
     Ok(())
 }
 
-/// Undoes `register` for the installation at `prefix`.
+/** Undoes `register` for the installation at `prefix`. */
 pub fn unregister(prefix: &Path) -> Result<(), String> {
     let bin = bin_directory(prefix).display().to_string();
     change_user_path(|path| path_without(path, &bin))?;
     delete_tree(UNINSTALL_KEY)?;
-    // Only Sayon names its file type `Sayon.Source`; other programs'
-    // settings for `.sayon` stay.
+    /*
+    Only Sayon names its file type `Sayon.Source`; other programs'
+    settings for `.sayon` stay.
+    */
     if let Some(extension) = Key::open(EXTENSION_KEY)? {
         if extension
             .string("")?
@@ -492,7 +506,7 @@ pub fn unregister(prefix: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// The installation location recorded by a previous installation.
+/** The installation location recorded by a previous installation. */
 pub fn registered_prefix() -> Option<PathBuf> {
     let key = Key::open(UNINSTALL_KEY).ok()??;
     let (location, _) = key.string("InstallLocation").ok()??;
@@ -502,28 +516,32 @@ pub fn registered_prefix() -> Option<PathBuf> {
 fn refresh() {
     const SHCNE_ASSOCCHANGED: i32 = 0x0800_0000;
     announce_environment();
-    // SAFETY: SHCNE_ASSOCCHANGED takes no items.
+    /* SAFETY: SHCNE_ASSOCCHANGED takes no items. */
     unsafe {
         SHChangeNotify(SHCNE_ASSOCCHANGED, 0, std::ptr::null(), std::ptr::null());
     }
 }
 
-// ----- the running program --------------------------------------------------------------------
+/* ----- the running program -------------------------------------------------------------------- */
 
-/// Whether the installer has its own console window (it was opened from
-/// Explorer or Settings rather than from a terminal), so it should wait
-/// before the window closes.
+/**
+Whether the installer has its own console window (it was opened from
+Explorer or Settings rather than from a terminal), so it should wait
+before the window closes.
+*/
 pub fn owns_console() -> bool {
     let mut processes = [0u32; 2];
-    // SAFETY: the list holds two entries.
+    /* SAFETY: the list holds two entries. */
     let count = unsafe { GetConsoleProcessList(processes.as_mut_ptr(), 2) };
     count == 1
 }
 
 pub fn make_executable_if_needed(_path: &Path, _relative: &str) {}
 
-/// Windows cannot delete a running program, so the uninstaller moves
-/// itself out of the folder being removed. Returns where it went.
+/**
+Windows cannot delete a running program, so the uninstaller moves
+itself out of the folder being removed. Returns where it went.
+*/
 pub fn move_running_uninstaller(prefix: &Path) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe = std::fs::canonicalize(exe).ok()?;
@@ -536,8 +554,10 @@ pub fn move_running_uninstaller(prefix: &Path) -> Option<PathBuf> {
     Some(target)
 }
 
-/// Deletes the running program, and the folder it was in if that is empty,
-/// a moment after this process exits.
+/**
+Deletes the running program, and the folder it was in if that is empty,
+a moment after this process exits.
+*/
 pub fn delete_after_exit(file: &Path, folder: Option<&Path>) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;

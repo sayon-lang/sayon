@@ -1,12 +1,16 @@
-//! Where things are, as the protocol says it: files by `file:` URI, and
-//! places by line and character, the characters counted in UTF-16 code
-//! units, as the protocol does unless both sides agree otherwise.
+/*!
+Where things are, as the protocol says it: files by `file:` URI, and
+places by line and character, the characters counted in UTF-16 code
+units, as the protocol does unless both sides agree otherwise.
+*/
 
 use std::path::{Path, PathBuf};
 
-/// The byte offset of a line and character in `text`. A character past the
-/// end of its line is the line's end, and a line past the last is the text's
-/// end.
+/**
+The byte offset of a line and character in `text`. A character past the
+end of its line is the line's end, and a line past the last is the text's
+end.
+*/
 pub fn offset(text: &str, line: u32, character: u32) -> usize {
     let mut start = 0;
     for _ in 0..line {
@@ -27,7 +31,7 @@ pub fn offset(text: &str, line: u32, character: u32) -> usize {
     start + line_text.len()
 }
 
-/// The line and character of a byte offset in `text`.
+/** The line and character of a byte offset in `text`. */
 pub fn position(text: &str, offset: usize) -> (u32, u32) {
     let offset = offset.min(text.len());
     let before = &text[..floor_boundary(text, offset)];
@@ -44,11 +48,13 @@ fn floor_boundary(text: &str, mut offset: usize) -> usize {
     offset
 }
 
-/// The `file:` URI of a path, written as editors write it: forward slashes,
-/// and every byte but letters, digits, and `-._~/` escaped.
+/**
+The `file:` URI of a path, written as editors write it: forward slashes,
+and every byte but letters, digits, and `-._~/` escaped.
+*/
 pub fn uri_of(path: &Path) -> String {
     let text = path.to_string_lossy().replace('\\', "/");
-    // Windows' long paths, as canonicalizing gives them.
+    /* Windows' long paths, as canonicalizing gives them. */
     let text = text
         .strip_prefix("//?/UNC/")
         .map(|rest| format!("//{rest}"))
@@ -63,7 +69,7 @@ pub fn uri_of(path: &Path) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
                 uri.push(byte as char)
             }
-            // A drive's colon stays, as `file:///c:/`.
+            /* A drive's colon stays, as `file:///c:/`. */
             b':' if index == 1 => uri.push(':'),
             _ => uri.push_str(&format!("%{byte:02X}")),
         }
@@ -71,7 +77,7 @@ pub fn uri_of(path: &Path) -> String {
     uri
 }
 
-/// The path a `file:` URI names.
+/** The path a `file:` URI names. */
 pub fn path_of(uri: &str) -> Option<PathBuf> {
     let rest = uri.strip_prefix("file://")?;
     let mut bytes = Vec::new();
@@ -91,7 +97,7 @@ pub fn path_of(uri: &str) -> Option<PathBuf> {
         at += 1;
     }
     let mut text = String::from_utf8(bytes).ok()?;
-    // `/c:/Users/...` is a Windows path; `//server/share` a network one.
+    /* `/c:/Users/...` is a Windows path; `//server/share` a network one. */
     let drive = text.as_bytes();
     if drive.len() >= 3 && drive[0] == b'/' && drive[1].is_ascii_alphabetic() && drive[2] == b':' {
         text.remove(0);
@@ -112,7 +118,7 @@ mod tests {
     fn positions_count_utf16_units() {
         let text = "first\nsé😀x\r\nlast";
         assert_eq!(offset(text, 0, 2), 2);
-        // "s", "é", the emoji's two units: "x" is the fifth.
+        /* "s", "é", the emoji's two units: "x" is the fifth. */
         assert_eq!(offset(text, 1, 4), 6 + 1 + 2 + 4);
         assert_eq!(position(text, 6 + 1 + 2 + 4), (1, 4));
         assert_eq!(offset(text, 1, 99), 6 + 1 + 2 + 4 + 1);

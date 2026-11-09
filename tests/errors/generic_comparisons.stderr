@@ -1,19 +1,19 @@
 error[E_UNSUPPORTED_OPERATION]: Point does not support ordering comparison
-   --> generic_comparisons.sayon:15:12
+   --> generic_comparisons.sayon:17:12
     |
- 15 | print(less(Point(x = 1, y = 2), Point(x = 3, y = 4)))
+ 17 | print(less(Point(x = 1, y = 2), Point(x = 3, y = 4)))
     |            ^^^^^^^^^^^^^^^^^^^ argument for `a`
 
 error[E_UNSUPPORTED_OPERATION]: Array<_> does not support ordering comparison
-   --> generic_comparisons.sayon:16:14
+   --> generic_comparisons.sayon:18:14
     |
- 16 | print(within([1], [2], [3]))
+ 18 | print(within([1], [2], [3]))
     |              ^^^ argument for `low`
 
 error[E_UNSUPPORTED_OPERATION]: function(_) -> _ does not support equality comparison
-   --> generic_comparisons.sayon:17:12
+   --> generic_comparisons.sayon:19:12
     |
- 17 | print(same(function(x) return x, function(x) return x))
+ 19 | print(same(function(x) return x, function(x) return x))
     |            ^^^^^^^^^^^^^^^^^^^^ argument for `a`
 
 3 errors found; nothing was run

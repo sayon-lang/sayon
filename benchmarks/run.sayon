@@ -1,21 +1,23 @@
-# Runs the benchmarks. Each program is built in C++ and Rust, the way each
-# language builds for release, in Rust again with its overflow checks on,
-# and in Sayon, then run with each of its inputs, from small to large. The
-# first run of every build at every input checks that they all print the
-# same thing; then the builds take turns, several runs each. Each
-# program's README gets tables of what its builds measured, and
-# RESULTS.md the whole picture.
-#
-#     sayon run run.sayon                    all of them, 7 runs each
-#     sayon run run.sayon -- nbody sort      only these
-#     sayon run run.sayon -- --runs 3        fewer runs, rougher numbers
-#     sayon run run.sayon -- --quick         only the smallest inputs, to try
-#                                            it out; it writes no tables
-#     sayon run run.sayon -- --report        the tables again, from the last
-#                                            full run's measurements.json
-#
-# Run it from this folder. It needs clang++ and rustc on the path. It uses
-# the sayon on the path too, unless SAYON names another one.
+##
+Runs the benchmarks. Each program is built in C++ and Rust, the way each
+language builds for release, in Rust again with its overflow checks on,
+and in Sayon, then run with each of its inputs, from small to large. The
+first run of every build at every input checks that they all print the
+same thing; then the builds take turns, several runs each. Each
+program's README gets tables of what its builds measured, and
+RESULTS.md the whole picture.
+
+    sayon run run.sayon                    all of them, 7 runs each
+    sayon run run.sayon -- nbody sort      only these
+    sayon run run.sayon -- --runs 3        fewer runs, rougher numbers
+    sayon run run.sayon -- --quick         only the smallest inputs, to try
+                                           it out; it writes no tables
+    sayon run run.sayon -- --report        the tables again, from the last
+                                           full run's measurements.json
+
+Run it from this folder. It needs clang++ and rustc on the path. It uses
+the sayon on the path too, unless SAYON names another one.
+##
 
 collections = import("standard/collections.sayon")
 filesystem = import("standard/filesystem.sayon")
@@ -28,16 +30,22 @@ time = import("standard/time.sayon")
 # A benchmark, and its inputs, smallest first.
 type Benchmark = [name: string, inputs: Array<string>]
 
-# One build of a benchmark: its column's name, its executable, how long
-# the compiler took in nanoseconds, and the executable's size in bytes.
+##
+One build of a benchmark: its column's name, its executable, how long
+the compiler took in nanoseconds, and the executable's size in bytes.
+##
 type Build = [label: string, program: string, building: integer, size: integer]
 
-# What a build's runs measured at one input: processor time and time on
-# the clock in nanoseconds, and peak memory in bytes, for each run.
+##
+What a build's runs measured at one input: processor time and time on
+the clock in nanoseconds, and peak memory in bytes, for each run.
+##
 type Measured = [times: Array<integer>, walls: Array<integer>, memory: Array<integer>]
 
-# A benchmark's builds, and what each measured at each input, as
-# `results[input][build]`.
+##
+A benchmark's builds, and what each measured at each input, as
+`results[input][build]`.
+##
 type Row = [benchmark: Benchmark, builds: Array<Build>, results: Array<Array<Measured>>]
 
 # The computer and the compilers the numbers come from.
@@ -49,8 +57,10 @@ type Saved = [setting: Setting, runs: integer, rows: Array<Row>]
 # Every run's numbers from the last full run.
 constant MEASUREMENTS = "measurements.json"
 
-# Processor time below this many nanoseconds is a few of the system's
-# clock ticks, about 16 ms each on Windows, too coarse to compare.
+##
+Processor time below this many nanoseconds is a few of the system's
+clock ticks, about 16 ms each on Windows, too coarse to compare.
+##
 constant TOO_SHORT = 50000000
 
 # Where a benchmark's README holds what this writes.
@@ -79,7 +89,13 @@ function all_benchmarks() -> Array<Benchmark>
         Benchmark(name = "word_count", inputs = ["1000000", "4000000", "10000000"]),
         Benchmark(name = "sort", inputs = ["1000000", "3000000", "10000000"]),
         Benchmark(name = "text", inputs = ["300000", "1000000", "3000000"]),
-        Benchmark(name = "threads", inputs = ["1000000", "4000000", "10000000"])
+        Benchmark(name = "threads", inputs = ["1000000", "4000000", "10000000"]),
+        Benchmark(name = "nqueens", inputs = ["12", "13"]),
+        Benchmark(name = "life", inputs = ["50", "200", "500"]),
+        Benchmark(name = "edit_distance", inputs = ["500", "1000", "2000"]),
+        Benchmark(name = "dijkstra", inputs = ["100000", "300000", "1000000"]),
+        Benchmark(name = "json", inputs = ["100000", "300000", "1000000"]),
+        Benchmark(name = "vm", inputs = ["1000000", "3000000", "10000000"])
     ]
 
 # The name of a program file on this system.
@@ -142,9 +158,11 @@ function build(benchmark: Benchmark, sayon: string, folder: string) -> Array<Bui
         compile("Sayon", native, sayon, ["build", "--release", "-q", "{source}.sayon", "-o", clone(native)])
     ]
 
-# Runs each build once with the input, which also brings the programs into
-# the disk cache and past any virus scan of a new file, and fails unless
-# they all print the same.
+##
+Runs each build once with the input, which also brings the programs into
+the disk cache and past any virus scan of a new file, and fails unless
+they all print the same.
+##
 function check(benchmark: Benchmark, input: string, builds: Array<Build>)
     expected = ""
     for each in builds
@@ -154,8 +172,10 @@ function check(benchmark: Benchmark, input: string, builds: Array<Build>)
         elseif output != expected
             error("{benchmark.name} {input} in {each.label} printed\n{output}\nbut in C++\n{expected}")
 
-# The builds take turns, so that whatever else the computer does at the
-# time falls on all of them alike.
+##
+The builds take turns, so that whatever else the computer does at the
+time falls on all of them alike.
+##
 function measure(benchmark: Benchmark, input: string, builds: Array<Build>, runs: integer) -> Array<Measured>
     results: Array<Measured> = []
     for _each in builds
@@ -196,9 +216,11 @@ function megabytes(bytes: integer) -> string
 function kilobytes(bytes: integer) -> string
     return "{(bytes + 512) / 1024} KB"
 
-# Sayon's value against the better of C++'s and Rust's, as a factor:
-# below 1 is better. Nothing measured counts as a nanosecond, so that a
-# program too quick to measure gives 1.
+##
+Sayon's value against the better of C++'s and Rust's, as a factor:
+below 1 is better. Nothing measured counts as a nanosecond, so that a
+program too quick to measure gives 1.
+##
 function factor(values: Array<integer>) -> float
     best = values[CPP]
     if values[RUST] < best
@@ -210,8 +232,10 @@ function factor(values: Array<integer>) -> float
         mine = 1
     return float(mine) / float(best)
 
-# Whether processor times are long enough to compare: the better of C++'s
-# and Rust's is at least a few clock ticks.
+##
+Whether processor times are long enough to compare: the better of C++'s
+and Rust's is at least a few clock ticks.
+##
 function timed(values: Array<integer>) -> boolean
     best = values[CPP]
     if values[RUST] < best
@@ -248,8 +272,10 @@ function add_all(update lines: Array<string>, more: Array<string>)
     for line in more
         push(lines, clone(line))
 
-# A table of the medians of what `pick` takes, a row for each input.
-# `coarse` says the values are processor times, counted in clock ticks.
+##
+A table of the medians of what `pick` takes, a row for each input.
+`coarse` says the values are processor times, counted in clock ticks.
+##
 function input_table(row: Row, update pick, show, coarse: boolean) -> Array<string>
     lines = ["| Input {COLUMNS} Sayon against the better |", "|---:|---:|---:|---:|---:|---:|"]
     for position in range(length(row.benchmark.inputs))
@@ -284,8 +310,10 @@ function build_table(row: Row) -> Array<string>
         "| Executable | {strings.join(sizes, " | ")} |"
     ]
 
-# What a program's largest input showed, in a sentence or two. A program
-# too brief for processor time to tell is compared by time on the clock.
+##
+What a program's largest input showed, in a sentence or two. A program
+too brief for processor time to tell is compared by time on the clock.
+##
 function verdict(row: Row) -> string
     largest = length(row.benchmark.inputs) - 1
     times = medians(row.results[largest], function(each: Measured) return clone(each.times))
@@ -349,8 +377,10 @@ function write_table(name: string, table: string)
         error("{path} has no `{END}` line after the results")
     io.write_file(path, "{head[0]}{START}\n\n{table}\n\n{END}{tail[1]}")
 
-# The medians of what `pick` takes at each program's largest input, a row
-# for each program. `coarse` says the values are processor times.
+##
+The medians of what `pick` takes at each program's largest input, a row
+for each program. `coarse` says the values are processor times.
+##
 function largest_table(rows: Array<Row>, update pick, show, against_what: string, coarse: boolean) -> Array<string>
     lines = ["| Benchmark | Input {COLUMNS} Sayon against the {against_what} |", "|---|---:|---:|---:|---:|---:|---:|"]
     for row in rows

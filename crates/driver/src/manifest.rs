@@ -1,33 +1,35 @@
-//! Project manifests (`sayon.toml`).
-//!
-//! The manifest is read with a strict reader for the subset of TOML it
-//! needs: `[table]` headers, `key = value` lines, and string, integer,
-//! boolean, and single-line string array values. Unknown tables and keys are
-//! errors, so a misspelling is reported instead of silently ignored.
-//!
-//! ```toml
-//! [package]
-//! name = "hello"
-//! version = "0.1.0"
-//! entry = "src/main.sayon"      # optional; this is the default
-//! authors = ["Ada"]             # optional
-//! description = "A greeting"    # optional
-//! language = "1"                # optional
-//!
-//! [dependencies]
-//! json = "1.2"                  # a version from the registry: 1.2.0 or later, before 2.0.0
-//! http = { version = "0.4", package = "web_http", registry = "https://..." }
-//! utilities = { path = "../utilities" }
-//! codec = { git = "https://example.com/codec.git", revision = "<full commit id>" }
-//!
-//! [dev_dependencies]            # only for the package's own tests
-//! checks = { path = "../checks" }
-//!
-//! [compiler]
-//! targets = ["native", "web"]   # what `--target all` builds; optional
-//! required_capabilities = ["console", "files"]   # optional
-//! capability_manifest = 1       # optional; the version written against
-//! ```
+/*!
+Project manifests (`sayon.toml`).
+
+The manifest is read with a strict reader for the subset of TOML it
+needs: `[table]` headers, `key = value` lines, and string, integer,
+boolean, and single-line string array values. Unknown tables and keys are
+errors, so a misspelling is reported instead of silently ignored.
+
+```toml
+[package]
+name = "hello"
+version = "0.1.0"
+entry = "src/main.sayon"      # optional; this is the default
+authors = ["Ada"]             # optional
+description = "A greeting"    # optional
+language = "1"                # optional
+
+[dependencies]
+json = "1.2"                  # a version from the registry: 1.2.0 or later, before 2.0.0
+http = { version = "0.4", package = "web_http", registry = "https://..." }
+utilities = { path = "../utilities" }
+codec = { git = "https://example.com/codec.git", revision = "<full commit id>" }
+
+[dev_dependencies]            # only for the package's own tests
+checks = { path = "../checks" }
+
+[compiler]
+targets = ["native", "web"]   # what `--target all` builds; optional
+required_capabilities = ["console", "files"]   # optional
+capability_manifest = 1       # optional; the version written against
+```
+*/
 
 use sayon_syntax::{Diagnostic, FileId, Span};
 
@@ -41,17 +43,21 @@ pub struct Manifest {
     pub authors: Vec<String>,
     pub description: Option<String>,
     pub dependencies: Vec<Dependency>,
-    /// Dependencies of the package's tests only.
+    /** Dependencies of the package's tests only. */
     pub dev_dependencies: Vec<Dependency>,
-    /// The targets `--target all` means, by their table names; empty when
-    /// the manifest names none.
+    /**
+    The targets `--target all` means, by their table names; empty when
+    the manifest names none.
+    */
     pub targets: Vec<&'static sayon_target::Target>,
-    /// What every target the package is built for must provide.
+    /** What every target the package is built for must provide. */
     pub required_capabilities: Vec<sayon_target::Capability>,
 }
 
-/// One entry of `[dependencies]`: the alias imports use, and where the
-/// package comes from.
+/**
+One entry of `[dependencies]`: the alias imports use, and where the
+package comes from.
+*/
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dependency {
     pub alias: String,
@@ -61,13 +67,15 @@ pub struct Dependency {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Source {
-    /// A directory, relative to the package that depends on it.
+    /** A directory, relative to the package that depends on it. */
     Path(String),
-    /// A Git repository at one exact commit.
+    /** A Git repository at one exact commit. */
     Git { url: String, revision: String },
-    /// A version of a package in a registry: the registry's address, or
-    /// none for the one the depending package comes from, the package's name
-    /// there, and the range of versions accepted.
+    /**
+    A version of a package in a registry: the registry's address, or
+    none for the one the depending package comes from, the package's name
+    there, and the range of versions accepted.
+    */
     Registry {
         registry: Option<String>,
         package: String,
@@ -81,7 +89,7 @@ pub(crate) enum Value {
     Integer(i64),
     Boolean(bool),
     Strings(Vec<String>),
-    /// `{ key = "value", ... }`
+    /** `{ key = "value", ... }` */
     Table(Vec<(String, String)>),
 }
 
@@ -116,8 +124,10 @@ const PACKAGE_KEYS: [&str; 6] = [
 const COMPILER_KEYS: [&str; 3] = ["targets", "required_capabilities", "capability_manifest"];
 const DEPENDENCY_TABLES: [&str; 2] = ["dependencies", "dev_dependencies"];
 
-/// Whether text is a name packages, dependencies, and registry accounts
-/// can have: lowercase letters, digits, and `_`, starting with a letter.
+/**
+Whether text is a name packages, dependencies, and registry accounts
+can have: lowercase letters, digits, and `_`, starting with a letter.
+*/
 pub fn valid_name(text: &str) -> bool {
     text.chars().next().is_some_and(|c| c.is_ascii_lowercase())
         && text
@@ -125,7 +135,7 @@ pub fn valid_name(text: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
-/// Reads one dependency entry.
+/** Reads one dependency entry. */
 fn dependency(item: &Entry, errors: &mut Vec<Diagnostic>) -> Option<Dependency> {
     if !valid_name(&item.key) {
         errors.push(
@@ -274,7 +284,7 @@ fn dependency(item: &Entry, errors: &mut Vec<Diagnostic>) -> Option<Dependency> 
     })
 }
 
-/// Reads a manifest, reporting every problem found.
+/** Reads a manifest, reporting every problem found. */
 pub fn parse(file: FileId, text: &str) -> Result<Manifest, Vec<Diagnostic>> {
     let mut errors = Vec::new();
     let entries = read_entries(file, text, &mut errors);
@@ -453,7 +463,7 @@ pub fn parse(file: FileId, text: &str) -> Result<Manifest, Vec<Diagnostic>> {
     })
 }
 
-/// Reads one entry of `[compiler]`.
+/** Reads one entry of `[compiler]`. */
 fn compiler(
     item: &Entry,
     targets: &mut Vec<&'static sayon_target::Target>,
@@ -666,7 +676,7 @@ fn read_entries(file: FileId, text: &str, errors: &mut Vec<Diagnostic>) -> Vec<E
     entries
 }
 
-/// Removes a `#` comment that is not inside a string.
+/** Removes a `#` comment that is not inside a string. */
 fn strip_comment(line: &str) -> &str {
     let mut in_string = false;
     let mut escaped = false;

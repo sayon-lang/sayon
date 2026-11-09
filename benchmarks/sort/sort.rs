@@ -1,5 +1,7 @@
-// Sort: fill an array with pseudo-random integers and sort it with the
-// standard library's stable sort, as Sayon's sort is stable.
+/*
+Sort: fill an array with pseudo-random integers and sort it with the
+standard library's stable sort, as Sayon's sort is stable.
+*/
 
 fn main() {
     let total: usize = std::env::args().nth(1).and_then(|a| a.parse().ok()).unwrap_or(100000);

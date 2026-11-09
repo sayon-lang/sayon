@@ -1,13 +1,15 @@
-//! Tasks and channels: fibers that take turns on the machine.
-//!
-//! Each task is a fiber with a stack of frames of its own; the running one's
-//! frames are the machine's. An operation that must wait, such as receiving
-//! from an empty channel, leaves its task waiting at that operation and
-//! switches to the next task that can go on, round the tasks in order. When
-//! the waiting task is resumed it runs the operation again, which then
-//! finds what it waited for; the few operations that wait after acting (a
-//! rendezvous send, `pause`, and sleeping) are told how they were resumed
-//! so that they finish instead of acting twice.
+/*!
+Tasks and channels: fibers that take turns on the machine.
+
+Each task is a fiber with a stack of frames of its own; the running one's
+frames are the machine's. An operation that must wait, such as receiving
+from an empty channel, leaves its task waiting at that operation and
+switches to the next task that can go on, round the tasks in order. When
+the waiting task is resumed it runs the operation again, which then
+finds what it waited for; the few operations that wait after acting (a
+rendezvous send, `pause`, and sleeping) are told how they were resumed
+so that they finish instead of acting twice.
+*/
 
 use super::*;
 use sayon_runtime::network::{self, BLOCKED_CODE, IoWait};
@@ -15,19 +17,23 @@ use std::time::{Duration, Instant};
 
 pub(super) struct Fiber {
     pub(super) frames: Vec<Frame>,
-    /// `None` for the main task, which has no handle.
+    /** `None` for the main task, which has no handle. */
     pub(super) task: Option<Rc<RefCell<TaskState>>>,
     pub(super) wait: Option<Wait>,
     pub(super) resume: Option<Resume>,
     pub(super) started: bool,
     pub(super) done: bool,
-    /// Where `select` starts looking, after the channel it chose last.
+    /** Where `select` starts looking, after the channel it chose last. */
     pub(super) cursor: usize,
-    /// When the operation the task runs first waited for a socket, which
-    /// its timeout counts from.
+    /**
+    When the operation the task runs first waited for a socket, which
+    its timeout counts from.
+    */
     pub(super) io_started: Option<Instant>,
-    /// The mutexes whose locks the task holds, which it cannot wait while
-    /// it holds.
+    /**
+    The mutexes whose locks the task holds, which it cannot wait while
+    it holds.
+    */
     pub(super) locks: usize,
 }
 
@@ -47,18 +53,20 @@ impl Fiber {
     }
 }
 
-/// What a waiting task waits for.
+/** What a waiting task waits for. */
 pub(super) enum Wait {
     Receive(Channel),
     Send(Channel),
-    /// The message sent as number `.1` to have been received.
+    /** The message sent as number `.1` to have been received. */
     Rendezvous(Channel, u64),
     Join(Rc<RefCell<TaskState>>),
     Select(Vec<Channel>),
     Sleep(Instant),
     Yield,
-    /// A socket, or a connection being made, until a deadline after which
-    /// the operation fails, having waited for `timeout`.
+    /**
+    A socket, or a connection being made, until a deadline after which
+    the operation fails, having waited for `timeout`.
+    */
     Io {
         wait: IoWait,
         deadline: Option<Instant>,
@@ -83,19 +91,21 @@ impl Wait {
     }
 }
 
-/// How a task that waited was resumed, for an operation that acts first and
-/// then waits.
+/**
+How a task that waited was resumed, for an operation that acts first and
+then waits.
+*/
 pub(super) enum Resume {
     Rendezvous(u64),
     Slept,
     Yielded,
-    /// No task could ever go on; the waiting operation fails.
+    /** No task could ever go on; the waiting operation fails. */
     Deadlock,
-    /// A socket was not ready within its timeout.
+    /** A socket was not ready within its timeout. */
     TimedOut(Duration),
 }
 
-/// The outcome of a task operation.
+/** The outcome of a task operation. */
 pub(super) enum Progress {
     Done(Value),
     Failed(ErrorValue),
@@ -103,8 +113,10 @@ pub(super) enum Progress {
 }
 
 impl Wait {
-    /// Whether a task on another thread could end the wait: it is for a
-    /// channel that crossed.
+    /**
+    Whether a task on another thread could end the wait: it is for a
+    channel that crossed.
+    */
     fn elsewhere(&self) -> bool {
         match self {
             Wait::Receive(channel) | Wait::Send(channel) | Wait::Rendezvous(channel, _) => {
@@ -123,11 +135,11 @@ fn channel_of(value: &Value) -> Channel {
     }
 }
 
-/// What taking a message from a channel found.
+/** What taking a message from a channel found. */
 enum Taken {
     Message(Value),
     Empty,
-    /// The channel is closed and has no messages left.
+    /** The channel is closed and has no messages left. */
     Closed,
 }
 
@@ -145,8 +157,10 @@ fn take(channel: &Channel) -> Taken {
     }
 }
 
-/// Wakes the schedulers of other threads, when a task there may wait for
-/// the channel.
+/**
+Wakes the schedulers of other threads, when a task there may wait for
+the channel.
+*/
 fn changed(channel: &Channel) {
     if channel.crossed() {
         network::wake();
@@ -174,14 +188,16 @@ impl<'m> Machine<'m> {
         )
     }
 
-    /// Whether the running task is to stop where it waits.
+    /** Whether the running task is to stop where it waits. */
     fn cancelled(&self) -> bool {
         self.fiber_cancelled(self.current)
     }
 
-    /// Whether fiber `index` is to stop where it waits: the program is
-    /// ending, its task was cancelled, or, for the first fiber of a task's
-    /// own thread, that task was.
+    /**
+    Whether fiber `index` is to stop where it waits: the program is
+    ending, its task was cancelled, or, for the first fiber of a task's
+    own thread, that task was.
+    */
     fn fiber_cancelled(&self, index: usize) -> bool {
         self.stopping
             || self.program.exiting()
@@ -226,8 +242,10 @@ impl<'m> Machine<'m> {
                 | Op::Detach { .. }
         );
         if waits && self.cancelled() {
-            // A task that cannot wait at all says so first, as when it
-            // would wait.
+            /*
+            A task that cannot wait at all says so first, as when it
+            would wait.
+            */
             if let Some((code, message)) = self.refusal() {
                 return Progress::Failed(self.task_error(code, message.to_string(), span));
             }
@@ -243,8 +261,10 @@ impl<'m> Machine<'m> {
                     Value::Function(code, env) => (code, *env),
                     other => panic!("spawn of {other:?}"),
                 };
-                // The function value's environment belongs to the task's
-                // first frame, which reads its captures there.
+                /*
+                The function value's environment belongs to the task's
+                first frame, which reads its captures there.
+                */
                 let frame = match self.new_frame(code, vec![SlotValue::Value(env)]) {
                     Ok(frame) => frame,
                     Err(_) => unreachable!("a new task's first frame"),
@@ -351,8 +371,10 @@ impl<'m> Machine<'m> {
                     (state.closed, state.has_room())
                 };
                 if closed {
-                    // The message is destroyed with the failure, unless the
-                    // sender keeps it.
+                    /*
+                    The message is destroyed with the failure, unless the
+                    sender keeps it.
+                    */
                     if !keep {
                         drop(self.take_place(message));
                     }
@@ -367,14 +389,16 @@ impl<'m> Machine<'m> {
                 }
                 let mut value = self.take_place(message);
                 if channel.crossed() {
-                    // The message goes to another thread, perhaps with
-                    // channels of this one.
+                    /*
+                    The message goes to another thread, perhaps with
+                    channels of this one.
+                    */
                     self.cross_channels();
                     value = parallel::isolate_moved(value);
                 }
                 let number = {
                     let mut state = channel.state();
-                    // Another thread may have filled or closed it meanwhile.
+                    /* Another thread may have filled or closed it meanwhile. */
                     if state.closed || !state.has_room() {
                         let closed = state.closed;
                         drop(state);
@@ -439,8 +463,10 @@ impl<'m> Machine<'m> {
                 let start = self.fibers[self.current].cursor;
                 for offset in 0..count {
                     let chosen = (start + offset) % count;
-                    // Taking the message is the choice, so that a task on
-                    // another thread cannot take it in between.
+                    /*
+                    Taking the message is the choice, so that a task on
+                    another thread cannot take it in between.
+                    */
                     let taken = take(&channels[chosen]);
                     if matches!(taken, Taken::Empty) {
                         continue;
@@ -462,15 +488,17 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Whether a fiber can go on: it has not started, what it waits for has
-    /// come, or it is to stop.
+    /**
+    Whether a fiber can go on: it has not started, what it waits for has
+    come, or it is to stop.
+    */
     fn can_go_on(&self, index: usize, now: Instant) -> bool {
         let fiber = &self.fibers[index];
         if fiber.done {
             return false;
         }
         let stopping = self.fiber_cancelled(index);
-        // A task cancelled before it started never runs.
+        /* A task cancelled before it started never runs. */
         if stopping && !fiber.started {
             return false;
         }
@@ -480,8 +508,10 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// The next fiber, after the running one and round, that can go on,
-    /// waiting for the earliest sleeper when none can yet.
+    /**
+    The next fiber, after the running one and round, that can go on,
+    waiting for the earliest sleeper when none can yet.
+    */
     fn next_fiber(&mut self) -> Option<usize> {
         self.retire_unstarted();
         let count = self.fibers.len();
@@ -515,11 +545,13 @@ impl<'m> Machine<'m> {
             if !sockets.is_empty() {
                 network::wait_any(&sockets, timeout);
             } else if elsewhere && self.others_run() {
-                // A task on another thread can let one go on, and wakes
-                // this thread when it may have.
+                /*
+                A task on another thread can let one go on, and wakes
+                this thread when it may have.
+                */
                 network::wait_any(&[], timeout);
             } else if network::has_waker() {
-                // Another thread can end the wait early, to cancel a task.
+                /* Another thread can end the wait early, to cancel a task. */
                 network::wait_any(&[], Some(timeout?));
             } else {
                 std::thread::sleep(timeout?);
@@ -527,8 +559,10 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Finishes the tasks cancelled before they started: they never run, and
-    /// what their functions captured is destroyed.
+    /**
+    Finishes the tasks cancelled before they started: they never run, and
+    what their functions captured is destroyed.
+    */
     fn retire_unstarted(&mut self) {
         let stopping = self.stopping || self.program.exiting();
         for fiber in &mut self.fibers {
@@ -540,7 +574,7 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Makes fiber `index` the running one, telling it how it was resumed.
+    /** Makes fiber `index` the running one, telling it how it was resumed. */
     fn switch_to(&mut self, index: usize) {
         if index != self.current {
             let frames = std::mem::take(&mut self.frames);
@@ -565,9 +599,11 @@ impl<'m> Machine<'m> {
         };
     }
 
-    /// Runs a primitive that can wait for a socket: when it must, the task
-    /// waits while others run, and runs it again once the socket may be
-    /// ready, until it finishes or the socket's timeout passes.
+    /**
+    Runs a primitive that can wait for a socket: when it must, the task
+    waits while others run, and runs it again once the socket may be
+    ready, until it finishes or the socket's timeout passes.
+    */
     fn host_waiting(
         &mut self,
         function: Host,
@@ -618,8 +654,10 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Leaves the running task waiting and switches to one that can go on.
-    /// False, with nothing changed, when no task ever could: a deadlock.
+    /**
+    Leaves the running task waiting and switches to one that can go on.
+    False, with nothing changed, when no task ever could: a deadlock.
+    */
     pub(super) fn suspend(&mut self, wait: Wait) -> bool {
         self.fibers[self.current].wait = Some(wait);
         match self.next_fiber() {
@@ -634,13 +672,15 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Records the result of the running task, which is not the main one,
-    /// and switches to another. False when every task has finished.
+    /**
+    Records the result of the running task, which is not the main one,
+    and switches to another. False when every task has finished.
+    */
     pub(super) fn finish_task(&mut self, result: Result<Value, ErrorValue>) -> bool {
         if let Err(problem) = &result
             && problem.code == EXIT_CODE
         {
-            // `os.exit` in a task ends the whole program.
+            /* `os.exit` in a task ends the whole program. */
             self.exit_status
                 .get_or_insert(exit_status(&problem.message));
             self.stopping = true;
@@ -654,7 +694,7 @@ impl<'m> Machine<'m> {
             self.switch_to(index);
             return true;
         }
-        // The tasks left all wait for each other: one of them fails.
+        /* The tasks left all wait for each other: one of them fails. */
         let Some(stuck) =
             (0..self.fibers.len()).find(|&i| !self.fibers[i].done && self.fibers[i].wait.is_some())
         else {
@@ -665,9 +705,11 @@ impl<'m> Machine<'m> {
         true
     }
 
-    /// After the main task: cancels the tasks still running and runs each
-    /// until it has stopped and cleaned up. A task that never started is
-    /// destroyed with what it captured.
+    /**
+    After the main task: cancels the tasks still running and runs each
+    until it has stopped and cleaned up. A task that never started is
+    destroyed with what it captured.
+    */
     pub(super) fn shutdown(&mut self) {
         self.stopping = true;
         self.fibers[0].done = true;
@@ -679,14 +721,16 @@ impl<'m> Machine<'m> {
                 continue;
             }
             self.switch_to(index);
-            // Runs tasks until every one has finished.
+            /* Runs tasks until every one has finished. */
             let _ = self.execute(0);
         }
         self.frames.clear();
     }
 
-    /// The errors of tasks that failed without being joined, except for
-    /// cancellation, which is how they were asked to stop.
+    /**
+    The errors of tasks that failed without being joined, except for
+    cancellation, which is how they were asked to stop.
+    */
     pub(super) fn task_failures(&self) -> Vec<ErrorValue> {
         self.fibers
             .iter()

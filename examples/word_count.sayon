@@ -1,6 +1,8 @@
-# Counts lines, words, and the most frequent words of standard input.
-#
-#     sayon run examples/word_count.sayon < some_text.txt
+##
+Counts lines, words, and the most frequent words of standard input.
+
+    sayon run examples/word_count.sayon < some_text.txt
+##
 
 io = import("standard/io.sayon")
 strings = import("standard/strings.sayon")

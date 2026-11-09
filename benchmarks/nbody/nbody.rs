@@ -1,5 +1,7 @@
-// N-body: the Sun and the four gas giants, moved step by step by each
-// other's gravity, with the system's energy before and after.
+/*
+N-body: the Sun and the four gas giants, moved step by step by each
+other's gravity, with the system's energy before and after.
+*/
 
 const PI: f64 = 3.141592653589793;
 const SOLAR_MASS: f64 = 4.0 * PI * PI;

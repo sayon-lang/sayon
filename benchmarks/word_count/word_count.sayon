@@ -1,6 +1,8 @@
-# Word count: make up a long text from a small set of syllables, count how
-# often each word comes up, and list the most common. Short strings built
-# one at a time, and a dictionary keyed by them.
+##
+Word count: make up a long text from a small set of syllables, count how
+often each word comes up, and list the most common. Short strings built
+one at a time, and a dictionary keyed by them.
+##
 
 collections = import("standard/collections.sayon")
 os = import("standard/os.sayon")

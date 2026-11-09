@@ -1,18 +1,20 @@
-//! An Android app's entry. The app's package holds the program as a shared
-//! library, which Android's `NativeActivity` loads and starts by calling
-//! `ANativeActivity_onCreate` on the app's main thread. The program's `main`
-//! runs on a thread of its own, so that the app answers its user meanwhile,
-//! and what it writes to its output and errors goes to Android's log under
-//! the tag `sayon`, a line at a time; the files it names are the app's own,
-//! in its private directory. When the program ends, its activity
-//! finishes; once the activity is gone too, the process ends, so that the
-//! next launch runs the program afresh. A program run from `adb shell`
-//! instead is an ordinary executable, with the process's own streams.
-//!
-//! The activity's window is the screen a program's window of
-//! `standard/graphics` shows: what happens to it, and the user's touches
-//! and keys, become the window's events, and a frame goes to it through a
-//! buffer of its own, which Android locks for the program to fill.
+/*!
+An Android app's entry. The app's package holds the program as a shared
+library, which Android's `NativeActivity` loads and starts by calling
+`ANativeActivity_onCreate` on the app's main thread. The program's `main`
+runs on a thread of its own, so that the app answers its user meanwhile,
+and what it writes to its output and errors goes to Android's log under
+the tag `sayon`, a line at a time; the files it names are the app's own,
+in its private directory. When the program ends, its activity
+finishes; once the activity is gone too, the process ends, so that the
+next launch runs the program afresh. A program run from `adb shell`
+instead is an ordinary executable, with the process's own streams.
+
+The activity's window is the screen a program's window of
+`standard/graphics` shows: what happens to it, and the user's touches
+and keys, become the window's events, and a frame goes to it through a
+buffer of its own, which Android locks for the program to fill.
+*/
 
 use crate::window::Event;
 use std::collections::VecDeque;
@@ -21,14 +23,14 @@ use std::io::Write;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// The start of Android's `ANativeActivity`, which is all the runtime reads.
+/** The start of Android's `ANativeActivity`, which is all the runtime reads. */
 #[repr(C)]
 pub struct Activity {
     callbacks: *mut Callbacks,
     vm: *mut c_void,
     env: *mut c_void,
     object: *mut c_void,
-    /// The app's private directory.
+    /** The app's private directory. */
     internal_data_path: *const c_char,
     external_data_path: *const c_char,
     sdk_version: i32,
@@ -40,8 +42,10 @@ type Notice = Option<unsafe extern "C" fn(*mut Activity)>;
 type QueueNotice = Option<unsafe extern "C" fn(*mut Activity, *mut c_void)>;
 type FocusNotice = Option<unsafe extern "C" fn(*mut Activity, i32)>;
 
-/// Android's `ANativeActivityCallbacks`: what the activity calls as its
-/// life goes on. Those left empty do nothing.
+/**
+Android's `ANativeActivityCallbacks`: what the activity calls as its
+life goes on. Those left empty do nothing.
+*/
 #[repr(C)]
 struct Callbacks {
     start: Notice,
@@ -65,11 +69,13 @@ struct Callbacks {
 type LooperCallback = unsafe extern "C" fn(fd: i32, events: i32, data: *mut c_void) -> i32;
 
 unsafe extern "C" {
-    /// The program's entry, which the compiler generates.
+    /** The program's entry, which the compiler generates. */
     fn main(argc: i32, argv: *const *const c_char) -> i32;
     fn ANativeActivity_finish(activity: *mut Activity);
-    /// Ends the process at once. `exit` would run the destructors of the
-    /// libraries Android loaded while their own threads still use them.
+    /**
+    Ends the process at once. `exit` would run the destructors of the
+    libraries Android loaded while their own threads still use them.
+    */
     fn _exit(status: i32) -> !;
     fn __android_log_write(priority: i32, tag: *const c_char, text: *const c_char) -> i32;
     fn ALooper_forThread() -> *mut c_void;
@@ -106,12 +112,12 @@ unsafe extern "C" {
     fn AConfiguration_delete(configuration: *mut c_void);
 }
 
-/// Android's `ANativeWindow_Buffer`: the pixels of a frame, locked.
+/** Android's `ANativeWindow_Buffer`: the pixels of a frame, locked. */
 #[repr(C)]
 struct Buffer {
     width: i32,
     height: i32,
-    /// Pixels from a row to the next.
+    /** Pixels from a row to the next. */
     stride: i32,
     format: i32,
     bits: *mut u8,
@@ -128,25 +134,29 @@ const ACTION_MOVE: i32 = 2;
 const LOG_INFO: i32 = 4;
 const LOG_ERROR: i32 = 6;
 
-/// Android's log keeps at most about 4 KiB of a message; longer lines go
-/// in parts.
+/**
+Android's log keeps at most about 4 KiB of a message; longer lines go
+in parts.
+*/
 const LONGEST_MESSAGE: usize = 4000;
 
-/// The program's stack, as large as a Linux process's main thread's.
+/** The program's stack, as large as a Linux process's main thread's. */
 const STACK: usize = 8 << 20;
 
-/// Whether the program runs in an app, rather than from a shell.
+/** Whether the program runs in an app, rather than from a shell. */
 static IN_APP: AtomicBool = AtomicBool::new(false);
 
-/// The program's activity while it lives, and whether the program ended.
+/** The program's activity while it lives, and whether the program ended. */
 struct Life {
     activity: *mut Activity,
     started: bool,
     ended: bool,
 }
 
-// SAFETY: the activity is only passed to Android, which allows finishing it
-// from any thread.
+/*
+SAFETY: the activity is only passed to Android, which allows finishing it
+from any thread.
+*/
 unsafe impl Send for Life {}
 
 static LIFE: Mutex<Life> = Mutex::new(Life {
@@ -155,24 +165,28 @@ static LIFE: Mutex<Life> = Mutex::new(Life {
     ended: false,
 });
 
-/// The output and the errors written but not yet a whole line.
+/** The output and the errors written but not yet a whole line. */
 static PENDING: Mutex<[Vec<u8>; 2]> = Mutex::new([Vec::new(), Vec::new()]);
 
-/// The activity's window, and what happened to it.
+/** The activity's window, and what happened to it. */
 struct Screen {
     window: *mut c_void,
     width: i64,
     height: i64,
-    /// The screen's pixels for a point of Android's measure, a 160th of an
-    /// inch.
+    /**
+    The screen's pixels for a point of Android's measure, a 160th of an
+    inch.
+    */
     density: f64,
-    /// Whether the program has a window open, which takes the events.
+    /** Whether the program has a window open, which takes the events. */
     open: bool,
     events: VecDeque<Event>,
 }
 
-// SAFETY: Android's window may be drawn on from any thread; the lock keeps
-// it from being destroyed meanwhile.
+/*
+SAFETY: Android's window may be drawn on from any thread; the lock keeps
+it from being destroyed meanwhile.
+*/
 unsafe impl Send for Screen {}
 
 static SCREEN: Mutex<Screen> = Mutex::new(Screen {
@@ -188,7 +202,7 @@ fn screen() -> std::sync::MutexGuard<'static, Screen> {
     SCREEN.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Adds an event, while the program has a window to take it.
+/** Adds an event, while the program has a window to take it. */
 fn happened(event: Event) {
     let mut screen = screen();
     if screen.open {
@@ -196,9 +210,11 @@ fn happened(event: Event) {
     }
 }
 
-/// Opens or closes the program's window: with one open, the screen's
-/// events gather, the first telling its size. Opening waits a while for
-/// the activity's window, which Android makes once the app is in front.
+/**
+Opens or closes the program's window: with one open, the screen's
+events gather, the first telling its size. Opening waits a while for
+the activity's window, which Android makes once the app is in front.
+*/
 pub fn screen_open(open: bool) {
     let waited = std::time::Instant::now();
     while open && screen().window.is_null() && waited.elapsed().as_secs() < 10 {
@@ -226,16 +242,20 @@ pub fn screen_density() -> f64 {
     screen().density
 }
 
-/// Shows the frame `frame` makes for the window's size, a row of pixels
-/// after another; without a window, as while the app is in the background,
-/// nothing.
+/**
+Shows the frame `frame` makes for the window's size, a row of pixels
+after another; without a window, as while the app is in the background,
+nothing.
+*/
 pub fn screen_present(frame: impl FnOnce(usize, usize) -> Vec<u8>) {
     let screen = screen();
     if screen.window.is_null() {
         return;
     }
-    // SAFETY: the window lives while the lock is held: Android's callback
-    // that destroys it waits for the lock.
+    /*
+    SAFETY: the window lives while the lock is held: Android's callback
+    that destroys it waits for the lock.
+    */
     unsafe {
         ANativeWindow_setBuffersGeometry(screen.window, 0, 0, FORMAT_RGBA);
         let mut buffer: Buffer = std::mem::zeroed();
@@ -252,7 +272,7 @@ pub fn screen_present(frame: impl FnOnce(usize, usize) -> Vec<u8>) {
     }
 }
 
-/// A key's name, as `standard/graphics` names keys.
+/** A key's name, as `standard/graphics` names keys. */
 fn key(code: i32) -> &'static str {
     const LETTERS: [&str; 26] = [
         "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r",
@@ -292,18 +312,20 @@ fn life() -> std::sync::MutexGuard<'static, Life> {
     LIFE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Whether the program runs in an app, whose output goes to Android's log.
+/** Whether the program runs in an app, whose output goes to Android's log. */
 pub fn in_app() -> bool {
     IN_APP.load(Ordering::Relaxed)
 }
 
-/// The host options an app knows, and those its intent set, as
-/// `am start --ez SAYON_DEBUG_ALLOC true` sets one: an app has no
-/// environment of its own to take them from.
+/**
+The host options an app knows, and those its intent set, as
+`am start --ez SAYON_DEBUG_ALLOC true` sets one: an app has no
+environment of its own to take them from.
+*/
 const OPTIONS: &[&str] = &["SAYON_DEBUG_ALLOC", crate::window::CLOSE_WINDOWS];
 static SET: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
 
-/// Reads the options from the intent that started the activity, `object`.
+/** Reads the options from the intent that started the activity, `object`. */
 fn read_options(object: *mut c_void) {
     let Some(env) = crate::jni::env() else {
         return;
@@ -335,24 +357,26 @@ fn read_options(object: *mut c_void) {
     });
 }
 
-/// Whether the intent that started the app set the option `name`.
+/** Whether the intent that started the app set the option `name`. */
 pub fn option(name: &str) -> bool {
     SET.lock()
         .unwrap_or_else(|e| e.into_inner())
         .contains(&name)
 }
 
-/// Called by Android when the activity starts, on the app's main thread.
-///
-/// # Safety
-/// `activity` is the activity Android creates, valid until it is destroyed.
+/**
+Called by Android when the activity starts, on the app's main thread.
+
+# Safety
+`activity` is the activity Android creates, valid until it is destroyed.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ANativeActivity_onCreate(
     activity: *mut Activity,
     _saved_state: *mut c_void,
     _saved_size: usize,
 ) {
-    // SAFETY: the activity's callbacks, which it reads from now on.
+    /* SAFETY: the activity's callbacks, which it reads from now on. */
     unsafe {
         let callbacks = &mut *(*activity).callbacks;
         callbacks.destroy = Some(destroyed);
@@ -364,10 +388,10 @@ pub unsafe extern "C" fn ANativeActivity_onCreate(
         callbacks.native_window_destroyed = Some(window_destroyed);
         callbacks.input_queue_created = Some(input_queue_created);
         callbacks.input_queue_destroyed = Some(input_queue_destroyed);
-        // What only Java has, such as TLS, goes through the app's Java VM.
+        /* What only Java has, such as TLS, goes through the app's Java VM. */
         crate::jni::set_vm((*activity).vm);
         read_options((*activity).object);
-        // The screen's density, in Android's measure: 160 for a point.
+        /* The screen's density, in Android's measure: 160 for a point. */
         let configuration = AConfiguration_new();
         AConfiguration_fromAssetManager(configuration, (*activity).asset_manager);
         let density = AConfiguration_getDensity(configuration);
@@ -378,16 +402,20 @@ pub unsafe extern "C" fn ANativeActivity_onCreate(
     }
     let mut life = life();
     life.activity = activity;
-    // An activity made again, as when the app comes back, goes on with the
-    // program that already runs.
+    /*
+    An activity made again, as when the app comes back, goes on with the
+    program that already runs.
+    */
     if std::mem::replace(&mut life.started, true) {
         return;
     }
     IN_APP.store(true, Ordering::Relaxed);
     std::panic::set_hook(Box::new(|info| report!("fatal error: {info}")));
-    // The program's files are the app's own, in its private directory.
-    // SAFETY: Android's path, a NUL-terminated string, while the activity
-    // lives.
+    /*
+    The program's files are the app's own, in its private directory.
+    SAFETY: Android's path, a NUL-terminated string, while the activity
+    lives.
+    */
     let directory = unsafe { (*activity).internal_data_path };
     if !directory.is_null() {
         let path = unsafe { std::ffi::CStr::from_ptr(directory) };
@@ -398,7 +426,7 @@ pub unsafe extern "C" fn ANativeActivity_onCreate(
         .name("sayon".to_string())
         .stack_size(STACK)
         .spawn(|| {
-            // SAFETY: the program's entry, which takes no arguments here.
+            /* SAFETY: the program's entry, which takes no arguments here. */
             let status = unsafe { main(0, std::ptr::null()) };
             ended(status);
         });
@@ -409,8 +437,10 @@ pub unsafe extern "C" fn ANativeActivity_onCreate(
     }
 }
 
-/// Ends the program with `status`: the rest of its output goes to the log,
-/// and its activity finishes. Without an activity left, the process ends.
+/**
+Ends the program with `status`: the rest of its output goes to the log,
+and its activity finishes. Without an activity left, the process ends.
+*/
 pub fn ended(status: i32) {
     flush();
     log(
@@ -421,14 +451,14 @@ pub fn ended(status: i32) {
     let mut life = life();
     life.ended = true;
     if life.activity.is_null() {
-        // SAFETY: the program has ended, and all it wrote is in the log.
+        /* SAFETY: the program has ended, and all it wrote is in the log. */
         unsafe { _exit(status) };
     }
-    // SAFETY: the activity lives until `destroyed`, which waits for the lock.
+    /* SAFETY: the activity lives until `destroyed`, which waits for the lock. */
     unsafe { ANativeActivity_finish(life.activity) };
 }
 
-/// The activity is gone: once the program has ended too, so is the process.
+/** The activity is gone: once the program has ended too, so is the process. */
 unsafe extern "C" fn destroyed(activity: *mut Activity) {
     happened(Event::Closed);
     let mut life = life();
@@ -436,7 +466,7 @@ unsafe extern "C" fn destroyed(activity: *mut Activity) {
         life.activity = std::ptr::null_mut();
     }
     if life.ended && life.activity.is_null() {
-        // SAFETY: the program has ended, and all it wrote is in the log.
+        /* SAFETY: the program has ended, and all it wrote is in the log. */
         unsafe { _exit(0) };
     }
 }
@@ -453,10 +483,10 @@ unsafe extern "C" fn focus_changed(_activity: *mut Activity, focused: i32) {
     happened(Event::Focused(focused != 0));
 }
 
-/// The activity has a window to show, or its window has a new size.
+/** The activity has a window to show, or its window has a new size. */
 unsafe extern "C" fn window_created(_activity: *mut Activity, window: *mut c_void) {
     let mut screen = screen();
-    // SAFETY: the window Android gives, valid until it is destroyed.
+    /* SAFETY: the window Android gives, valid until it is destroyed. */
     let (width, height) = unsafe {
         (
             ANativeWindow_getWidth(window) as i64,
@@ -473,28 +503,32 @@ unsafe extern "C" fn window_created(_activity: *mut Activity, window: *mut c_voi
     }
 }
 
-/// The window is going away, as when the app goes to the background; the
-/// lock makes it wait for a frame being drawn.
+/**
+The window is going away, as when the app goes to the background; the
+lock makes it wait for a frame being drawn.
+*/
 unsafe extern "C" fn window_destroyed(_activity: *mut Activity, _window: *mut c_void) {
     screen().window = std::ptr::null_mut();
 }
 
-/// Takes the activity's input from its queue on the main thread, leaving
-/// every event to Android's own handling, such as Back finishing the
-/// activity, but telling a program's window of touches and keys. An app
-/// that took none would stop answering.
+/**
+Takes the activity's input from its queue on the main thread, leaving
+every event to Android's own handling, such as Back finishing the
+activity, but telling a program's window of touches and keys. An app
+that took none would stop answering.
+*/
 unsafe extern "C" fn input_queue_created(_activity: *mut Activity, queue: *mut c_void) {
-    // SAFETY: the main thread's looper, and the queue Android gives.
+    /* SAFETY: the main thread's looper, and the queue Android gives. */
     unsafe { AInputQueue_attachLooper(queue, ALooper_forThread(), 1, Some(input), queue) };
 }
 
 unsafe extern "C" fn input_queue_destroyed(_activity: *mut Activity, queue: *mut c_void) {
-    // SAFETY: the queue attached in `input_queue_created`.
+    /* SAFETY: the queue attached in `input_queue_created`. */
     unsafe { AInputQueue_detachLooper(queue) };
 }
 
 unsafe extern "C" fn input(_fd: i32, _events: i32, queue: *mut c_void) -> i32 {
-    // SAFETY: the attached queue, whose events are each finished once.
+    /* SAFETY: the attached queue, whose events are each finished once. */
     unsafe {
         let mut event = std::ptr::null_mut();
         while AInputQueue_getEvent(queue, &mut event) >= 0 {
@@ -527,8 +561,10 @@ unsafe extern "C" fn input(_fd: i32, _events: i32, queue: *mut c_void) -> i32 {
     1
 }
 
-/// Writes the program's output (1) or errors (2) to the log, a whole line
-/// at a time.
+/**
+Writes the program's output (1) or errors (2) to the log, a whole line
+at a time.
+*/
 pub fn write(stream: i32, bytes: &[u8]) {
     let priority = if stream == 1 { LOG_INFO } else { LOG_ERROR };
     let mut pending = PENDING.lock().unwrap_or_else(|e| e.into_inner());
@@ -540,7 +576,7 @@ pub fn write(stream: i32, bytes: &[u8]) {
     }
 }
 
-/// Logs what is left of the last lines, when the program ends.
+/** Logs what is left of the last lines, when the program ends. */
 fn flush() {
     let mut pending = PENDING.lock().unwrap_or_else(|e| e.into_inner());
     for (index, buffer) in pending.iter_mut().enumerate() {
@@ -552,7 +588,7 @@ fn flush() {
     }
 }
 
-/// Logs one line, in parts when it is long, cut between characters.
+/** Logs one line, in parts when it is long, cut between characters. */
 fn log(priority: i32, tag: &str, line: &[u8]) {
     let tag = CString::new(tag).expect("a tag without NUL");
     let mut rest = line;
@@ -566,7 +602,7 @@ fn log(priority: i32, tag: &str, line: &[u8]) {
             .map(|&b| if b == 0 { b' ' } else { b })
             .collect();
         let text = CString::new(part).expect("NUL bytes replaced");
-        // SAFETY: both are NUL-terminated strings.
+        /* SAFETY: both are NUL-terminated strings. */
         unsafe { __android_log_write(priority, tag.as_ptr(), text.as_ptr()) };
         rest = &rest[end..];
         if rest.is_empty() {
@@ -575,12 +611,14 @@ fn log(priority: i32, tag: &str, line: &[u8]) {
     }
 }
 
-/// The program's output or errors: the process's own from a shell, or in
-/// an app Android's log.
+/**
+The program's output or errors: the process's own from a shell, or in
+an app Android's log.
+*/
 pub struct Stream(pub i32);
 
 impl Stream {
-    /// Like a locked standard stream: the same stream.
+    /** Like a locked standard stream: the same stream. */
     pub fn lock(&self) -> Stream {
         Stream(self.0)
     }
@@ -598,8 +636,10 @@ impl Write for Stream {
         Ok(bytes.len())
     }
 
-    /// In an app, only whole lines go to the log, the rest once the program
-    /// ends.
+    /**
+    In an app, only whole lines go to the log, the rest once the program
+    ends.
+    */
     fn flush(&mut self) -> std::io::Result<()> {
         if in_app() {
             return Ok(());

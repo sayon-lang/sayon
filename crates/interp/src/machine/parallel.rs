@@ -1,15 +1,17 @@
-//! Tasks on threads of their own, and the mutexes they share.
-//!
-//! A task on another thread runs in a machine of its own, over the same
-//! module and output. What crosses to it, the values its function captured
-//! and the program's constants, and its result coming back, is copied
-//! first, so that it shares nothing with the thread it left: the
-//! interpreter's values count their references without atomics. A mutex
-//! keeps its value the same way, copied in and out under its lock.
-//!
-//! Every thread is joined before the program's run returns, which is what
-//! lets the threads borrow the module and the output of the machine that
-//! started them.
+/*!
+Tasks on threads of their own, and the mutexes they share.
+
+A task on another thread runs in a machine of its own, over the same
+module and output. What crosses to it, the values its function captured
+and the program's constants, and its result coming back, is copied
+first, so that it shares nothing with the thread it left: the
+interpreter's values count their references without atomics. A mutex
+keeps its value the same way, copied in and out under its lock.
+
+Every thread is joined before the program's run returns, which is what
+lets the threads borrow the module and the output of the machine that
+started them.
+*/
 
 use super::*;
 use sayon_runtime::network::{self, Background};
@@ -21,35 +23,41 @@ pub(super) fn lock<T>(mutex: &Lock<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// A value that shares nothing with any other, so that it can go to
-/// another thread.
+/**
+A value that shares nothing with any other, so that it can go to
+another thread.
+*/
 pub struct Sent(Value);
 
-// SAFETY: made only by `Sent::new` and `Sent::moved`, which copy every part
-// of the value that counts references, so no count is shared with a value
-// of another thread; a mutex's or a parallel task's state is shared
-// through an `Arc`.
+/*
+SAFETY: made only by `Sent::new` and `Sent::moved`, which copy every part
+of the value that counts references, so no count is shared with a value
+of another thread; a mutex's or a parallel task's state is shared
+through an `Arc`.
+*/
 unsafe impl Send for Sent {}
 
 impl Sent {
-    /// A copy of a value, which stays.
+    /** A copy of a value, which stays. */
     pub fn new(value: &Value) -> Sent {
         Sent(isolate(value))
     }
 
-    /// A value that moves to another thread, with what its destruction
-    /// will run there.
+    /**
+    A value that moves to another thread, with what its destruction
+    will run there.
+    */
     pub fn moved(value: Value) -> Sent {
         Sent(isolate_moved(value))
     }
 
-    /// The value, for the thread that receives it.
+    /** The value, for the thread that receives it. */
     pub fn take(self) -> Value {
         self.0
     }
 }
 
-/// A copy of a value with no part counted with the original.
+/** A copy of a value with no part counted with the original. */
 pub(super) fn isolate(value: &Value) -> Value {
     match value {
         Value::Int(_)
@@ -97,8 +105,10 @@ pub(super) fn isolate(value: &Value) -> Value {
     }
 }
 
-/// A value made into one with no part counted with a value it shared one
-/// with; unlike a copy, it keeps what its destruction runs.
+/**
+A value made into one with no part counted with a value it shared one
+with; unlike a copy, it keeps what its destruction runs.
+*/
 pub(super) fn isolate_moved(value: Value) -> Value {
     match value {
         Value::Str(text) => Value::str(&text),
@@ -125,22 +135,26 @@ pub(super) fn isolate_moved(value: Value) -> Value {
     }
 }
 
-/// Lets a channel's handles go to other threads: from now on its messages
-/// are copied as they are sent, and the ones waiting in it are copied now,
-/// on the one thread that can reach it so far.
+/**
+Lets a channel's handles go to other threads: from now on its messages
+are copied as they are sent, and the ones waiting in it are copied now,
+on the one thread that can reach it so far.
+*/
 fn cross(channel: &Channel) {
     if channel.0.crossed.swap(true, Ordering::AcqRel) {
         return;
     }
-    // Copied outside the lock, since a message may hold the channel itself.
+    /* Copied outside the lock, since a message may hold the channel itself. */
     let waiting = std::mem::take(&mut channel.state().queue);
     let moved: std::collections::VecDeque<Value> = waiting.into_iter().map(isolate_moved).collect();
     channel.state().queue = moved;
 }
 
 impl<'m> Machine<'m> {
-    /// Records a channel made on this thread, which no task on another
-    /// thread can hold yet.
+    /**
+    Records a channel made on this thread, which no task on another
+    thread can hold yet.
+    */
     pub(super) fn local_channel(&mut self, channel: &Channel) {
         if self.local_channels.len() >= self.prune_channels_at {
             self.local_channels.retain(|weak| weak.strong_count() > 0);
@@ -149,12 +163,14 @@ impl<'m> Machine<'m> {
         self.local_channels.push(Arc::downgrade(&channel.0));
     }
 
-    /// Counts every channel of this thread as one that tasks on other
-    /// threads may hold. A channel handle can leave its thread only with a
-    /// value that does: what a task on another thread captures or returns,
-    /// the value of a mutex, or a message on a channel that crossed
-    /// already. As in compiled programs, which do not see inside those
-    /// values, each of them crosses all of the thread's channels.
+    /**
+    Counts every channel of this thread as one that tasks on other
+    threads may hold. A channel handle can leave its thread only with a
+    value that does: what a task on another thread captures or returns,
+    the value of a mutex, or a message on a channel that crossed
+    already. As in compiled programs, which do not see inside those
+    values, each of them crosses all of the thread's channels.
+    */
     pub(super) fn cross_channels(&mut self) {
         network::prepare_waking();
         for weak in std::mem::take(&mut self.local_channels) {
@@ -164,22 +180,22 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Whether tasks run on threads other than this one.
+    /** Whether tasks run on threads other than this one. */
     pub(super) fn others_run(&self) -> bool {
         self.thread_task.is_some() || self.program.running.load(Ordering::Acquire) > 0
     }
 }
 
-// ----- mutexes -------------------------------------------------------------------------------
+/* ----- mutexes ------------------------------------------------------------------------------- */
 
-/// A mutex: its value, and which task holds its lock.
+/** A mutex: its value, and which task holds its lock. */
 pub struct MutexCell {
     state: Lock<MutexState>,
     free: Condvar,
 }
 
 struct MutexState {
-    /// Taken out while a task holds the lock.
+    /** Taken out while a task holds the lock. */
     value: Option<Sent>,
     holder: Option<(std::thread::ThreadId, usize)>,
 }
@@ -203,9 +219,11 @@ impl MutexCell {
 }
 
 impl<'m> Machine<'m> {
-    /// Takes a mutex's lock, waiting for another thread to free it, and its
-    /// value. A task holds a lock only between operations that never wait,
-    /// so no task of this thread can hold it meanwhile.
+    /**
+    Takes a mutex's lock, waiting for another thread to free it, and its
+    value. A task holds a lock only between operations that never wait,
+    so no task of this thread can hold it meanwhile.
+    */
     pub(super) fn mutex_take(&mut self, mutex: &Operand, span: Span) -> Result<Value, ErrorValue> {
         let source = self.source(mutex);
         let cell = self.with_source(&source, |value| match value {
@@ -234,7 +252,7 @@ impl<'m> Machine<'m> {
         Ok(value)
     }
 
-    /// Puts a mutex's value back and frees its lock.
+    /** Puts a mutex's value back and frees its lock. */
     pub(super) fn mutex_put(&mut self, mutex: &Operand, value: &Operand) {
         let value = self.take(value);
         self.cross_channels();
@@ -253,9 +271,9 @@ impl<'m> Machine<'m> {
     }
 }
 
-// ----- tasks on threads of their own ---------------------------------------------------------
+/* ----- tasks on threads of their own --------------------------------------------------------- */
 
-/// What a parallel task's handle and the program know of it.
+/** What a parallel task's handle and the program know of it. */
 #[derive(Default)]
 pub struct ParallelState {
     result: Lock<Option<Result<Sent, ErrorValue>>>,
@@ -270,13 +288,17 @@ impl Background for ParallelState {
     }
 }
 
-/// The handle of a task on another thread. When the last copy of the handle
-/// goes without a join or a detach, the task is cancelled.
+/**
+The handle of a task on another thread. When the last copy of the handle
+goes without a join or a detach, the task is cancelled.
+*/
 #[derive(Clone)]
 pub struct ParallelHandle(Arc<HandleState>);
 
-/// What the copies of a handle share; the task's thread and the program
-/// hold the state itself.
+/**
+What the copies of a handle share; the task's thread and the program
+hold the state itself.
+*/
 struct HandleState(Arc<ParallelState>);
 
 impl ParallelHandle {
@@ -301,16 +323,16 @@ impl Drop for HandleState {
     }
 }
 
-/// What the machines of a program's threads share.
+/** What the machines of a program's threads share. */
 #[derive(Default)]
 pub struct Program {
     threads: Lock<Vec<(Arc<ParallelState>, std::thread::JoinHandle<()>)>>,
-    /// Set by `os.exit` in any task, which ends the whole program.
+    /** Set by `os.exit` in any task, which ends the whole program. */
     exit: Lock<Option<i32>>,
     exiting: AtomicBool,
-    /// Failures of tasks nothing joined, from the threads' own tasks.
+    /** Failures of tasks nothing joined, from the threads' own tasks. */
     failures: Lock<Vec<ErrorValue>>,
-    /// The parallel tasks that have not finished.
+    /** The parallel tasks that have not finished. */
     pub(super) running: std::sync::atomic::AtomicUsize,
 }
 
@@ -330,8 +352,10 @@ impl Program {
     }
 }
 
-/// Joins every thread of a program when dropped, also when the machine
-/// that started them unwinds, so that no thread outlives what it borrows.
+/**
+Joins every thread of a program when dropped, also when the machine
+that started them unwinds, so that no thread outlives what it borrows.
+*/
 pub(super) struct JoinThreads(pub(super) Arc<Program>);
 
 impl Drop for JoinThreads {
@@ -349,8 +373,10 @@ impl Drop for JoinThreads {
 }
 
 impl<'m> Machine<'m> {
-    /// Starts a task on a thread of its own, running a function value with
-    /// copies of what it captured and of the program's constants.
+    /**
+    Starts a task on a thread of its own, running a function value with
+    copies of what it captured and of the program's constants.
+    */
     pub(super) fn spawn_parallel(&mut self, body: &Operand, span: Span) -> Progress {
         let (code, environment) = match self.take(body) {
             Value::Function(code, environment) => (code, *environment),
@@ -362,7 +388,7 @@ impl<'m> Machine<'m> {
             .iter()
             .map(|global| global.as_ref().map(Sent::new))
             .collect();
-        // The channels of this thread may go with what the task captured.
+        /* The channels of this thread may go with what the task captured. */
         self.cross_channels();
         let state = Arc::new(ParallelState::default());
         let shared = state.clone();
@@ -376,17 +402,19 @@ impl<'m> Machine<'m> {
             let mut machine = Machine::for_thread(module, sources, out, program, shared.clone());
             machine.globals = globals.into_iter().map(|g| g.map(Sent::take)).collect();
             let result = machine.run_thread(code, environment.take());
-            // The result may hold channels made on this thread.
+            /* The result may hold channels made on this thread. */
             machine.cross_channels();
             *lock(&shared.result) = Some(result.map(Sent::moved));
             machine.program.running.fetch_sub(1, Ordering::AcqRel);
             network::wake();
         };
-        // Counted before the thread can finish.
+        /* Counted before the thread can finish. */
         self.program.running.fetch_add(1, Ordering::AcqRel);
-        // SAFETY: the thread borrows the module, the sources, and the
-        // output of this machine's run, and every thread of the program is
-        // joined before that run returns (see `JoinThreads`).
+        /*
+        SAFETY: the thread borrows the module, the sources, and the
+        output of this machine's run, and every thread of the program is
+        joined before that run returns (see `JoinThreads`).
+        */
         let started = unsafe {
             std::thread::Builder::new()
                 .name("task".to_string())
@@ -409,8 +437,10 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Runs the function of a task on this machine's thread, then ends the
-    /// tasks it started here.
+    /**
+    Runs the function of a task on this machine's thread, then ends the
+    tasks it started here.
+    */
     fn run_thread(&mut self, code: FunctionId, environment: Value) -> Result<Value, ErrorValue> {
         let result = match self.new_frame(code, vec![SlotValue::Value(environment)]) {
             Ok(frame) => {
@@ -423,7 +453,7 @@ impl<'m> Machine<'m> {
             self.stop_fatally(message);
         }
         self.shutdown();
-        // What the end of the task and its tasks destroyed.
+        /* What the end of the task and its tasks destroyed. */
         if let Err(RunError::Fatal(message)) = self.run_finally() {
             self.stop_fatally(&message);
         }
@@ -449,16 +479,20 @@ impl<'m> Machine<'m> {
         }
     }
 
-    /// Ends the whole program at a fatal error on a task's own thread, as a
-    /// compiled program does.
+    /**
+    Ends the whole program at a fatal error on a task's own thread, as a
+    compiled program does.
+    */
     fn stop_fatally(&self, message: &str) -> ! {
         let _ = self.output().flush();
         eprintln!("fatal error: {message}");
         std::process::exit(3)
     }
 
-    /// The result of a parallel task, once it has one: its value, copied
-    /// for this thread, or its error.
+    /**
+    The result of a parallel task, once it has one: its value, copied
+    for this thread, or its error.
+    */
     pub(super) fn join_parallel(&mut self, state: &Arc<ParallelState>) -> Progress {
         let result = lock(&state.result).take();
         match result {
@@ -485,8 +519,10 @@ impl<'m> Machine<'m> {
         state.detached.store(true, Ordering::Relaxed);
     }
 
-    /// At the end of the program: cancels the tasks on other threads, waits
-    /// for every thread to finish, and gives the failures nothing joined.
+    /**
+    At the end of the program: cancels the tasks on other threads, waits
+    for every thread to finish, and gives the failures nothing joined.
+    */
     pub(super) fn finish_threads(&mut self) -> Vec<ErrorValue> {
         let states: Vec<Arc<ParallelState>> = lock(&self.program.threads)
             .iter()
@@ -502,7 +538,7 @@ impl<'m> Machine<'m> {
             let Some((state, handle)) = next else {
                 break;
             };
-            // Also a task started on another thread meanwhile.
+            /* Also a task started on another thread meanwhile. */
             state.cancel.store(true, Ordering::Relaxed);
             network::wake();
             let _ = handle.join();

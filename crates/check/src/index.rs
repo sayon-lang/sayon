@@ -1,8 +1,10 @@
-//! What the names of a program refer to, for editors (`sayon lsp`): each
-//! place a name is written, where it is declared and where it is used, with
-//! the symbol it means, and what each symbol is. The checker notes each name
-//! as it resolves it, so the index holds what it could resolve even when the
-//! program has errors.
+/*!
+What the names of a program refer to, for editors (`sayon lsp`): each
+place a name is written, where it is declared and where it is used, with
+the symbol it means, and what each symbol is. The checker notes each name
+as it resolves it, so the index holds what it could resolve even when the
+program has errors.
+*/
 
 use crate::checker::{Checker, Item, ModuleId, TypeSource, snake_case};
 use crate::hir::LocalKind;
@@ -20,12 +22,14 @@ pub enum SymbolKind {
     Type,
     Field,
     Variant,
-    /// An import's alias for a module.
+    /** An import's alias for a module. */
     Module,
 }
 
-/// Whose members follow a dot: a type's fields, variants, and methods, or a
-/// module's definitions.
+/**
+Whose members follow a dot: a type's fields, variants, and methods, or a
+module's definitions.
+*/
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Owner {
     Type(u32),
@@ -36,49 +40,61 @@ pub enum Owner {
 pub struct Symbol {
     pub name: String,
     pub kind: SymbolKind,
-    /// Where its name is declared.
+    /** Where its name is declared. */
     pub span: Span,
-    /// What it is, as a line of Sayon: a signature, or a name and its type.
+    /** What it is, as a line of Sayon: a signature, or a name and its type. */
     pub detail: String,
-    /// For a module's alias, the module's file, which going to its
-    /// definition opens.
+    /**
+    For a module's alias, the module's file, which going to its
+    definition opens.
+    */
     pub target: Option<FileId>,
-    /// What follows a dot after it: the members of its type, or of the
-    /// module it names.
+    /**
+    What follows a dot after it: the members of its type, or of the
+    module it names.
+    */
     pub members: Option<Owner>,
-    /// Declared by the standard library, so not to be renamed.
+    /** Declared by the standard library, so not to be renamed. */
     pub standard: bool,
-    /// What it is or gives, as Sayon writes the type: a value's type, a
-    /// function's result, or the type a structure or variant builds.
+    /**
+    What it is or gives, as Sayon writes the type: a value's type, a
+    function's result, or the type a structure or variant builds.
+    */
     pub ty: Option<String>,
-    /// What a call of it takes: a function's parameters, or the fields of
-    /// a structure or a variant it builds.
+    /**
+    What a call of it takes: a function's parameters, or the fields of
+    a structure or a variant it builds.
+    */
     pub params: Vec<Param>,
 }
 
-/// A parameter of a function, or a field a structure or variant is built
-/// with.
+/**
+A parameter of a function, or a field a structure or variant is built
+with.
+*/
 #[derive(Clone, Debug, PartialEq)]
 pub struct Param {
     pub name: String,
     pub ty: String,
-    /// Whether a call can leave it out.
+    /** Whether a call can leave it out. */
     pub default: bool,
-    /// `update` or `own`, when written.
+    /** `update` or `own`, when written. */
     pub mode: Option<&'static str>,
-    /// The type whose members a value of it has, for what is passed.
+    /** The type whose members a value of it has, for what is passed. */
     pub owner: Option<Owner>,
 }
 
-/// A name as written: its span, and the symbol it means.
+/** A name as written: its span, and the symbol it means. */
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Reference {
     pub span: Span,
     pub symbol: usize,
 }
 
-/// The local variables of a function body, for completion: `body` is the
-/// body's span, or nothing for a script's top level.
+/**
+The local variables of a function body, for completion: `body` is the
+body's span, or nothing for a script's top level.
+*/
 #[derive(Clone, Debug)]
 pub struct LocalScope {
     pub file: FileId,
@@ -90,18 +106,24 @@ pub struct LocalScope {
 pub struct Index {
     pub symbols: Vec<Symbol>,
     pub references: Vec<Reference>,
-    /// The members of each type and module, with the names a dot writes
-    /// them by: a method by its name without its type's prefix.
+    /**
+    The members of each type and module, with the names a dot writes
+    them by: a method by its name without its type's prefix.
+    */
     pub members: HashMap<Owner, Vec<(String, usize)>>,
-    /// What each module's own code names without a dot: its definitions
-    /// and the aliases of its imports.
+    /**
+    What each module's own code names without a dot: its definitions
+    and the aliases of its imports.
+    */
     pub scopes: HashMap<FileId, Vec<usize>>,
     pub locals: Vec<LocalScope>,
 }
 
 impl Index {
-    /// The name written at `offset` of `file`, if any: the reference whose
-    /// span holds it, or ends at it.
+    /**
+    The name written at `offset` of `file`, if any: the reference whose
+    span holds it, or ends at it.
+    */
     pub fn at(&self, file: FileId, offset: u32) -> Option<Reference> {
         self.references
             .iter()
@@ -110,7 +132,7 @@ impl Index {
             .copied()
     }
 
-    /// Every place the symbol's name is written, its declaration first.
+    /** Every place the symbol's name is written, its declaration first. */
     pub fn references_to(&self, symbol: usize) -> Vec<Span> {
         let declared = self.symbols[symbol].span;
         let mut spans: Vec<Span> = self
@@ -125,27 +147,27 @@ impl Index {
     }
 }
 
-/// What a name the checker resolved refers to.
+/** What a name the checker resolved refers to. */
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Noted {
-    /// A local, by its declaration's span.
+    /** A local, by its declaration's span. */
     Local(Span),
     Item(Item),
     Field(TypeId, usize),
     Variant(TypeId, u32),
-    /// An import alias of a module.
+    /** An import alias of a module. */
     Alias(ModuleId, String),
 }
 
 impl<'a> Checker<'a> {
-    /// Remembers what the name at `span` refers to, when indexing.
+    /** Remembers what the name at `span` refers to, when indexing. */
     pub(crate) fn note(&mut self, span: Span, noted: Noted) {
         if self.indexing {
             self.noted.push((span, noted));
         }
     }
 
-    /// Notes `alias` as a use of an import of `module`, when it is one.
+    /** Notes `alias` as a use of an import of `module`, when it is one. */
     pub(crate) fn note_alias(&mut self, module: ModuleId, alias: &ast::Ident) {
         if self.indexing && self.import(module, &alias.name).is_some() {
             self.note(alias.span, Noted::Alias(module, alias.name.clone()));
@@ -304,7 +326,7 @@ impl<'a> Checker<'a> {
             .collect()
     }
 
-    /// What a call of a definition takes, and what it is or gives.
+    /** What a call of a definition takes, and what it is or gives. */
     fn item_shape(&self, item: Item) -> (Vec<Param>, Option<String>) {
         match item {
             Item::Function(id) => {
@@ -379,7 +401,7 @@ impl<'a> Checker<'a> {
             .is_some_and(|m| m.standard)
     }
 
-    /// Gathers the index from what the checker noted and declared.
+    /** Gathers the index from what the checker noted and declared. */
     pub(crate) fn build_index(&self) -> Index {
         let mut index = Index::default();
         let mut keys: HashMap<Noted, usize> = HashMap::new();
@@ -394,7 +416,7 @@ impl<'a> Checker<'a> {
                 index.symbols.len() - 1
             })
         }
-        // The definitions of each module, and their members.
+        /* The definitions of each module, and their members. */
         for (module_index, module) in self.modules.iter().enumerate() {
             let module_id = ModuleId(module_index as u32);
             let mut scope = Vec::new();
@@ -420,7 +442,7 @@ impl<'a> Checker<'a> {
                         .ty
                         .as_ref()
                         .and_then(|ty| self.owner_of(ty)),
-                    // An enum's variants follow a dot after it.
+                    /* An enum's variants follow a dot after it. */
                     Item::Type(id) => Some(Owner::Type(id.0)),
                     _ => None,
                 };
@@ -473,7 +495,7 @@ impl<'a> Checker<'a> {
                 .members
                 .insert(Owner::Module(module_index as u32), public);
         }
-        // Each type's fields, variants, and methods.
+        /* Each type's fields, variants, and methods. */
         for (id, entry) in self.types.iter().enumerate() {
             let type_id = TypeId(id as u32);
             let standard = self.module_standard(entry.module);
@@ -557,7 +579,7 @@ impl<'a> Checker<'a> {
                 }
                 TypeSource::Outcome => {}
             }
-            // Methods: the functions of the type's module that take it first.
+            /* Methods: the functions of the type's module that take it first. */
             let prefix = format!("{}_", snake_case(&entry.name));
             if let Some(module) = self.modules.get(entry.module.0 as usize) {
                 for (name, item) in &module.items {
@@ -573,7 +595,7 @@ impl<'a> Checker<'a> {
             members.sort_by(|a, b| a.0.cmp(&b.0));
             index.members.insert(Owner::Type(id as u32), members);
         }
-        // The locals of each function body, the script's among them.
+        /* The locals of each function body, the script's among them. */
         for entry in &self.functions {
             let Some(function) = &entry.hir else {
                 continue;
@@ -618,7 +640,7 @@ impl<'a> Checker<'a> {
                 locals,
             });
         }
-        // Every name as written, declarations among them.
+        /* Every name as written, declarations among them. */
         let mut seen: HashSet<Reference> = HashSet::new();
         for (symbol_index, symbol) in index.symbols.iter().enumerate() {
             seen.insert(Reference {
@@ -644,7 +666,7 @@ impl<'a> Checker<'a> {
         index
     }
 
-    /// The type whose members follow a dot after a value of `ty`.
+    /** The type whose members follow a dot after a value of `ty`. */
     fn owner_of(&self, ty: &Type) -> Option<Owner> {
         match self.unifier.resolve(ty) {
             Type::Named(named) => Some(Owner::Type(named.id.0)),
@@ -658,7 +680,7 @@ mod tests {
     use super::*;
     use crate::ModuleSource;
 
-    /// The index of a one-file program.
+    /** The index of a one-file program. */
     fn index_of(text: &str) -> Index {
         let parsed = sayon_syntax::parser::parse_source(FileId(0), text);
         let source = ModuleSource {
@@ -674,7 +696,7 @@ mod tests {
             .expect("an index")
     }
 
-    /// The symbol written at the `nth` place `needle` is, counting from 0.
+    /** The symbol written at the `nth` place `needle` is, counting from 0. */
     fn symbol<'i>(index: &'i Index, text: &str, needle: &str, nth: usize) -> &'i Symbol {
         let offset = text
             .match_indices(needle)
@@ -711,7 +733,7 @@ missing(start)
         let x = symbol(&index, PROGRAM, "x * p", 0);
         assert_eq!(x.kind, SymbolKind::Field);
         assert_eq!(x.detail, "Point.x: integer");
-        // The field as declared, as read, and as structures are built.
+        /* The field as declared, as read, and as structures are built. */
         let field = index
             .at(FileId(0), PROGRAM.find("x:").unwrap() as u32)
             .unwrap()
@@ -719,7 +741,7 @@ missing(start)
         assert_eq!(index.references_to(field).len(), 7);
         let norm = symbol(&index, PROGRAM, "norm(start)", 0);
         assert_eq!(norm.detail, "function norm(p: Point) -> integer");
-        // A method call names the function it calls.
+        /* A method call names the function it calls. */
         let twice = symbol(&index, PROGRAM, "twice()", 0);
         assert_eq!(
             (twice.name.as_str(), twice.kind),
@@ -732,11 +754,11 @@ missing(start)
             .iter()
             .map(|(name, _)| name.as_str())
             .collect();
-        // `norm` takes a `Point` first, so it is a method too.
+        /* `norm` takes a `Point` first, so it is a method too. */
         assert_eq!(members, vec!["norm", "twice", "x", "y"]);
     }
 
-    /// The type whose members are the fields `x` and `y`.
+    /** The type whose members are the fields `x` and `y`. */
     fn point_type(index: &Index) -> u32 {
         index
             .members

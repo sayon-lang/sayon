@@ -1,4 +1,4 @@
-//! Expression checking: name resolution, inference, and HIR construction.
+/*! Expression checking: name resolution, inference, and HIR construction. */
 
 use crate::builtins::{self, PreludeItem};
 use crate::checker::{self, Checker, Deferred, FAILURE, FnCtx, Item, Narrowing, OUTCOME};
@@ -13,8 +13,10 @@ fn expr(kind: ExprKind, ty: Type, span: Span) -> hir::Expr {
 }
 
 impl<'a> Checker<'a> {
-    /// Checks an expression against an expected type, inserting union
-    /// injections where a member value is used as a union.
+    /**
+    Checks an expression against an expected type, inserting union
+    injections where a member value is used as a union.
+    */
     pub fn check_expr_as(
         &mut self,
         cx: &mut FnCtx,
@@ -23,8 +25,10 @@ impl<'a> Checker<'a> {
         context: &str,
     ) -> hir::Expr {
         let value = self.check_expr(cx, ast, Some(expected));
-        // An expected type that was already reported leaves the value's
-        // own unknowns unknown too, rather than impossible to infer.
+        /*
+        An expected type that was already reported leaves the value's
+        own unknowns unknown too, rather than impossible to infer.
+        */
         if let Type::Unknown = self.unifier.shallow(expected) {
             let mut free = Vec::new();
             self.unifier.free_vars(&value.ty, &mut free);
@@ -48,7 +52,7 @@ impl<'a> Checker<'a> {
         let found = self.unifier.shallow(&value.ty);
         if let Type::Union(members) = &target {
             if !matches!(found, Type::Union(_)) {
-                // A literal variable adopts the one union member it can be.
+                /* A literal variable adopts the one union member it can be. */
                 if let Type::Var(var) = found {
                     if let Some(kind) = self.unifier.bounds(var).literal {
                         let candidates: Vec<&Type> = members
@@ -82,8 +86,10 @@ impl<'a> Checker<'a> {
                 {
                     return self.inject(value, target.clone());
                 }
-                // A value with unresolved parts, such as a collection literal,
-                // matches the one union member of the same shape.
+                /*
+                A value with unresolved parts, such as a collection literal,
+                matches the one union member of the same shape.
+                */
                 let same_shape: Vec<&Type> = members
                     .iter()
                     .filter(|member| match (member, &found) {
@@ -180,7 +186,7 @@ impl<'a> Checker<'a> {
             ast::ExprKind::Unary { op, operand } => self.check_unary(cx, *op, operand, span),
             ast::ExprKind::Binary { op, lhs, rhs } => self.check_binary(cx, *op, lhs, rhs, span),
             ast::ExprKind::TryExpr(inner) => {
-                // `result: Outcome<T> = try ...` gives the value the type T.
+                /* `result: Outcome<T> = try ...` gives the value the type T. */
                 let inside = expected.and_then(|e| match self.unifier.resolve(e) {
                     Type::Named(named) if named.id == OUTCOME => named.args.first().cloned(),
                     _ => None,
@@ -217,7 +223,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// `value is error`, on an `Outcome` or a union that can hold an `Error`.
+    /** `value is error`, on an `Outcome` or a union that can hold an `Error`. */
     fn check_is_error(&mut self, cx: &mut FnCtx, inner: &ast::Expr, span: Span) -> hir::Expr {
         let value = self.check_expr(cx, inner, None);
         let test = |kind| expr(kind, Type::Boolean, span);
@@ -488,7 +494,7 @@ impl<'a> Checker<'a> {
             .map(|item| self.check_expr(cx, item, None))
             .collect();
         if let Some(union) = self.heterogeneous_element_type(&values) {
-            // A heterogeneous array infers the union of its element types.
+            /* A heterogeneous array infers the union of its element types. */
             values = values
                 .into_iter()
                 .map(|value| self.coerce(value, &union, "array element"))
@@ -507,8 +513,10 @@ impl<'a> Checker<'a> {
         expr(ExprKind::Array(values), Type::array(element), span)
     }
 
-    /// The union type of an array literal whose elements have different
-    /// types, or `None` when the elements should simply share one type.
+    /**
+    The union type of an array literal whose elements have different
+    types, or `None` when the elements should simply share one type.
+    */
     fn heterogeneous_element_type(&mut self, values: &[hir::Expr]) -> Option<Type> {
         let resolved: Vec<Type> = values.iter().map(|v| self.unifier.resolve(&v.ty)).collect();
         let concrete: Vec<Type> = resolved
@@ -525,7 +533,7 @@ impl<'a> Checker<'a> {
                 members.push(ty.clone());
                 continue;
             }
-            // Only literal variables can join a union; anything else unifies.
+            /* Only literal variables can join a union; anything else unifies. */
             let Type::Var(var) = ty else { return None };
             let kind = self.unifier.bounds(*var).literal?;
             let fits = |candidate: &&Type| match (kind, *candidate) {
@@ -596,13 +604,15 @@ impl<'a> Checker<'a> {
         )
     }
 
-    /// The element type produced by indexing `target`, deferring the decision
-    /// while the target's type is unknown.
+    /**
+    The element type produced by indexing `target`, deferring the decision
+    while the target's type is unknown.
+    */
     pub fn index_type(&mut self, target: &Type, index: &hir::Expr, span: Span) -> Type {
         match self.unifier.shallow(target) {
             Type::Array(element) | Type::View(element, _) => *element,
             Type::Dict(_, value) => *value,
-            // A string's character at a position, as a string.
+            /* A string's character at a position, as a string. */
             Type::String => Type::String,
             Type::Unknown => Type::Unknown,
             Type::Var(_) => {
@@ -696,7 +706,7 @@ impl<'a> Checker<'a> {
             UnaryOp::Negate => {
                 let value = self.check_expr(cx, operand, None);
                 if let ExprKind::Integer(literal) = value.kind {
-                    // The literal's range check reports `-1` for an unsigned type.
+                    /* The literal's range check reports `-1` for an unsigned type. */
                     return expr(ExprKind::Integer(-literal), value.ty, span);
                 }
                 self.require_traits(&value.ty, Traits::NEGATE, span, "cannot be negated");
@@ -814,7 +824,7 @@ impl<'a> Checker<'a> {
     }
 
     fn unify_operands(&mut self, left: &hir::Expr, right: &hir::Expr, op: BinaryOp) {
-        if let Err(error) = self.unifier.unify(&left.ty, &right.ty) {
+        if self.unifier.unify(&left.ty, &right.ty).is_err() {
             let l = self.unifier.resolve_for_display(&left.ty);
             let r = self.unifier.resolve_for_display(&right.ty);
             let mut diagnostic = Diagnostic::error(
@@ -845,7 +855,6 @@ impl<'a> Checker<'a> {
             if let Some(help) = help {
                 diagnostic = diagnostic.help(help);
             }
-            let _ = error;
             self.error(diagnostic);
         }
     }
@@ -861,7 +870,7 @@ impl<'a> Checker<'a> {
         let left = self.check_expr(cx, lhs, None);
         let right = self.check_expr(cx, rhs, None);
         let negate = op == BinaryOp::NotEqual;
-        // `value == nothing` tests the union tag.
+        /* `value == nothing` tests the union tag. */
         for (value, other) in [(&left, &right), (&right, &left)] {
             if matches!(other.kind, ExprKind::Nothing)
                 && let Type::Union(members) = self.unifier.shallow(&value.ty)
@@ -889,8 +898,10 @@ impl<'a> Checker<'a> {
                 };
             }
         }
-        // A union compared with one of its members is equal when it holds that
-        // member with an equal value; no union value is built for the member.
+        /*
+        A union compared with one of its members is equal when it holds that
+        member with an equal value; no union value is built for the member.
+        */
         let lt = self.unifier.shallow(&left.ty);
         let rt = self.unifier.shallow(&right.ty);
         match (&lt, &rt) {
@@ -919,8 +930,10 @@ impl<'a> Checker<'a> {
         )
     }
 
-    /// Checks that `value` has the type of one member of a union, letting a
-    /// literal adopt the member it can be.
+    /**
+    Checks that `value` has the type of one member of a union, letting a
+    literal adopt the member it can be.
+    */
     fn require_member(&mut self, members: &[Type], value: &hir::Expr, op: BinaryOp) {
         let found = self.unifier.shallow(&value.ty);
         if let Type::Var(var) = found {
@@ -967,7 +980,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    // ----- calls ----------------------------------------------------------------
+    /* ----- calls ---------------------------------------------------------------- */
 
     fn check_call(
         &mut self,
@@ -1016,7 +1029,7 @@ impl<'a> Checker<'a> {
                     return self.wrapper_method(cx, *kind, inner, value, name, args, span);
                 }
                 if let Type::Named(named) = &resolved {
-                    // A structure field holding a function value can be called.
+                    /* A structure field holding a function value can be called. */
                     let def = self.type_def(named.id);
                     if !def.is_enum() && def.field_index(&name.name).is_some() {
                         let field = self.check_field(cx, value, name, callee.span);
@@ -1066,7 +1079,7 @@ impl<'a> Checker<'a> {
             Some(Item::Foreign(id)) => {
                 return self.call_foreign(cx, id, name, generic_args, args, span);
             }
-            // A constant holding a function value can be called.
+            /* A constant holding a function value can be called. */
             Some(Item::Constant(_)) => {
                 if !generic_args.is_empty() {
                     self.error(
@@ -1089,8 +1102,10 @@ impl<'a> Checker<'a> {
         if name.name == "supports" && self.import(cx.module, "supports").is_none() {
             return self.check_supports(cx, args, span);
         }
-        // A variant of the expected enum comes before the prelude, so that an
-        // enum may have a variant called, for example, `error`.
+        /*
+        A variant of the expected enum comes before the prelude, so that an
+        enum may have a variant called, for example, `error`.
+        */
         if let Some((ty, variant)) = self.expected_variant(expected, &name.name) {
             let id = ty.as_named().expect("enum").id;
             return self.check_variant(cx, id, variant, Some(ty), name, Some(args), expected, span);
@@ -1167,8 +1182,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The module an expression names, when it is an import alias not hidden
-    /// by a local variable.
+    /**
+    The module an expression names, when it is an import alias not hidden
+    by a local variable.
+    */
     fn module_alias(&self, cx: &FnCtx, target: &ast::Expr) -> Option<checker::ModuleId> {
         match &target.kind {
             ast::ExprKind::Name(alias) if !self.is_local_name(cx, &alias.name) => {
@@ -1178,7 +1195,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The value of a module-level item used as an expression.
+    /** The value of a module-level item used as an expression. */
     fn item_value(&mut self, item: Item, span: Span) -> hir::Expr {
         match item {
             Item::Constant(id) => {
@@ -1219,7 +1236,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// A call of a C function declared in a `foreign` block.
+    /** A call of a C function declared in a `foreign` block. */
     fn call_foreign(
         &mut self,
         cx: &mut FnCtx,
@@ -1283,10 +1300,12 @@ impl<'a> Checker<'a> {
         )
     }
 
-    /// An argument after a variadic C function's parameters, as C passes
-    /// it: an integer narrower than `c_int` becomes a `c_int`, and a
-    /// `float32` a `float`. An integer literal is a `c_int`, as in C.
-    /// `raw_size<T>()` in `standard/memory`: the size of a C type.
+    /**
+    An argument after a variadic C function's parameters, as C passes
+    it: an integer narrower than `c_int` becomes a `c_int`, and a
+    `float32` a `float`. An integer literal is a `c_int`, as in C.
+    `raw_size<T>()` in `standard/memory`: the size of a C type.
+    */
     fn raw_size(
         &mut self,
         cx: &mut FnCtx,
@@ -1370,7 +1389,7 @@ impl<'a> Checker<'a> {
         )
     }
 
-    /// `Point(1.0, 2.0)`: structures need their field names.
+    /** `Point(1.0, 2.0)`: structures need their field names. */
     fn positional_construct(
         &mut self,
         cx: &mut FnCtx,
@@ -1491,16 +1510,20 @@ impl<'a> Checker<'a> {
         )
     }
 
-    /// Whether a function is `standard/threads`'s `spawn_parallel`, whose
-    /// argument is checked where it is called.
+    /**
+    Whether a function is `standard/threads`'s `spawn_parallel`, whose
+    argument is checked where it is called.
+    */
     fn is_parallel_spawn(&self, id: hir::FuncId) -> bool {
         let entry = &self.functions[id.0 as usize];
         entry.name == "spawn_parallel"
             && self.modules[entry.module.0 as usize].name == "standard/threads.sayon"
     }
 
-    /// A task on another thread takes its function's captures there, and
-    /// sends its result back: both must be able to cross.
+    /**
+    A task on another thread takes its function's captures there, and
+    sends its result back: both must be able to cross.
+    */
     fn check_parallel_body(&mut self, body: &hir::Expr, task: &Type) {
         let context = "a task on another thread takes what its function captured";
         match &body.kind {
@@ -1536,8 +1559,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// A `finally function` runs when its value is destroyed, and only then,
-    /// so that it runs once.
+    /**
+    A `finally function` runs when its value is destroyed, and only then,
+    so that it runs once.
+    */
     fn refuse_finally(&mut self, id: hir::FuncId, span: Span) {
         if !self.functions[id.0 as usize]
             .ast
@@ -1556,7 +1581,7 @@ impl<'a> Checker<'a> {
         );
     }
 
-    /// Requires unsafe code around a call of an `unsafe function`.
+    /** Requires unsafe code around a call of an `unsafe function`. */
     pub(crate) fn unsafe_call(&mut self, cx: &mut FnCtx, id: hir::FuncId, name: &ast::Ident) {
         if self.functions[id.0 as usize]
             .ast
@@ -1570,8 +1595,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// `value.name(args)`: a call of the method `name` of the value's type,
-    /// with the value as the first argument.
+    /**
+    `value.name(args)`: a call of the method `name` of the value's type,
+    with the value as the first argument.
+    */
     #[allow(clippy::too_many_arguments)]
     fn call_method(
         &mut self,
@@ -1606,7 +1633,7 @@ impl<'a> Checker<'a> {
             .map(|g| self.resolve_type(cx.module, g, &cx.generics))
             .collect();
         let (signature, params, type_args, ret) = self.instantiate(id, &explicit, span);
-        // The receiver is the first argument, so the counts leave it out.
+        /* The receiver is the first argument, so the counts leave it out. */
         let given = args.len() + 1;
         if given < signature.required || given > signature.params.len() {
             let (min, max) = (signature.required - 1, signature.params.len() - 1);
@@ -1640,7 +1667,7 @@ impl<'a> Checker<'a> {
         )
     }
 
-    /// The methods of `Shared`, `Weak`, and `Cell`.
+    /** The methods of `Shared`, `Weak`, and `Cell`. */
     #[allow(clippy::too_many_arguments)]
     fn wrapper_method(
         &mut self,
@@ -1719,7 +1746,7 @@ impl<'a> Checker<'a> {
         }
         let mut checked = vec![read(receiver)];
         if builtin == Builtin::MutexChange {
-            // The change gets the value for changes, under the lock.
+            /* The change gets the value for changes, under the lock. */
             let change_ty = Type::function(crate::types::FunctionType {
                 params: vec![(ParamMode::Update, inner.clone())],
                 ret: Type::Nothing,
@@ -1730,7 +1757,7 @@ impl<'a> Checker<'a> {
                 &change_ty,
                 "a function that changes the value",
             );
-            // Calling a function value borrows it for changes.
+            /* Calling a function value borrows it for changes. */
             checked.push(Arg {
                 expr: change,
                 mode: ParamMode::Update,
@@ -1774,8 +1801,10 @@ impl<'a> Checker<'a> {
                 .note(format!(
                     "`.{method}(...)` calls a function `{prefixed}` or `{method}` declared beside `{type_name}`, whose first parameter is a `{type_name}`"
                 ));
-                // A function of that name whose first parameter is not
-                // declared with the type.
+                /*
+                A function of that name whose first parameter is not
+                declared with the type.
+                */
                 let near = [prefixed.as_str(), method.as_str()]
                     .into_iter()
                     .find(|candidate| {
@@ -1980,8 +2009,10 @@ impl<'a> Checker<'a> {
                 let element = match self.unifier.resolve(&base.ty) {
                     Type::Array(element) => *element,
                     Type::View(element, base_mutable) if base_mutable || !mutable => *element,
-                    // `strings.byte_view`: the UTF-8 bytes of a string, which
-                    // cannot change.
+                    /*
+                    `strings.byte_view`: the UTF-8 bytes of a string, which
+                    cannot change.
+                    */
                     Type::String if standard && !mutable => Type::Int(crate::types::IntType::U8),
                     Type::Unknown => Type::Unknown,
                     Type::Var(_) => {
@@ -2030,7 +2061,7 @@ impl<'a> Checker<'a> {
                     Builtin::MakeMutex => Wrapper::Mutex,
                     _ => Wrapper::Cell,
                 };
-                // An expected `Cell<integer or nothing>` types `cell(nothing)`.
+                /* An expected `Cell<integer or nothing>` types `cell(nothing)`. */
                 let inner = expected.and_then(|ty| match self.unifier.resolve(ty) {
                     Type::Wrapper(found, inner) if found == kind => Some(*inner),
                     _ => None,
@@ -2182,7 +2213,7 @@ impl<'a> Checker<'a> {
                         Type::Nothing
                     }
                     Builtin::ChannelReceive => message,
-                    // The message, and the position of its channel.
+                    /* The message, and the position of its channel. */
                     Builtin::ChannelSelect => {
                         let position = self.check_expr_as(
                             cx,
@@ -2247,8 +2278,10 @@ impl<'a> Checker<'a> {
                 (vec![rest, read(count)], ty)
             }
             Builtin::Swap if args.len() == 4 => {
-                // `swap(a, i, b, j)`: an element of one array for an element
-                // of another of the same type.
+                /*
+                `swap(a, i, b, j)`: an element of one array for an element
+                of another of the same type.
+                */
                 let element = self.fresh_var(span);
                 let one = self.check_expr_as(
                     cx,
@@ -2326,7 +2359,7 @@ impl<'a> Checker<'a> {
                 let collection = self.check_expr(cx, &args[0], None);
                 let key = self.check_expr(cx, &args[1], None);
                 if let Type::Var(_) = self.unifier.shallow(&collection.ty) {
-                    // Unknown: an integer position means an array.
+                    /* Unknown: an integer position means an array. */
                     let integer = match self.unifier.shallow(&key.ty) {
                         Type::Int(_) => true,
                         Type::Var(var) => self.unifier.bounds(var).literal.is_some(),
@@ -2405,7 +2438,7 @@ impl<'a> Checker<'a> {
                     _ => "an open file has one owner; pass it with `update` instead",
                 };
                 self.require_traits(&value.ty, Traits::CLONE, args[0].span, context);
-                // Cloning a view copies the elements it shows into an array.
+                /* Cloning a view copies the elements it shows into an array. */
                 let ty = match self.unifier.resolve(&value.ty) {
                     Type::View(element, _) => Type::array(*element),
                     _ => value.ty.clone(),
@@ -2466,7 +2499,7 @@ impl<'a> Checker<'a> {
     }
 }
 
-/// The Sayon type of a value crossing the host boundary.
+/** The Sayon type of a value crossing the host boundary. */
 pub(crate) fn host_type(ty: sayon_runtime::host::HostType) -> Type {
     use sayon_runtime::host::HostType;
     match ty {

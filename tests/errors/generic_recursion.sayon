@@ -8,9 +8,11 @@ function ping<T>(value: T, n)
 function pong(value, n)
     ping(value, n)
 
-# What one function of a cycle requires of its type argument, the others
-# require too: `second` clones its items, so `first` can only take items
-# that can be cloned.
+##
+What one function of a cycle requires of its type argument, the others
+require too: `second` clones its items, so `first` can only take items
+that can be cloned.
+##
 function first<T>(items: Array<T>, count: integer) -> Array<T>
     if count == 0
         return []

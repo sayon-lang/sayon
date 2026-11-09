@@ -1,5 +1,7 @@
-// Sort: fill an array with pseudo-random integers and sort it with the
-// standard library's stable sort, as Sayon's sort is stable.
+/*
+Sort: fill an array with pseudo-random integers and sort it with the
+standard library's stable sort, as Sayon's sort is stable.
+*/
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>

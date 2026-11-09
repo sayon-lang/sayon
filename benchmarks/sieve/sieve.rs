@@ -1,5 +1,7 @@
-// Sieve: count the primes below a limit with the sieve of Eratosthenes,
-// one byte for each number. A long walk through memory in simple steps.
+/*
+Sieve: count the primes below a limit with the sieve of Eratosthenes,
+one byte for each number. A long walk through memory in simple steps.
+*/
 
 fn main() {
     let limit: usize = std::env::args().nth(1).and_then(|a| a.parse().ok()).unwrap_or(1000000);

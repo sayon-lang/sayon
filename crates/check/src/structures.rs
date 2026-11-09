@@ -1,5 +1,7 @@
-//! Structures and enums in expressions: construction, field access, and
-//! variant values.
+/*!
+Structures and enums in expressions: construction, field access, and
+variant values.
+*/
 
 use crate::checker::{Checker, FnCtx, Item, OUTCOME};
 use crate::hir::{self, ExprKind};
@@ -17,8 +19,10 @@ fn unknown(span: Span) -> hir::Expr {
 }
 
 impl<'a> Checker<'a> {
-    /// The declared type an expression names, such as `Point` or
-    /// `geometry.Point`, unless a local variable hides it.
+    /**
+    The declared type an expression names, such as `Point` or
+    `geometry.Point`, unless a local variable hides it.
+    */
     pub(crate) fn type_reference(&mut self, cx: &FnCtx, target: &ast::Expr) -> Option<TypeId> {
         match &target.kind {
             ast::ExprKind::Name(name) if !self.is_local_name(cx, &name.name) => {
@@ -46,7 +50,7 @@ impl<'a> Checker<'a> {
                 let Some(Item::Type(id)) = self.item(module, &name.name) else {
                     return None;
                 };
-                // Reports a private type; the reference still resolves.
+                /* Reports a private type; the reference still resolves. */
                 self.module_member(cx.module, module, name);
                 Some(id)
             }
@@ -54,7 +58,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Reports a declared type used where a value is needed.
+    /** Reports a declared type used where a value is needed. */
     pub(crate) fn type_as_value(&mut self, id: TypeId, span: Span) -> hir::Expr {
         let def = self.type_def(id);
         let name = def.name.clone();
@@ -89,7 +93,7 @@ impl<'a> Checker<'a> {
         unknown(span)
     }
 
-    /// `Point(x = 1.0, y = 2.0)`.
+    /** `Point(x = 1.0, y = 2.0)`. */
     pub(crate) fn check_construct(
         &mut self,
         cx: &mut FnCtx,
@@ -179,9 +183,11 @@ impl<'a> Checker<'a> {
         self.build_record(cx, ty, fields, span)
     }
 
-    /// `[x = 1.0, y = 2.0]`, whose structure comes from the expected type or,
-    /// failing that, from the one structure of the module with exactly these
-    /// fields.
+    /**
+    `[x = 1.0, y = 2.0]`, whose structure comes from the expected type or,
+    failing that, from the one structure of the module with exactly these
+    fields.
+    */
     pub(crate) fn check_record(
         &mut self,
         cx: &mut FnCtx,
@@ -190,8 +196,10 @@ impl<'a> Checker<'a> {
         span: Span,
     ) -> hir::Expr {
         let target = expected.map(|ty| self.unifier.resolve(ty));
-        // Where a dictionary is expected, `[north = 0]` has keys named by
-        // variables, constants, or variants.
+        /*
+        Where a dictionary is expected, `[north = 0]` has keys named by
+        variables, constants, or variants.
+        */
         if let Some(Type::Dict(..)) = &target {
             let entries: Vec<(ast::Expr, ast::Expr)> = fields
                 .iter()
@@ -261,8 +269,10 @@ impl<'a> Checker<'a> {
         unknown(span)
     }
 
-    /// The expected type, when it is (or is a union with exactly one member
-    /// that is) the named type `id`.
+    /**
+    The expected type, when it is (or is a union with exactly one member
+    that is) the named type `id`.
+    */
     fn expected_named(&self, expected: Option<&Type>, id: TypeId) -> Option<Type> {
         let resolved = self.unifier.resolve(expected?);
         let found: Vec<&Type> = resolved
@@ -348,7 +358,7 @@ impl<'a> Checker<'a> {
         expr(ExprKind::Record(values), ty, span)
     }
 
-    /// `value.name` on a structure (or a value whose type is not known yet).
+    /** `value.name` on a structure (or a value whose type is not known yet). */
     pub(crate) fn check_field(
         &mut self,
         cx: &mut FnCtx,
@@ -370,8 +380,10 @@ impl<'a> Checker<'a> {
         )
     }
 
-    /// Enums of `module` that have a variant called `name`; failing those,
-    /// the prelude's `Outcome` when it has one (`success` and `failure`).
+    /**
+    Enums of `module` that have a variant called `name`; failing those,
+    the prelude's `Outcome` when it has one (`success` and `failure`).
+    */
     pub(crate) fn enums_with_variant(
         &self,
         module: crate::ModuleId,
@@ -396,8 +408,10 @@ impl<'a> Checker<'a> {
             .collect()
     }
 
-    /// The enum type and variant an unqualified name refers to: a variant of
-    /// the expected enum, or the only variant of that name in the module.
+    /**
+    The enum type and variant an unqualified name refers to: a variant of
+    the expected enum, or the only variant of that name in the module.
+    */
     pub(crate) fn variant_for_name(
         &mut self,
         cx: &FnCtx,
@@ -414,8 +428,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// A variant of the expected enum (or of the one enum member of an
-    /// expected union that has it).
+    /**
+    A variant of the expected enum (or of the one enum member of an
+    expected union that has it).
+    */
     pub(crate) fn expected_variant(
         &self,
         expected: Option<&Type>,
@@ -439,7 +455,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Several enums of the module share a variant name.
+    /** Several enums of the module share a variant name. */
     pub(crate) fn ambiguous_variant(&mut self, cx: &FnCtx, name: &ast::Ident) -> bool {
         let candidates = self.enums_with_variant(cx.module, &name.name);
         if candidates.len() < 2 {
@@ -460,8 +476,10 @@ impl<'a> Checker<'a> {
         true
     }
 
-    /// A variant value: `point`, `circle(5.0)`, or `Shape.circle(5.0)`.
-    /// `args` is `None` when the variant is used without parentheses.
+    /**
+    A variant value: `point`, `circle(5.0)`, or `Shape.circle(5.0)`.
+    `args` is `None` when the variant is used without parentheses.
+    */
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn check_variant(
         &mut self,
@@ -558,7 +576,7 @@ impl<'a> Checker<'a> {
         )
     }
 
-    /// `Shape.circle` or `Shape.circle(...)` on an enum type reference.
+    /** `Shape.circle` or `Shape.circle(...)` on an enum type reference. */
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn qualified_variant(
         &mut self,

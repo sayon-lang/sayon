@@ -1,52 +1,55 @@
-//! TLS for connections, from the operating system: SChannel on Windows,
-//! OpenSSL on Linux and the other Unix systems that have it, loaded when
-//! first needed, and in Android apps the platform's `SSLEngine`. The
-//! system's certificate store decides which servers are trusted.
-//!
-//! A session never touches the socket. The connection gives it what has
-//! arrived, and sends what it puts out, so that the handshake and every
-//! read and write can wait for the socket like the rest of a connection's
-//! operations, and run again where they left off.
+/*!
+TLS for connections, from the operating system: SChannel on Windows,
+OpenSSL on Linux and the other Unix systems that have it, loaded when
+first needed, and in Android apps the platform's `SSLEngine`. The
+system's certificate store decides which servers are trusted.
+
+A session never touches the socket. The connection gives it what has
+arrived, and sends what it puts out, so that the handshake and every
+read and write can wait for the socket like the rest of a connection's
+operations, and run again where they left off.
+
+Each system's `platform` session answers in plain yes or no: its
+`handshake` gives true once the handshake is done, and its `decrypt` true
+once the other side has ended the session. A handshake the other side
+starts again is the system's own business.
+*/
 
 use crate::host::HostError;
 
-/// What a step of the handshake reached. A system without TLS, such as
-/// WASI, never starts a session, so never reaches either.
-#[cfg_attr(not(any(windows, unix)), allow(dead_code))]
+/** What a step of the handshake reached. */
 pub(crate) enum Step {
     Done,
-    /// The other side's next messages are needed.
+    /** The other side's next messages are needed. */
     NeedMore,
 }
 
-/// What decrypting what has arrived found.
+/** What decrypting what has arrived found. */
 pub(crate) enum Read {
-    /// Records decrypted so far; the rest of a record is still to come.
+    /** Records decrypted so far; the rest of a record is still to come. */
     More,
-    /// The other side ended the session.
+    /** The other side ended the session. */
     Closed,
 }
 
-/// The TLS session of a connection, as a client.
+/** The TLS session of a connection, as a client. */
 pub(crate) struct Session {
     inner: platform::Session,
-    /// What has arrived and is not decrypted yet.
+    /** What has arrived and is not decrypted yet. */
     pub(crate) incoming: Vec<u8>,
     established: bool,
-    /// The other side started a handshake again, which goes on before
-    /// anything more can be read.
-    handshaking_again: bool,
 }
 
 impl Session {
-    /// A session with the server named `server`, whose certificate must be
-    /// for that name.
+    /**
+    A session with the server named `server`, whose certificate must be
+    for that name.
+    */
     pub(crate) fn client(server: &str) -> Result<Session, HostError> {
         Ok(Session {
             inner: platform::Session::client(server)?,
             incoming: Vec::new(),
             established: false,
-            handshaking_again: false,
         })
     }
 
@@ -54,43 +57,36 @@ impl Session {
         self.established
     }
 
-    /// Goes on with the handshake as far as what has arrived allows,
-    /// putting the messages to send in `output`.
+    /**
+    Goes on with the handshake as far as what has arrived allows,
+    putting the messages to send in `output`.
+    */
     pub(crate) fn handshake(&mut self, output: &mut Vec<u8>) -> Result<Step, HostError> {
-        let step = self.inner.handshake(&mut self.incoming, output)?;
-        if let Step::Done = step {
-            self.established = true;
+        if !self.inner.handshake(&mut self.incoming, output)? {
+            return Ok(Step::NeedMore);
         }
-        Ok(step)
+        self.established = true;
+        Ok(Step::Done)
     }
 
-    /// Decrypts the whole records that have arrived into `plain`.
+    /** Decrypts the whole records that have arrived into `plain`. */
     pub(crate) fn decrypt(
         &mut self,
         plain: &mut Vec<u8>,
         output: &mut Vec<u8>,
     ) -> Result<Read, HostError> {
-        loop {
-            if self.handshaking_again {
-                match self.inner.handshake(&mut self.incoming, output)? {
-                    Step::Done => self.handshaking_again = false,
-                    Step::NeedMore => return Ok(Read::More),
-                }
-            }
-            match self.inner.decrypt(&mut self.incoming, plain, output)? {
-                platform::Decrypted::More => return Ok(Read::More),
-                platform::Decrypted::Closed => return Ok(Read::Closed),
-                platform::Decrypted::HandshakeAgain => self.handshaking_again = true,
-            }
+        if self.inner.decrypt(&mut self.incoming, plain, output)? {
+            return Ok(Read::Closed);
         }
+        Ok(Read::More)
     }
 
-    /// Encrypts `bytes` into records in `output`.
+    /** Encrypts `bytes` into records in `output`. */
     pub(crate) fn encrypt(&mut self, bytes: &[u8], output: &mut Vec<u8>) -> Result<(), HostError> {
         self.inner.encrypt(bytes, output)
     }
 
-    /// Puts the message that ends the session in `output`.
+    /** Puts the message that ends the session in `output`. */
     pub(crate) fn close(&mut self, output: &mut Vec<u8>) {
         if self.established {
             self.inner.close(output);
@@ -101,13 +97,12 @@ impl Session {
 
 #[cfg(windows)]
 mod platform {
-    use super::Step;
     use crate::host::HostError;
     use std::ffi::c_void;
     use std::ptr::{null, null_mut};
     use std::sync::OnceLock;
 
-    /// A credential or context handle.
+    /** A credential or context handle. */
     #[repr(C)]
     #[derive(Clone, Copy, Default)]
     struct Handle {
@@ -139,7 +134,7 @@ mod platform {
         block: u32,
     }
 
-    /// `SCHANNEL_CRED`.
+    /** `SCHANNEL_CRED`. */
     #[repr(C)]
     struct Credentials {
         version: u32,
@@ -228,7 +223,7 @@ mod platform {
     type Decrypt = unsafe extern "system" fn(*mut Handle, *mut Buffers, u32, *mut u32) -> i32;
     type Control = unsafe extern "system" fn(*mut Handle, *mut Buffers) -> i32;
 
-    /// The functions of SChannel's interface (SSPI).
+    /** The functions of SChannel's interface (SSPI). */
     struct Sspi {
         acquire: Acquire,
         initialize: Initialize,
@@ -251,8 +246,10 @@ mod platform {
         static SSPI: OnceLock<Option<Sspi>> = OnceLock::new();
         SSPI.get_or_init(|| {
             let name: Vec<u16> = "secur32.dll".encode_utf16().chain(Some(0)).collect();
-            // SAFETY: a NUL-terminated name; each symbol, when found, has
-            // the type of SSPI's function of that name.
+            /*
+            SAFETY: a NUL-terminated name; each symbol, when found, has
+            the type of SSPI's function of that name.
+            */
             unsafe {
                 let module = LoadLibraryW(name.as_ptr());
                 if module.is_null() {
@@ -299,21 +296,18 @@ mod platform {
         })
     }
 
-    pub(super) enum Decrypted {
-        More,
-        Closed,
-        /// The other side starts a handshake again; its messages are in
-        /// what arrived.
-        HandshakeAgain,
-    }
-
     pub(super) struct Session {
         credentials: Handle,
         context: Option<Handle>,
-        /// The server's name, for its certificate, NUL-terminated.
+        /** The server's name, for its certificate, NUL-terminated. */
         target: Vec<u16>,
         name: String,
         sizes: Sizes,
+        /**
+        The other side started a handshake again, which goes on before
+        anything more can be read.
+        */
+        handshaking_again: bool,
     }
 
     impl Session {
@@ -342,8 +336,10 @@ mod platform {
                 .encode_utf16()
                 .chain(Some(0))
                 .collect();
-            // SAFETY: the settings and handle outlive the call, which reads
-            // and writes nothing else.
+            /*
+            SAFETY: the settings and handle outlive the call, which reads
+            and writes nothing else.
+            */
             let status = unsafe {
                 (sspi.acquire)(
                     null(),
@@ -366,21 +362,24 @@ mod platform {
                 target: server.encode_utf16().chain(Some(0)).collect(),
                 name: server.to_string(),
                 sizes: Sizes::default(),
+                handshaking_again: false,
             })
         }
 
-        /// Gives SChannel what has arrived, and takes the messages it has
-        /// to send, until the handshake is done or needs more.
+        /**
+        Gives SChannel what has arrived, and takes the messages it has
+        to send, until the handshake is done (true) or needs more.
+        */
         pub(super) fn handshake(
             &mut self,
             incoming: &mut Vec<u8>,
             output: &mut Vec<u8>,
-        ) -> Result<Step, HostError> {
+        ) -> Result<bool, HostError> {
             let sspi = sspi()?;
             loop {
                 let first = self.context.is_none();
                 if !first && incoming.is_empty() {
-                    return Ok(Step::NeedMore);
+                    return Ok(false);
                 }
                 let mut input = [
                     Buffer {
@@ -418,8 +417,10 @@ mod platform {
                 };
                 let mut context = self.context.unwrap_or_default();
                 let mut attributes = 0u32;
-                // SAFETY: every buffer and handle outlives the call; SChannel
-                // reads `incoming` in place and allocates what it puts out.
+                /*
+                SAFETY: every buffer and handle outlives the call; SChannel
+                reads `incoming` in place and allocates what it puts out.
+                */
                 let status = unsafe {
                     (sspi.initialize)(
                         &mut self.credentials,
@@ -441,15 +442,17 @@ mod platform {
                 }
                 take_tokens(sspi, &out, output);
                 if status == SEC_E_INCOMPLETE_MESSAGE {
-                    return Ok(Step::NeedMore);
+                    return Ok(false);
                 }
                 if !first {
                     keep_extra(incoming, &input[1]);
                 }
                 match status {
                     SEC_E_OK => {
-                        // SAFETY: an established context, and room for the
-                        // sizes.
+                        /*
+                        SAFETY: an established context, and room for the
+                        sizes.
+                        */
                         let status = unsafe {
                             (sspi.query)(
                                 self.context.as_mut().expect("a context"),
@@ -460,7 +463,7 @@ mod platform {
                         if status != SEC_E_OK {
                             return Err(failure(status, &self.name));
                         }
-                        return Ok(Step::Done);
+                        return Ok(true);
                     }
                     SEC_I_CONTINUE_NEEDED => {}
                     SEC_I_INCOMPLETE_CREDENTIALS => {
@@ -477,16 +480,27 @@ mod platform {
             }
         }
 
+        /**
+        Decrypts the whole records that have arrived into `plain`: true
+        once the other side has ended the session. A handshake the other
+        side starts again goes on first.
+        */
         pub(super) fn decrypt(
             &mut self,
             incoming: &mut Vec<u8>,
             plain: &mut Vec<u8>,
-            _output: &mut Vec<u8>,
-        ) -> Result<Decrypted, HostError> {
+            output: &mut Vec<u8>,
+        ) -> Result<bool, HostError> {
             let sspi = sspi()?;
             loop {
+                if self.handshaking_again {
+                    if !self.handshake(incoming, output)? {
+                        return Ok(false);
+                    }
+                    self.handshaking_again = false;
+                }
                 if incoming.is_empty() {
-                    return Ok(Decrypted::More);
+                    return Ok(false);
                 }
                 let mut buffers = [
                     Buffer {
@@ -503,8 +517,10 @@ mod platform {
                     count: 4,
                     buffers: buffers.as_mut_ptr(),
                 };
-                // SAFETY: an established context; SChannel decrypts in place
-                // and points the buffers into `incoming`.
+                /*
+                SAFETY: an established context; SChannel decrypts in place
+                and points the buffers into `incoming`.
+                */
                 let status = unsafe {
                     (sspi.decrypt)(
                         self.context.as_mut().expect("a context"),
@@ -514,15 +530,17 @@ mod platform {
                     )
                 };
                 match status {
-                    SEC_E_INCOMPLETE_MESSAGE => return Ok(Decrypted::More),
+                    SEC_E_INCOMPLETE_MESSAGE => return Ok(false),
                     SEC_E_OK | SEC_I_RENEGOTIATE | SEC_I_CONTEXT_EXPIRED => {
                         let mut extra = Vec::new();
                         for buffer in &buffers {
                             if buffer.size == 0 || buffer.data.is_null() {
                                 continue;
                             }
-                            // SAFETY: SChannel points the buffers into
-                            // `incoming`, which is still whole.
+                            /*
+                            SAFETY: SChannel points the buffers into
+                            `incoming`, which is still whole.
+                            */
                             let bytes = unsafe {
                                 std::slice::from_raw_parts(
                                     buffer.data as *const u8,
@@ -530,9 +548,11 @@ mod platform {
                                 )
                             };
                             match buffer.kind {
-                                // Only a record that decrypted holds data:
-                                // the one that ends the session is left as
-                                // it came.
+                                /*
+                                Only a record that decrypted holds data:
+                                the one that ends the session is left as
+                                it came.
+                                */
                                 SECBUFFER_DATA if status == SEC_E_OK => {
                                     plain.extend_from_slice(bytes)
                                 }
@@ -542,8 +562,9 @@ mod platform {
                         }
                         *incoming = extra;
                         match status {
-                            SEC_I_CONTEXT_EXPIRED => return Ok(Decrypted::Closed),
-                            SEC_I_RENEGOTIATE => return Ok(Decrypted::HandshakeAgain),
+                            SEC_I_CONTEXT_EXPIRED => return Ok(true),
+                            /* Its messages are in what arrived. */
+                            SEC_I_RENEGOTIATE => self.handshaking_again = true,
                             _ => {}
                         }
                     }
@@ -565,7 +586,7 @@ mod platform {
                 let mut message = vec![0u8; header + chunk.len() + trailer];
                 message[header..header + chunk.len()].copy_from_slice(chunk);
                 let base = message.as_mut_ptr();
-                // SAFETY: the three parts lie within `message`.
+                /* SAFETY: the three parts lie within `message`. */
                 let mut buffers = unsafe {
                     [
                         Buffer {
@@ -591,8 +612,10 @@ mod platform {
                     count: 4,
                     buffers: buffers.as_mut_ptr(),
                 };
-                // SAFETY: an established context, encrypting `message` in
-                // place.
+                /*
+                SAFETY: an established context, encrypting `message` in
+                place.
+                */
                 let status = unsafe {
                     (sspi.encrypt)(self.context.as_mut().expect("a context"), 0, &mut list, 0)
                 };
@@ -605,7 +628,7 @@ mod platform {
             Ok(())
         }
 
-        /// The message that tells the other side the session ends.
+        /** The message that tells the other side the session ends. */
         pub(super) fn close(&mut self, output: &mut Vec<u8>) {
             let Ok(sspi) = sspi() else {
                 return;
@@ -624,8 +647,10 @@ mod platform {
                 count: 1,
                 buffers: token.as_mut_ptr(),
             };
-            // SAFETY: an established context and a token that outlives the
-            // call.
+            /*
+            SAFETY: an established context and a token that outlives the
+            call.
+            */
             if unsafe { (sspi.control)(context, &mut list) } != SEC_E_OK {
                 return;
             }
@@ -641,7 +666,7 @@ mod platform {
             };
             let mut attributes = 0u32;
             let mut next = *context;
-            // SAFETY: as in the handshake, with no input.
+            /* SAFETY: as in the handshake, with no input. */
             unsafe {
                 (sspi.initialize)(
                     &mut self.credentials,
@@ -665,7 +690,7 @@ mod platform {
     impl Drop for Session {
         fn drop(&mut self) {
             if let Ok(sspi) = sspi() {
-                // SAFETY: handles of this session, released once.
+                /* SAFETY: handles of this session, released once. */
                 unsafe {
                     if let Some(context) = self.context.as_mut() {
                         (sspi.delete_context)(context);
@@ -684,26 +709,28 @@ mod platform {
         }
     }
 
-    /// Moves the messages SChannel put out into `output`, and frees them.
+    /** Moves the messages SChannel put out into `output`, and frees them. */
     fn take_tokens(sspi: &Sspi, buffers: &[Buffer], output: &mut Vec<u8>) {
         for buffer in buffers {
             if buffer.data.is_null() {
                 continue;
             }
             if buffer.size > 0 && buffer.kind == SECBUFFER_TOKEN {
-                // SAFETY: a buffer SChannel allocated, of that size.
+                /* SAFETY: a buffer SChannel allocated, of that size. */
                 let bytes = unsafe {
                     std::slice::from_raw_parts(buffer.data as *const u8, buffer.size as usize)
                 };
                 output.extend_from_slice(bytes);
             }
-            // SAFETY: allocated by SChannel for this call.
+            /* SAFETY: allocated by SChannel for this call. */
             unsafe { (sspi.free_buffer)(buffer.data) };
         }
     }
 
-    /// Keeps what SChannel left unread of what arrived: the start of the
-    /// next messages.
+    /**
+    Keeps what SChannel left unread of what arrived: the start of the
+    next messages.
+    */
     fn keep_extra(incoming: &mut Vec<u8>, extra: &Buffer) {
         if extra.kind == SECBUFFER_EXTRA && extra.size > 0 {
             let start = incoming.len() - extra.size as usize;
@@ -733,15 +760,16 @@ mod platform {
 
 #[cfg(all(unix, not(target_os = "android")))]
 mod platform {
-    use super::Step;
     use crate::host::HostError;
     use std::ffi::{CStr, CString, c_char, c_int, c_long, c_void};
     use std::sync::OnceLock;
 
     type Pointer = *mut c_void;
 
-    /// The functions of OpenSSL's interface, from libssl and the libcrypto
-    /// it brings.
+    /**
+    The functions of OpenSSL's interface, from libssl and the libcrypto
+    it brings.
+    */
     struct OpenSsl {
         method: unsafe extern "C" fn() -> Pointer,
         context_new: unsafe extern "C" fn(Pointer) -> Pointer,
@@ -771,8 +799,10 @@ mod platform {
         clear_errors: unsafe extern "C" fn(),
     }
 
-    // SAFETY: the table holds addresses of functions, which any thread may
-    // call.
+    /*
+    SAFETY: the table holds addresses of functions, which any thread may
+    call.
+    */
     unsafe impl Send for OpenSsl {}
     unsafe impl Sync for OpenSsl {}
 
@@ -789,15 +819,19 @@ mod platform {
         fn dlsym(handle: Pointer, name: *const c_char) -> Pointer;
     }
 
-    // Each symbol becomes the function type of the field it fills, which
-    // the table's declaration names.
+    /*
+    Each symbol becomes the function type of the field it fills, which
+    the table's declaration names.
+    */
     #[allow(clippy::missing_transmute_annotations)]
     fn openssl() -> Result<&'static OpenSsl, HostError> {
         static OPENSSL: OnceLock<Option<OpenSsl>> = OnceLock::new();
         OPENSSL
             .get_or_init(|| {
-                // SAFETY: NUL-terminated names; each symbol, when found, has
-                // the type of OpenSSL's function of that name.
+                /*
+                SAFETY: NUL-terminated names; each symbol, when found, has
+                the type of OpenSSL's function of that name.
+                */
                 unsafe {
                     let library = [
                         "libssl.so.3",
@@ -860,16 +894,11 @@ mod platform {
             })
     }
 
-    pub(super) enum Decrypted {
-        More,
-        Closed,
-        /// OpenSSL takes a new handshake in its stride, inside its reads.
-        #[allow(dead_code)]
-        HandshakeAgain,
-    }
-
-    /// An OpenSSL session over two memory buffers: what arrived goes into
-    /// one, and what to send comes out of the other.
+    /**
+    An OpenSSL session over two memory buffers: what arrived goes into
+    one, and what to send comes out of the other. OpenSSL takes a new
+    handshake in its stride, inside its reads.
+    */
     pub(super) struct Session {
         context: Pointer,
         ssl: Pointer,
@@ -878,8 +907,10 @@ mod platform {
         name: String,
     }
 
-    // SAFETY: a session is used by one thread at a time, inside its
-    // connection's entry of the stream table.
+    /*
+    SAFETY: a session is used by one thread at a time, inside its
+    connection's entry of the stream table.
+    */
     unsafe impl Send for Session {}
 
     impl Session {
@@ -887,7 +918,7 @@ mod platform {
             let ssl_lib = openssl()?;
             let name = CString::new(server)
                 .map_err(|_| ("TlsError", format!("{server} is not a server's name")))?;
-            // SAFETY: OpenSSL's documented calls, on objects made here.
+            /* SAFETY: OpenSSL's documented calls, on objects made here. */
             unsafe {
                 (ssl_lib.clear_errors)();
                 let context = (ssl_lib.context_new)((ssl_lib.method)());
@@ -901,8 +932,10 @@ mod platform {
                     (ssl_lib.context_free)(context);
                     return Err(failure(ssl_lib, server, "TLS could not start"));
                 }
-                // The name the certificate must be for; a numeric address
-                // is checked as one, and is not sent as a name.
+                /*
+                The name the certificate must be for; a numeric address
+                is checked as one, and is not sent as a name.
+                */
                 if server.parse::<std::net::IpAddr>().is_ok() {
                     (ssl_lib.set_ip)((ssl_lib.parameters)(ssl), name.as_ptr());
                 } else {
@@ -928,12 +961,12 @@ mod platform {
             }
         }
 
-        /// Gives OpenSSL what has arrived.
+        /** Gives OpenSSL what has arrived. */
         fn feed(&mut self, ssl_lib: &OpenSsl, incoming: &mut Vec<u8>) {
             let mut written = 0;
             while written < incoming.len() {
                 let part = &incoming[written..];
-                // SAFETY: the bytes outlive the call.
+                /* SAFETY: the bytes outlive the call. */
                 let count = unsafe {
                     (ssl_lib.bio_write)(self.incoming, part.as_ptr().cast(), part.len() as c_int)
                 };
@@ -945,11 +978,11 @@ mod platform {
             incoming.drain(..written);
         }
 
-        /// Takes what OpenSSL has to send.
+        /** Takes what OpenSSL has to send. */
         fn drain(&mut self, ssl_lib: &OpenSsl, output: &mut Vec<u8>) {
             let mut buffer = [0u8; 16 * 1024];
             loop {
-                // SAFETY: the buffer has room for what is asked.
+                /* SAFETY: the buffer has room for what is asked. */
                 let count = unsafe {
                     (ssl_lib.bio_read)(
                         self.outgoing,
@@ -964,37 +997,42 @@ mod platform {
             }
         }
 
+        /** Goes on with the handshake: true once it is done. */
         pub(super) fn handshake(
             &mut self,
             incoming: &mut Vec<u8>,
             output: &mut Vec<u8>,
-        ) -> Result<Step, HostError> {
+        ) -> Result<bool, HostError> {
             let ssl_lib = openssl()?;
             self.feed(ssl_lib, incoming);
-            // SAFETY: the session's own object.
+            /* SAFETY: the session's own object. */
             let result = unsafe { (ssl_lib.handshake)(self.ssl) };
             self.drain(ssl_lib, output);
             if result == 1 {
-                return Ok(Step::Done);
+                return Ok(true);
             }
-            // SAFETY: as above.
+            /* SAFETY: as above. */
             match unsafe { (ssl_lib.error)(self.ssl, result) } {
-                SSL_ERROR_WANT_READ | SSL_ERROR_WANT_WRITE => Ok(Step::NeedMore),
+                SSL_ERROR_WANT_READ | SSL_ERROR_WANT_WRITE => Ok(false),
                 _ => Err(self.handshake_failure(ssl_lib)),
             }
         }
 
+        /**
+        Decrypts the whole records that have arrived into `plain`: true
+        once the other side has ended the session.
+        */
         pub(super) fn decrypt(
             &mut self,
             incoming: &mut Vec<u8>,
             plain: &mut Vec<u8>,
             output: &mut Vec<u8>,
-        ) -> Result<Decrypted, HostError> {
+        ) -> Result<bool, HostError> {
             let ssl_lib = openssl()?;
             self.feed(ssl_lib, incoming);
             let mut buffer = [0u8; 16 * 1024];
             loop {
-                // SAFETY: the buffer has room for what is asked.
+                /* SAFETY: the buffer has room for what is asked. */
                 let count = unsafe {
                     (ssl_lib.read)(self.ssl, buffer.as_mut_ptr().cast(), buffer.len() as c_int)
                 };
@@ -1002,13 +1040,15 @@ mod platform {
                     plain.extend_from_slice(&buffer[..count as usize]);
                     continue;
                 }
-                // Reading can answer the other side, as TLS 1.3 does to a
-                // new key.
+                /*
+                Reading can answer the other side, as TLS 1.3 does to a
+                new key.
+                */
                 self.drain(ssl_lib, output);
-                // SAFETY: the session's own object.
+                /* SAFETY: the session's own object. */
                 return match unsafe { (ssl_lib.error)(self.ssl, count) } {
-                    SSL_ERROR_WANT_READ | SSL_ERROR_WANT_WRITE => Ok(Decrypted::More),
-                    SSL_ERROR_ZERO_RETURN => Ok(Decrypted::Closed),
+                    SSL_ERROR_WANT_READ | SSL_ERROR_WANT_WRITE => Ok(false),
+                    SSL_ERROR_ZERO_RETURN => Ok(true),
                     _ => Err(failure(
                         ssl_lib,
                         &self.name,
@@ -1028,8 +1068,10 @@ mod platform {
             while written < bytes.len() {
                 let part = &bytes[written..];
                 let length = part.len().min(1 << 30) as c_int;
-                // SAFETY: the bytes outlive the call; a memory buffer takes
-                // all of them.
+                /*
+                SAFETY: the bytes outlive the call; a memory buffer takes
+                all of them.
+                */
                 let count = unsafe { (ssl_lib.write)(self.ssl, part.as_ptr().cast(), length) };
                 if count <= 0 {
                     return Err(failure(
@@ -1046,17 +1088,19 @@ mod platform {
 
         pub(super) fn close(&mut self, output: &mut Vec<u8>) {
             if let Ok(ssl_lib) = openssl() {
-                // SAFETY: the session's own object.
+                /* SAFETY: the session's own object. */
                 unsafe { (ssl_lib.shutdown)(self.ssl) };
                 self.drain(ssl_lib, output);
             }
         }
 
-        /// Why the handshake failed: the certificate, said as on Windows,
-        /// or the other side.
+        /**
+        Why the handshake failed: the certificate, said as on Windows,
+        or the other side.
+        */
         fn handshake_failure(&self, ssl_lib: &OpenSsl) -> HostError {
             let name = &self.name;
-            // SAFETY: the session's own object.
+            /* SAFETY: the session's own object. */
             let verified = unsafe { (ssl_lib.verify_result)(self.ssl) };
             let message = match verified {
                 0 => {
@@ -1086,7 +1130,7 @@ mod platform {
                 }
                 other => format!("the certificate of {name} could not be checked (error {other})"),
             };
-            // SAFETY: clears this thread's queue of errors.
+            /* SAFETY: clears this thread's queue of errors. */
             unsafe { (ssl_lib.clear_errors)() };
             ("TlsError", message)
         }
@@ -1095,8 +1139,10 @@ mod platform {
     impl Drop for Session {
         fn drop(&mut self) {
             if let Ok(ssl_lib) = openssl() {
-                // SAFETY: objects of this session, freed once; freeing the
-                // session frees its buffers.
+                /*
+                SAFETY: objects of this session, freed once; freeing the
+                session frees its buffers.
+                */
                 unsafe {
                     (ssl_lib.free)(self.ssl);
                     (ssl_lib.context_free)(self.context);
@@ -1105,17 +1151,17 @@ mod platform {
         }
     }
 
-    /// OpenSSL's reason for the last failure on this thread.
+    /** OpenSSL's reason for the last failure on this thread. */
     fn reason(ssl_lib: &OpenSsl) -> String {
         let mut last = String::new();
         loop {
-            // SAFETY: takes the oldest error of this thread's queue.
+            /* SAFETY: takes the oldest error of this thread's queue. */
             let code = unsafe { (ssl_lib.next_error)() };
             if code == 0 {
                 return last;
             }
             let mut text = [0 as c_char; 256];
-            // SAFETY: the buffer's length bounds the text.
+            /* SAFETY: the buffer's length bounds the text. */
             unsafe {
                 (ssl_lib.error_text)(code, text.as_mut_ptr(), text.len());
                 last = CStr::from_ptr(text.as_ptr()).to_string_lossy().into_owned();
@@ -1136,28 +1182,23 @@ mod platform {
     }
 }
 
-/// Android: the platform's own TLS, Java's `SSLEngine` (Conscrypt), which
-/// trusts what the system and the user trust. Apps cannot load the
-/// system's C library for TLS, so the runtime calls into Java (see `jni`);
-/// an engine works on buffers as a session here does, never touching the
-/// socket. A program run from `adb shell` has no Java VM, so no TLS.
+/**
+Android: the platform's own TLS, Java's `SSLEngine` (Conscrypt), which
+trusts what the system and the user trust. Apps cannot load the
+system's C library for TLS, so the runtime calls into Java (see `jni`);
+an engine works on buffers as a session here does, never touching the
+socket. A program run from `adb shell` has no Java VM, so no TLS.
+*/
 #[cfg(target_os = "android")]
 mod platform {
-    use super::Step;
     use crate::host::HostError;
     use crate::jni::{Env, Method, Object, Thrown, Value, env};
     use std::sync::OnceLock;
 
-    pub(super) enum Decrypted {
-        More,
-        Closed,
-        /// The engine takes a new handshake in its stride, inside unwrap.
-        #[allow(dead_code)]
-        HandshakeAgain,
-    }
-
-    /// The classes and methods the session calls, found once; the classes
-    /// are global references.
+    /**
+    The classes and methods the session calls, found once; the classes
+    are global references.
+    */
     struct Java {
         context_class: Object,
         default_context: Method,
@@ -1187,8 +1228,10 @@ mod platform {
         limit: Method,
     }
 
-    // SAFETY: global references and method identities, which any thread
-    // attached to the VM may use.
+    /*
+    SAFETY: global references and method identities, which any thread
+    attached to the VM may use.
+    */
     unsafe impl Send for Java {}
     unsafe impl Sync for Java {}
 
@@ -1279,24 +1322,26 @@ mod platform {
         .ok_or_else(|| ("TlsError", "Android's TLS could not be found".to_string()))
     }
 
-    /// `SSLEngineResult.Status`, by its order.
+    /** `SSLEngineResult.Status`, by its order. */
     const BUFFER_UNDERFLOW: i32 = 0;
     const CLOSED: i32 = 3;
-    /// `SSLEngineResult.HandshakeStatus`, by its order.
+    /** `SSLEngineResult.HandshakeStatus`, by its order. */
     const NEED_TASK: i32 = 2;
     const NEED_WRAP: i32 = 3;
     const NEED_UNWRAP: i32 = 4;
     const NEED_UNWRAP_AGAIN: i32 = 5;
 
-    /// A direct byte buffer of Java's, whose bytes the runtime reads and
-    /// writes in place.
+    /**
+    A direct byte buffer of Java's, whose bytes the runtime reads and
+    writes in place.
+    */
     struct Buffer {
         object: Object,
         address: *mut u8,
         capacity: usize,
     }
 
-    /// What a wrap or an unwrap did.
+    /** What a wrap or an unwrap did. */
     struct Outcome {
         status: i32,
         handshake: i32,
@@ -1306,20 +1351,24 @@ mod platform {
 
     pub(super) struct Session {
         engine: Object,
-        /// What arrived, what goes out, what was decrypted, and what is to
-        /// be encrypted.
+        /**
+        What arrived, what goes out, what was decrypted, and what is to
+        be encrypted.
+        */
         network_in: Buffer,
         network_out: Buffer,
         plain_in: Buffer,
         plain_out: Buffer,
-        /// What the handshake decrypted already, for the first read.
+        /** What the handshake decrypted already, for the first read. */
         early: Vec<u8>,
         started: bool,
         name: String,
     }
 
-    // SAFETY: global references, used by one thread at a time, inside the
-    // connection's entry of the stream table, each attached to the VM.
+    /*
+    SAFETY: global references, used by one thread at a time, inside the
+    connection's entry of the stream table, each attached to the VM.
+    */
     unsafe impl Send for Session {}
 
     fn no_java() -> HostError {
@@ -1352,7 +1401,7 @@ mod platform {
                 );
                 env.check().map_err(failed)?;
                 env.call_void(engine, java.use_client_mode, &[Value { z: 1 }]);
-                // The certificate must be for the name, as for HTTPS.
+                /* The certificate must be for the name, as for HTTPS. */
                 let parameters = env.call_object(engine, java.parameters, &[]);
                 let https = env.new_string("HTTPS");
                 env.call_void(parameters, java.identify_endpoint, &[Value { l: https }]);
@@ -1391,18 +1440,20 @@ mod platform {
             })
         }
 
-        /// Makes a buffer hold `length` bytes from its start.
+        /** Makes a buffer hold `length` bytes from its start. */
         fn fill(&self, env: Env, java: &Java, buffer: &Buffer, bytes: &[u8]) -> usize {
             let length = bytes.len().min(buffer.capacity);
-            // SAFETY: the buffer has room for `length` bytes.
+            /* SAFETY: the buffer has room for `length` bytes. */
             unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer.address, length) };
             env.call_object(buffer.object, java.clear, &[]);
             env.call_object(buffer.object, java.limit, &[Value { i: length as i32 }]);
             length
         }
 
-        /// Wraps (`true`) or unwraps what `source` holds into `target`, both
-        /// from their starts.
+        /**
+        Wraps (`true`) or unwraps what `source` holds into `target`, both
+        from their starts.
+        */
         fn exchange(
             &self,
             env: Env,
@@ -1429,9 +1480,9 @@ mod platform {
             })
         }
 
-        /// What a buffer holds from its start.
+        /** What a buffer holds from its start. */
         fn take(buffer: &Buffer, length: usize, into: &mut Vec<u8>) {
-            // SAFETY: the engine put `length` bytes there.
+            /* SAFETY: the engine put `length` bytes there. */
             unsafe {
                 into.extend_from_slice(std::slice::from_raw_parts(
                     buffer.address,
@@ -1440,7 +1491,7 @@ mod platform {
             };
         }
 
-        /// Wraps nothing, for the engine's own messages, into `output`.
+        /** Wraps nothing, for the engine's own messages, into `output`. */
         fn wrap_own(
             &self,
             env: Env,
@@ -1453,8 +1504,10 @@ mod platform {
             Ok(outcome)
         }
 
-        /// Unwraps what has arrived, a record at a time, the plain bytes
-        /// into `plain`. Gives the last outcome, and whether more is needed.
+        /**
+        Unwraps what has arrived, a record at a time, the plain bytes
+        into `plain`. Gives the last outcome, and whether more is needed.
+        */
         fn unwrap_some(
             &self,
             env: Env,
@@ -1499,11 +1552,12 @@ mod platform {
             Ok(env.call_int(status, java.ordinal, &[]))
         }
 
+        /** Goes on with the handshake: true once it is done. */
         pub(super) fn handshake(
             &mut self,
             incoming: &mut Vec<u8>,
             output: &mut Vec<u8>,
-        ) -> Result<Step, HostError> {
+        ) -> Result<bool, HostError> {
             let env = env_or_fail()?;
             let java = java(env)?;
             env.frame(|| {
@@ -1521,9 +1575,9 @@ mod platform {
                             let outcome = self.unwrap_some(env, java, incoming, &mut early)?;
                             self.early = early;
                             match outcome {
-                                None => return Ok(Step::NeedMore),
+                                None => return Ok(false),
                                 Some(outcome) if outcome.status == BUFFER_UNDERFLOW => {
-                                    return Ok(Step::NeedMore);
+                                    return Ok(false);
                                 }
                                 Some(outcome) if outcome.status == CLOSED => {
                                     return Err((
@@ -1535,26 +1589,31 @@ mod platform {
                             }
                         }
                         NEED_TASK => self.run_tasks(env, java)?,
-                        // Finished, or not handshaking at all.
-                        _ => return Ok(Step::Done),
+                        /* Finished, or not handshaking at all. */
+                        _ => return Ok(true),
                     }
                 }
             })
         }
 
+        /**
+        Decrypts the whole records that have arrived into `plain`: true
+        once the other side has ended the session. The engine takes a new
+        handshake in its stride, inside unwrap.
+        */
         pub(super) fn decrypt(
             &mut self,
             incoming: &mut Vec<u8>,
             plain: &mut Vec<u8>,
             output: &mut Vec<u8>,
-        ) -> Result<Decrypted, HostError> {
+        ) -> Result<bool, HostError> {
             let env = env_or_fail()?;
             let java = java(env)?;
             plain.append(&mut self.early);
             env.frame(|| {
                 loop {
                     let outcome = self.unwrap_some(env, java, incoming, plain)?;
-                    // Reading can need an answer, as TLS 1.3 gives a new key.
+                    /* Reading can need an answer, as TLS 1.3 gives a new key. */
                     match self.status(env, java)? {
                         NEED_WRAP => {
                             self.wrap_own(env, java, output)?;
@@ -1566,10 +1625,7 @@ mod platform {
                         }
                         _ => {}
                     }
-                    return Ok(match outcome {
-                        Some(outcome) if outcome.status == CLOSED => Decrypted::Closed,
-                        _ => Decrypted::More,
-                    });
+                    return Ok(matches!(outcome, Some(outcome) if outcome.status == CLOSED));
                 }
             })
         }
@@ -1639,7 +1695,7 @@ mod platform {
         }
     }
 
-    /// Why TLS failed, said as on the other systems.
+    /** Why TLS failed, said as on the other systems. */
     fn failure(name: &str, thrown: &Thrown) -> HostError {
         let text = &thrown.0;
         let has = |part: &str| {
@@ -1678,15 +1734,7 @@ mod platform {
 
 #[cfg(not(any(windows, unix)))]
 mod platform {
-    use super::Step;
     use crate::host::HostError;
-
-    #[allow(dead_code)]
-    pub(super) enum Decrypted {
-        More,
-        Closed,
-        HandshakeAgain,
-    }
 
     pub(super) struct Session;
 
@@ -1702,7 +1750,7 @@ mod platform {
             &mut self,
             _incoming: &mut Vec<u8>,
             _output: &mut Vec<u8>,
-        ) -> Result<Step, HostError> {
+        ) -> Result<bool, HostError> {
             unreachable!("no session starts on this system")
         }
 
@@ -1711,7 +1759,7 @@ mod platform {
             _incoming: &mut Vec<u8>,
             _plain: &mut Vec<u8>,
             _output: &mut Vec<u8>,
-        ) -> Result<Decrypted, HostError> {
+        ) -> Result<bool, HostError> {
             unreachable!("no session starts on this system")
         }
 

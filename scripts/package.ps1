@@ -1,25 +1,27 @@
-# Builds Sayon in release mode and produces the downloads for this device:
-#
-#   dist/sayon-<version>-<device>-setup.exe   the installer users download and run
-#   dist/sayon-<version>-<device>.zip         the same files as a plain archive
-#   dist/SHA256SUMS.txt                       checksums of both
-#
-# <device> names the operating system and processor, such as windows-x64.
-# The archive holds:
-#
-#   bin/sayon.exe            the command-line tool
-#   lib/sayon_runtime.lib    linked into native builds
-#   lib/wasm32-wasip1/       the runtime for WASI, with WASI's C library
-#   lib/wasm32-unknown-unknown/  the runtime for web pages
-#   lib/x86_64-linux-android/, lib/aarch64-linux-android/  the runtimes for
-#                            Android apps (x86-64 for emulators, ARM64 for phones)
-#   lib/aarch64-pc-windows-msvc/  on Windows x64, the runtime for Windows ARM64
-#                            (on Windows ARM64, lib/x86_64-pc-windows-msvc/)
-#   stdlib/                  the standard library
-#   licenses/                the license texts docs/licenses.md names
-#   docs/, examples/, assets/, README.md, LICENSE, INSTALL.txt
-#
-# Usage: powershell -File scripts/package.ps1 [-OutDir dist]
+<#
+Builds Sayon in release mode and produces the downloads for this device:
+
+  dist/sayon-<version>-<device>-setup.exe   the installer users download and run
+  dist/sayon-<version>-<device>.zip         the same files as a plain archive
+  dist/SHA256SUMS.txt                       checksums of both
+
+<device> names the operating system and processor, such as windows-x64.
+The archive holds:
+
+  bin/sayon.exe            the command-line tool
+  lib/sayon_runtime.lib    linked into native builds
+  lib/wasm32-wasip1/       the runtime for WASI, with WASI's C library
+  lib/wasm32-unknown-unknown/  the runtime for web pages
+  lib/x86_64-linux-android/, lib/aarch64-linux-android/  the runtimes for
+                           Android apps (x86-64 for emulators, ARM64 for phones)
+  lib/aarch64-pc-windows-msvc/  on Windows x64, the runtime for Windows ARM64
+                           (on Windows ARM64, lib/x86_64-pc-windows-msvc/)
+  stdlib/                  the standard library
+  licenses/                the license texts docs/licenses.md names
+  docs/, examples/, assets/, README.md, LICENSE, INSTALL.txt
+
+Usage: powershell -File scripts/package.ps1 [-OutDir dist]
+#>
 
 param([string]$OutDir = "dist")
 
@@ -30,8 +32,10 @@ Set-Location $root
 $manifest = Get-Content (Join-Path $root "Cargo.toml") -Raw
 if ($manifest -notmatch 'version = "([^"]+)"') { throw "cannot find the workspace version in Cargo.toml" }
 $version = $Matches[1]
-# The processor is rustc's, which the release is built for: on ARM64 an
-# emulated x64 shell would tell its own.
+<#
+The processor is rustc's, which the release is built for: on ARM64 an
+emulated x64 shell would tell its own.
+#>
 $hostTriple = (rustc -vV | Where-Object { $_ -like "host: *" }) -replace "^host: ", ""
 $processor = switch -Wildcard ($hostTriple) {
     "x86_64-*" { "x64" }
@@ -51,8 +55,10 @@ foreach ($triple in $androidTriples) {
     cargo build --release -p sayon-runtime --target $triple
     if ($LASTEXITCODE -ne 0) { throw "building the runtime for $triple failed" }
 }
-# Windows of the other processor, built for with Visual Studio's libraries
-# for that processor.
+<#
+Windows of the other processor, built for with Visual Studio's libraries
+for that processor.
+#>
 if ($processor -eq "x64") {
     $crossTriple = "aarch64-pc-windows-msvc"; $crossTarget = "windows-arm64"; $crossComponent = "MSVC ARM64/ARM64EC build tools"
 } else {
@@ -103,8 +109,10 @@ Copy-Item "examples/*.sayon" (Join-Path $stage "examples")
 Get-ChildItem -Directory "examples" | ForEach-Object {
     Copy-Item -Recurse $_.FullName (Join-Path $stage "examples")
 }
-# The texts of the licenses of what the files hold (see docs/licenses.md),
-# as the Rust toolchain ships them.
+<#
+The texts of the licenses of what the files hold (see docs/licenses.md),
+as the Rust toolchain ships them.
+#>
 $licenses = Join-Path (rustc --print sysroot) "share/doc/rust/licenses"
 foreach ($text in "Apache-2.0.txt", "MIT.txt", "Unicode-3.0.txt", "LLVM-exception.txt") {
     Copy-Item (Join-Path $licenses $text) (Join-Path $stage "licenses")

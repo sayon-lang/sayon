@@ -1,15 +1,17 @@
-# A sketch pad, the same program on a desktop, in a web page, and in an
-# Android app: draw with the mouse or a finger, choose a color from the
-# palette, and clear the page.
-#
-#     cd examples/sketch
-#     sayon run                          # a window on this computer
-#     sayon build --target web           # a page: serve build/debug/web and open sketch.html
-#     sayon build --target android-arm64 # an app: adb install build/debug/android-arm64/sketch.apk
-#
-# Keys 1 to 6 choose a color, c clears the page, and Escape closes it.
-# Sizes follow the screen's density, so the pad looks the same on a phone
-# as on a desktop.
+##
+A sketch pad, the same program on a desktop, in a web page, and in an
+Android app: draw with the mouse or a finger, choose a color from the
+palette, and clear the page.
+
+    cd examples/sketch
+    sayon run                          # a window on this computer
+    sayon build --target web           # a page: serve build/debug/web and open sketch.html
+    sayon build --target android-arm64 # an app: adb install build/debug/android-arm64/sketch.apk
+
+Keys 1 to 6 choose a color, c clears the page, and Escape closes it.
+Sizes follow the screen's density, so the pad looks the same on a phone
+as on a desktop.
+##
 
 graphics = import("standard/graphics.sayon")
 math = import("standard/math.sayon")
@@ -38,8 +40,10 @@ function layout(width: integer, scale: float) -> Layout
     clear_width = pixels(72, scale)
     return Layout(bar = pixels(52, scale), swatch = pixels(13, scale), first_swatch = first, spacing = spacing, clear_left = first - spacing / 2 - clear_width - pixels(12, scale), clear_width = clear_width)
 
-# Draws one step of a stroke: the segment to its newest point, with round
-# ends, so that strokes look like ink.
+##
+Draws one step of a stroke: the segment to its newest point, with round
+ends, so that strokes look like ink.
+##
 function ink(update page: graphics.Canvas, stroke: Stroke, from: integer)
     color = palette()[stroke.color]
     point = stroke.points[from]
@@ -67,8 +71,10 @@ function welcome(width: integer, height: integer, scale: float) -> Stroke
         x += pixels(6, scale)
     return Stroke(color = 2, width = pixels(5, scale), points = points)
 
-# The bar at the top: the title, the button that clears the page, and the
-# palette, the chosen color ringed.
+##
+The bar at the top: the title, the button that clears the page, and the
+palette, the chosen color ringed.
+##
 function draw_bar(update canvas: graphics.Canvas, fonts: Array<graphics.Font>, chosen: integer, scale: float)
     parts = layout(canvas.width, scale)
     canvas.fill_rectangle(0, 0, canvas.width, parts.bar, BAR)

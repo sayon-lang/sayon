@@ -1,11 +1,13 @@
-//! Time zones for `standard/time`: the offset from UTC each zone of the
-//! IANA time zone database has at each moment.
-//!
-//! The database comes from the system: on Windows, through the ICU library
-//! Windows ships (`icu.dll`); on Android, from the one file that holds every
-//! zone's TZif data (Bionic's `tzdata`); elsewhere, from the TZif files
-//! under `/usr/share/zoneinfo`. On any system, `TZDIR` names another
-//! directory of TZif files to use instead.
+/*!
+Time zones for `standard/time`: the offset from UTC each zone of the
+IANA time zone database has at each moment.
+
+The database comes from the system: on Windows, through the ICU library
+Windows ships (`icu.dll`); on Android, from the one file that holds every
+zone's TZif data (Bionic's `tzdata`); elsewhere, from the TZif files
+under `/usr/share/zoneinfo`. On any system, `TZDIR` names another
+directory of TZif files to use instead.
+*/
 
 use crate::host::HostError;
 use std::collections::HashMap;
@@ -18,8 +20,10 @@ fn unknown(zone: &str) -> HostError {
     )
 }
 
-/// The offset from UTC, in seconds east, that `zone` has at the moment
-/// `seconds` after 1970-01-01T00:00:00Z.
+/**
+The offset from UTC, in seconds east, that `zone` has at the moment
+`seconds` after 1970-01-01T00:00:00Z.
+*/
 pub fn offset(zone: &str, seconds: i64) -> Result<i64, HostError> {
     if let Some(directory) = zone_directory() {
         return tzif_zone(&directory, zone).map(|rules| rules.offset(seconds));
@@ -27,12 +31,12 @@ pub fn offset(zone: &str, seconds: i64) -> Result<i64, HostError> {
     platform::offset(zone, seconds)
 }
 
-/// Fails with `TimeZoneError` for a zone the system does not know.
+/** Fails with `TimeZoneError` for a zone the system does not know. */
 pub fn check(zone: &str) -> Result<(), HostError> {
     offset(zone, 0).map(|_| ())
 }
 
-/// The name of the system's own time zone, or "UTC" when it has none.
+/** The name of the system's own time zone, or "UTC" when it has none. */
 pub fn local_zone() -> String {
     if zone_directory().is_some() || !cfg!(any(windows, target_os = "android")) {
         return unix_local_zone();
@@ -40,7 +44,7 @@ pub fn local_zone() -> String {
     platform::local_zone().unwrap_or_else(|| "UTC".to_string())
 }
 
-/// The version of the time zone database, such as "2025b", or "unknown".
+/** The version of the time zone database, such as "2025b", or "unknown". */
 pub fn version() -> String {
     if let Some(directory) = zone_directory() {
         return tzif_version(&directory);
@@ -48,7 +52,7 @@ pub fn version() -> String {
     platform::version().unwrap_or_else(|| "unknown".to_string())
 }
 
-/// The directory of TZif files, unless the system's library is used.
+/** The directory of TZif files, unless the system's library is used. */
 fn zone_directory() -> Option<String> {
     if let Some(directory) = std::env::var_os("TZDIR") {
         return Some(directory.to_string_lossy().into_owned());
@@ -90,7 +94,7 @@ fn tzif_version(directory: &str) -> String {
     "unknown".to_string()
 }
 
-/// A zone name names a file below the directory, and nothing else.
+/** A zone name names a file below the directory, and nothing else. */
 fn valid_name(zone: &str) -> bool {
     !zone.is_empty()
         && zone.split('/').all(|part| {
@@ -121,13 +125,15 @@ fn tzif_zone(directory: &str, zone: &str) -> Result<Arc<Rules>, HostError> {
     Ok(rules)
 }
 
-// ----- TZif files ----------------------------------------------------------------------------
+/* ----- TZif files ---------------------------------------------------------------------------- */
 
-/// The rules of one zone, as a TZif file holds them: transitions to new
-/// offsets, then a POSIX rule for the times after the last of them.
+/**
+The rules of one zone, as a TZif file holds them: transitions to new
+offsets, then a POSIX rule for the times after the last of them.
+*/
 pub struct Rules {
     transitions: Vec<(i64, i64)>,
-    /// The offset before the first transition.
+    /** The offset before the first transition. */
     initial: i64,
     rule: Option<PosixRule>,
 }
@@ -157,7 +163,7 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// The counts of a TZif header.
+/** The counts of a TZif header. */
 struct Counts {
     utc: usize,
     standard: usize,
@@ -193,7 +199,7 @@ impl Rules {
         let (version, mut counts) = header(&mut reader)?;
         let mut wide = false;
         if version >= b'2' {
-            // The first block, with 32-bit times, is for older readers.
+            /* The first block, with 32-bit times, is for older readers. */
             let size = counts.times * 5
                 + counts.types * 6
                 + counts.characters
@@ -270,12 +276,14 @@ impl Rules {
     }
 }
 
-// ----- POSIX TZ rules --------------------------------------------------------------------------
+/* ----- POSIX TZ rules -------------------------------------------------------------------------- */
 
-/// A rule such as `CET-1CEST,M3.5.0,M10.5.0/3`: standard time, and summer
-/// time between two days of each year.
+/**
+A rule such as `CET-1CEST,M3.5.0,M10.5.0/3`: standard time, and summer
+time between two days of each year.
+*/
 pub struct PosixRule {
-    /// Seconds east of UTC.
+    /** Seconds east of UTC. */
     standard: i64,
     summer: Option<Summer>,
 }
@@ -288,12 +296,14 @@ struct Summer {
 
 #[derive(Clone, Copy)]
 enum Day {
-    /// `Jn`: day 1 to 365, never counting February 29.
+    /** `Jn`: day 1 to 365, never counting February 29. */
     Julian(i64),
-    /// `n`: day 0 to 365, counting February 29.
+    /** `n`: day 0 to 365, counting February 29. */
     Ordinal(i64),
-    /// `Mm.w.d`: day `d` (0 is Sunday) of week `w` (5 is the last) of
-    /// month `m`.
+    /**
+    `Mm.w.d`: day `d` (0 is Sunday) of week `w` (5 is the last) of
+    month `m`.
+    */
     Month(i64, i64, i64),
 }
 
@@ -343,7 +353,7 @@ impl<'a> Text<'a> {
         Some(value)
     }
 
-    /// `[+-]hh[:mm[:ss]]` as seconds.
+    /** `[+-]hh[:mm[:ss]]` as seconds. */
     fn time(&mut self) -> Option<i64> {
         let sign = if self.eat('-') {
             -1
@@ -375,8 +385,10 @@ impl<'a> Text<'a> {
         Some(Day::Ordinal(self.number()?))
     }
 
-    /// A day, and the local time of day the change happens: 02:00 unless
-    /// given.
+    /**
+    A day, and the local time of day the change happens: 02:00 unless
+    given.
+    */
     fn change(&mut self) -> Option<(Day, i64)> {
         let day = self.day()?;
         let time = if self.eat('/') { self.time()? } else { 7200 };
@@ -388,7 +400,7 @@ impl PosixRule {
     pub fn parse(text: &str) -> Option<PosixRule> {
         let mut text = Text { rest: text };
         text.name()?;
-        // POSIX counts west of UTC.
+        /* POSIX counts west of UTC. */
         let standard = -text.time()?;
         if text.rest.is_empty() {
             return Some(PosixRule {
@@ -417,8 +429,10 @@ impl PosixRule {
             return self.standard;
         };
         let year = civil_from_days((seconds + self.standard).div_euclid(86_400)).0;
-        // When summer time starts, in UTC: its local standard time, and
-        // when it ends: its local summer time.
+        /*
+        When summer time starts, in UTC: its local standard time, and
+        when it ends: its local summer time.
+        */
         let start = change_time(year, summer.start) - self.standard;
         let end = change_time(year, summer.end) - summer.offset;
         let in_summer = if start < end {
@@ -434,7 +448,7 @@ impl PosixRule {
     }
 }
 
-/// The seconds from 1970 to a day of a year at a time of day, all local.
+/** The seconds from 1970 to a day of a year at a time of day, all local. */
 fn change_time(year: i64, (day, time): (Day, i64)) -> i64 {
     let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
     let first = days_from_civil(year, 1, 1);
@@ -443,7 +457,7 @@ fn change_time(year: i64, (day, time): (Day, i64)) -> i64 {
         Day::Ordinal(n) => first + n,
         Day::Month(month, week, weekday) => {
             let start = days_from_civil(year, month, 1);
-            // 1970-01-01 was a Thursday, weekday 4.
+            /* 1970-01-01 was a Thursday, weekday 4. */
             let first_weekday = (start + 4).rem_euclid(7);
             let mut day = start + (weekday - first_weekday).rem_euclid(7) + (week - 1) * 7;
             let next_month = if month == 12 {
@@ -460,7 +474,7 @@ fn change_time(year: i64, (day, time): (Day, i64)) -> i64 {
     days * 86_400 + time
 }
 
-/// Days from 1970-01-01 to a date of the proleptic Gregorian calendar.
+/** Days from 1970-01-01 to a date of the proleptic Gregorian calendar. */
 fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
@@ -470,7 +484,7 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * 146_097 + day_of_era - 719_468
 }
 
-/// The year, month, and day of a count of days from 1970-01-01.
+/** The year, month, and day of a count of days from 1970-01-01. */
 fn civil_from_days(days: i64) -> (i64, i64, i64) {
     let days = days + 719_468;
     let era = days.div_euclid(146_097);
@@ -485,7 +499,7 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
     (year, month, day)
 }
 
-// ----- the system's library ------------------------------------------------------------------
+/* ----- the system's library ------------------------------------------------------------------ */
 
 #[cfg(windows)]
 mod platform {
@@ -522,8 +536,10 @@ mod platform {
         static ICU: OnceLock<Option<Icu>> = OnceLock::new();
         ICU.get_or_init(|| {
             let name: Vec<u16> = "icu.dll".encode_utf16().chain(Some(0)).collect();
-            // SAFETY: a NUL-terminated name; the symbols, when found, have
-            // the types of ICU's C interface.
+            /*
+            SAFETY: a NUL-terminated name; the symbols, when found, have
+            the types of ICU's C interface.
+            */
             unsafe {
                 let module = LoadLibraryW(name.as_ptr());
                 if module.is_null() {
@@ -573,7 +589,7 @@ mod platform {
         let mut status = 0;
         let mut canonical = [0u16; 128];
         let mut system = 0i8;
-        // SAFETY: the buffers are as long as the counts given.
+        /* SAFETY: the buffers are as long as the counts given. */
         unsafe {
             (icu.canonical)(
                 id.as_ptr(),
@@ -611,7 +627,7 @@ mod platform {
         let icu = icu()?;
         let mut buffer = [0u16; 128];
         let mut status = 0;
-        // SAFETY: the buffer is as long as the count given.
+        /* SAFETY: the buffer is as long as the count given. */
         let length =
             unsafe { (icu.default)(buffer.as_mut_ptr(), buffer.len() as i32, &mut status) };
         if status > 0 || length <= 0 {
@@ -623,7 +639,7 @@ mod platform {
     pub fn version() -> Option<String> {
         let icu = icu()?;
         let mut status = 0;
-        // SAFETY: ICU returns a static NUL-terminated string.
+        /* SAFETY: ICU returns a static NUL-terminated string. */
         unsafe {
             let text = (icu.version)(&mut status);
             if status > 0 || text.is_null() {
@@ -638,10 +654,12 @@ mod platform {
     }
 }
 
-/// Android: the database is one file, an index of the zones' names before
-/// their TZif data, as Bionic reads it. The newest is the time zone
-/// module's (an APEX, since Android 10), then one an update left, then the
-/// system's own. The phone's own zone is a system property.
+/**
+Android: the database is one file, an index of the zones' names before
+their TZif data, as Bionic reads it. The newest is the time zone
+module's (an APEX, since Android 10), then one an update left, then the
+system's own. The phone's own zone is a system property.
+*/
 #[cfg(target_os = "android")]
 mod platform {
     use super::{Rules, ZONES, unknown, valid_name};
@@ -649,15 +667,17 @@ mod platform {
     use std::collections::HashMap;
     use std::sync::{Arc, OnceLock};
 
-    /// The database: its version, its bytes, and each zone's data in them.
+    /** The database: its version, its bytes, and each zone's data in them. */
     struct Database {
         version: String,
         bytes: Vec<u8>,
         zones: HashMap<String, (usize, usize)>,
     }
 
-    /// Each entry of the index: the zone's name in 40 bytes, then where its
-    /// data starts, after the data's own start, and how long it is.
+    /**
+    Each entry of the index: the zone's name in 40 bytes, then where its
+    data starts, after the data's own start, and how long it is.
+    */
     const ENTRY: usize = 52;
     const NAME: usize = 40;
 
@@ -685,8 +705,10 @@ mod platform {
         usize::try_from(i32::from_be_bytes([word[0], word[1], word[2], word[3]])).ok()
     }
 
-    /// Reads a database: "tzdata" and its version, such as "2025b", then
-    /// where the index and the data start.
+    /**
+    Reads a database: "tzdata" and its version, such as "2025b", then
+    where the index and the data start.
+    */
     fn read(bytes: Vec<u8>) -> Option<Database> {
         if bytes.get(..6)? != b"tzdata" {
             return None;
@@ -749,7 +771,7 @@ mod platform {
         ) -> i32;
     }
 
-    /// `TZ` when it names a zone, or the phone's own.
+    /** `TZ` when it names a zone, or the phone's own. */
     pub fn local_zone() -> Option<String> {
         if let Ok(zone) = std::env::var("TZ") {
             let zone = zone.trim_start_matches(':');
@@ -757,15 +779,15 @@ mod platform {
                 return Some(zone.to_string());
             }
         }
-        // A property's value is at most 91 bytes and a NUL.
+        /* A property's value is at most 91 bytes and a NUL. */
         let mut value = [0 as std::ffi::c_char; 92];
         let name = c"persist.sys.timezone";
-        // SAFETY: a NUL-terminated name, and room for the longest value.
+        /* SAFETY: a NUL-terminated name, and room for the longest value. */
         let length = unsafe { __system_property_get(name.as_ptr(), value.as_mut_ptr()) };
         if length <= 0 {
             return None;
         }
-        // SAFETY: the property's value, NUL-terminated.
+        /* SAFETY: the property's value, NUL-terminated. */
         let zone = unsafe { std::ffi::CStr::from_ptr(value.as_ptr()) };
         let zone = zone.to_string_lossy().into_owned();
         valid_name(&zone).then_some(zone)
@@ -808,11 +830,11 @@ mod tests {
     #[test]
     fn posix_rules_give_offsets() {
         let paris = PosixRule::parse("CET-1CEST,M3.5.0,M10.5.0/3").expect("rule");
-        // 2026-03-29 is the last Sunday of March: 01:00 UTC is 03:00 CEST.
+        /* 2026-03-29 is the last Sunday of March: 01:00 UTC is 03:00 CEST. */
         let change = days_from_civil(2026, 3, 29) * 86_400 + 3600;
         assert_eq!(paris.offset(change - 1), 3600);
         assert_eq!(paris.offset(change), 7200);
-        // 2026-10-25, the last Sunday of October, back at 01:00 UTC.
+        /* 2026-10-25, the last Sunday of October, back at 01:00 UTC. */
         let back = days_from_civil(2026, 10, 25) * 86_400 + 3600;
         assert_eq!(paris.offset(back - 1), 7200);
         assert_eq!(paris.offset(back), 3600);

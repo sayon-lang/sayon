@@ -1,22 +1,24 @@
-//! The little of the ZIP format an Android package needs: reading the
-//! entries of a package `aapt2` wrote, and writing them again with more,
-//! each stored entry's data aligned as Android maps it from the package:
-//! 4 bytes for most, a page (16 KiB, the larger of the pages Android uses)
-//! for native libraries. That is what `zipalign -P 16` does.
+/*!
+The little of the ZIP format an Android package needs: reading the
+entries of a package `aapt2` wrote, and writing them again with more,
+each stored entry's data aligned as Android maps it from the package:
+4 bytes for most, a page (16 KiB, the larger of the pages Android uses)
+for native libraries. That is what `zipalign -P 16` does.
+*/
 
-/// An entry, as the package holds it: compressed or stored.
+/** An entry, as the package holds it: compressed or stored. */
 pub struct Entry {
     pub name: String,
-    /// 0 for stored, 8 for deflated.
+    /** 0 for stored, 8 for deflated. */
     pub method: u16,
     pub crc: u32,
     pub size: u32,
-    /// The entry's data as the package holds it.
+    /** The entry's data as the package holds it. */
     pub data: Vec<u8>,
 }
 
 impl Entry {
-    /// An entry stored as it is.
+    /** An entry stored as it is. */
     pub fn stored(name: &str, data: Vec<u8>) -> Entry {
         Entry {
             name: name.to_string(),
@@ -46,8 +48,10 @@ fn u32_at(bytes: &[u8], at: usize) -> Result<u32, String> {
         .ok_or_else(|| "the package ends early".to_string())
 }
 
-/// The entries of a ZIP file, in the order of its central directory, which
-/// tells their sizes even where a local header leaves them to a descriptor.
+/**
+The entries of a ZIP file, in the order of its central directory, which
+tells their sizes even where a local header leaves them to a descriptor.
+*/
 pub fn read(bytes: &[u8]) -> Result<Vec<Entry>, String> {
     let end = (0..bytes.len().saturating_sub(21))
         .rev()
@@ -92,12 +96,16 @@ pub fn read(bytes: &[u8]) -> Result<Vec<Entry>, String> {
     Ok(entries)
 }
 
-/// The ID of the extra field that pads an entry to its alignment, as
-/// Android's `zipalign` writes it: the alignment, then zeros.
+/**
+The ID of the extra field that pads an entry to its alignment, as
+Android's `zipalign` writes it: the alignment, then zeros.
+*/
 const ALIGNMENT_FIELD: u16 = 0xD935;
 
-/// A ZIP file of `entries`, each stored one's data aligned to `alignment`
-/// of its name.
+/**
+A ZIP file of `entries`, each stored one's data aligned to `alignment`
+of its name.
+*/
 pub fn write(entries: &[Entry], alignment: impl Fn(&str) -> usize) -> Vec<u8> {
     let mut out = Vec::new();
     let mut directory = Vec::new();
@@ -108,7 +116,7 @@ pub fn write(entries: &[Entry], alignment: impl Fn(&str) -> usize) -> Vec<u8> {
         if entry.method == 0 {
             let align = alignment(&entry.name);
             let mut padding = (align - (offset + header) % align) % align;
-            // The field needs room for its header and the alignment.
+            /* The field needs room for its header and the alignment. */
             if padding != 0 && padding < 6 {
                 padding += align;
             }
@@ -119,8 +127,10 @@ pub fn write(entries: &[Entry], alignment: impl Fn(&str) -> usize) -> Vec<u8> {
                 extra.resize(padding, 0);
             }
         }
-        // Version 2.0, no flags, and a fixed time (1981-01-01), so that
-        // the same program makes the same package.
+        /*
+        Version 2.0, no flags, and a fixed time (1981-01-01), so that
+        the same program makes the same package.
+        */
         let fields = |out: &mut Vec<u8>| {
             out.extend_from_slice(&20u16.to_le_bytes());
             out.extend_from_slice(&0u16.to_le_bytes());
@@ -142,7 +152,7 @@ pub fn write(entries: &[Entry], alignment: impl Fn(&str) -> usize) -> Vec<u8> {
         directory.extend_from_slice(&CENTRAL.to_le_bytes());
         directory.extend_from_slice(&20u16.to_le_bytes());
         fields(&mut directory);
-        // No extra field, no comment, disk 0, no attributes.
+        /* No extra field, no comment, disk 0, no attributes. */
         directory.extend_from_slice(&[0; 12]);
         directory.extend_from_slice(&(offset as u32).to_le_bytes());
         directory.extend_from_slice(entry.name.as_bytes());
@@ -159,7 +169,7 @@ pub fn write(entries: &[Entry], alignment: impl Fn(&str) -> usize) -> Vec<u8> {
     out
 }
 
-/// The CRC-32 a ZIP file checks each entry with.
+/** The CRC-32 a ZIP file checks each entry with. */
 pub fn crc32(bytes: &[u8]) -> u32 {
     let mut table = [0u32; 256];
     for (index, slot) in table.iter_mut().enumerate() {

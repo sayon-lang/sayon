@@ -1,10 +1,12 @@
-//! Extended grapheme clusters, the user-perceived characters of Unicode
-//! Standard Annex #29: a letter and its accents, a whole emoji sequence, a
-//! flag, or a Hangul syllable written as separate jamo.
+/*!
+Extended grapheme clusters, the user-perceived characters of Unicode
+Standard Annex #29: a letter and its accents, a whole emoji sequence, a
+flag, or a Hangul syllable written as separate jamo.
+*/
 
 use crate::unicode_tables::GRAPHEME_PROPERTIES;
 
-/// Grapheme_Cluster_Break values, numbered as in the generated table.
+/** Grapheme_Cluster_Break values, numbered as in the generated table. */
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Break {
     Other,
@@ -23,7 +25,7 @@ enum Break {
     Lvt,
 }
 
-/// Indic_Conjunct_Break values.
+/** Indic_Conjunct_Break values. */
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Conjunct {
     None,
@@ -82,27 +84,29 @@ fn properties(c: char) -> Properties {
     }
 }
 
-/// What the characters so far mean for the rules that look further back
-/// than one character.
+/**
+What the characters so far mean for the rules that look further back
+than one character.
+*/
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Emoji {
     None,
-    /// An Extended_Pictographic character, then Extend characters.
+    /** An Extended_Pictographic character, then Extend characters. */
     Pictograph,
-    /// The same, then a zero width joiner (rule GB11).
+    /** The same, then a zero width joiner (rule GB11). */
     Joined,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Indic {
     None,
-    /// A conjunct consonant, then conjunct Extend characters.
+    /** A conjunct consonant, then conjunct Extend characters. */
     Consonant,
-    /// The same with a conjunct Linker among them (rule GB9c).
+    /** The same with a conjunct Linker among them (rule GB9c). */
     Linked,
 }
 
-/// Whether there is a cluster boundary between `before` and `after`.
+/** Whether there is a cluster boundary between `before` and `after`. */
 fn boundary(
     before: Properties,
     after: Properties,
@@ -112,25 +116,27 @@ fn boundary(
 ) -> bool {
     use Break::*;
     match (before.kind, after.kind) {
-        (Cr, Lf) => false,                                               // GB3
-        (Cr | Lf | Control, _) | (_, Cr | Lf | Control) => true,         // GB4, GB5
-        (L, L | V | Lv | Lvt) | (Lv | V, V | T) | (Lvt | T, T) => false, // GB6 to GB8
-        (_, Extend | Zwj | SpacingMark) | (Prepend, _) => false,         // GB9 to GB9b
-        _ if after.conjunct == Conjunct::Consonant && indic == Indic::Linked => false, // GB9c
-        (Zwj, _) if after.pictographic && emoji == Emoji::Joined => false, // GB11
-        (RegionalIndicator, RegionalIndicator) => flags.is_multiple_of(2), // GB12, GB13
-        _ => true,                                                       // GB999
+        (Cr, Lf) => false,                                               /* GB3 */
+        (Cr | Lf | Control, _) | (_, Cr | Lf | Control) => true,         /* GB4, GB5 */
+        (L, L | V | Lv | Lvt) | (Lv | V, V | T) | (Lvt | T, T) => false, /* GB6 to GB8 */
+        (_, Extend | Zwj | SpacingMark) | (Prepend, _) => false,         /* GB9 to GB9b */
+        _ if after.conjunct == Conjunct::Consonant && indic == Indic::Linked => false, /* GB9c */
+        (Zwj, _) if after.pictographic && emoji == Emoji::Joined => false, /* GB11 */
+        (RegionalIndicator, RegionalIndicator) => flags.is_multiple_of(2), /* GB12, GB13 */
+        _ => true,                                                       /* GB999 */
     }
 }
 
-/// The byte offsets where the clusters of `text` start, in order; the first
-/// is 0 unless the text is empty.
+/**
+The byte offsets where the clusters of `text` start, in order; the first
+is 0 unless the text is empty.
+*/
 pub fn starts(text: &str) -> Vec<usize> {
     let mut found = Vec::new();
     let mut previous: Option<Properties> = None;
     let mut emoji = Emoji::None;
     let mut indic = Indic::None;
-    // Regional indicators just before the current character.
+    /* Regional indicators just before the current character. */
     let mut flags = 0usize;
     for (offset, c) in text.char_indices() {
         let current = properties(c);
@@ -163,7 +169,7 @@ pub fn starts(text: &str) -> Vec<usize> {
     found
 }
 
-/// The extended grapheme clusters of `text`.
+/** The extended grapheme clusters of `text`. */
 pub fn clusters(text: &str) -> Vec<&str> {
     let starts = starts(text);
     let mut found = Vec::with_capacity(starts.len());
@@ -174,7 +180,7 @@ pub fn clusters(text: &str) -> Vec<&str> {
     found
 }
 
-/// The number of extended grapheme clusters in `text`.
+/** The number of extended grapheme clusters in `text`. */
 pub fn count(text: &str) -> usize {
     starts(text).len()
 }

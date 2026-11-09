@@ -1,7 +1,9 @@
-# Mathematical functions and constants.
-#
-#     math = import("standard/math.sayon")
-#     print(math.sqrt(2.0), math.max(3, 7))
+##
+Mathematical functions and constants.
+
+    math = import("standard/math.sayon")
+    print(math.sqrt(2.0), math.max(3, 7))
+##
 
 # π, the ratio of a circle's circumference to its diameter.
 constant PI = 3.141592653589793
@@ -80,8 +82,10 @@ function round(x: float) -> float
 function trunc(x: float) -> float
     return host_trunc(x)
 
-# The absolute value of any number. Fails for the most negative integer,
-# whose absolute value does not fit.
+##
+The absolute value of any number. Fails for the most negative integer,
+whose absolute value does not fit.
+##
 function abs(x)
     zero = x - x
     if x < zero
@@ -112,19 +116,23 @@ function clamp(value, low, high)
 function random() -> float
     return host_random()
 
-# A source of pseudo-random numbers that starts from a seed: generators made
-# from the same seed give the same numbers, in the same order, on every
-# device and target, in the interpreter and compiled. It is Pierre
-# L'Ecuyer's MRG32k3a, whose numbers repeat only after about 2^191 of them.
-# Not suitable for security; `crypto.random_bytes` is.
-#
-#     dice = math.new_generator(42)
-#     print(dice.integer(1, 7), dice.float())
+##
+A source of pseudo-random numbers that starts from a seed: generators made
+from the same seed give the same numbers, in the same order, on every
+device and target, in the interpreter and compiled. It is Pierre
+L'Ecuyer's MRG32k3a, whose numbers repeat only after about 2^191 of them.
+Not suitable for security; `crypto.random_bytes` is.
+
+    dice = math.new_generator(42)
+    print(dice.integer(1, 7), dice.float())
+##
 type Generator = [state: Array<integer>]
 
-# MRG32k3a's two recurrences: each number is a sum of two of the three before
-# it, times these multipliers, modulo a prime just under 2^32. Every product
-# fits in an integer.
+##
+MRG32k3a's two recurrences: each number is a sum of two of the three before
+it, times these multipliers, modulo a prime just under 2^32. Every product
+fits in an integer.
+##
 private constant FIRST_MODULUS = 4294967087
 private constant FIRST_MULTIPLIER = 1403580
 private constant FIRST_OLDEST_MULTIPLIER = 810728
@@ -135,9 +143,11 @@ private constant SECOND_OLDEST_MULTIPLIER = 1370589
 # 2^53: a float holds every integer below it exactly.
 private constant FLOAT_INTEGERS = 9007199254740992
 
-# A generator whose numbers follow from `seed`, any integer. The seed's
-# SHA-256 digest gives the starting state, so nearby seeds give unrelated
-# numbers.
+##
+A generator whose numbers follow from `seed`, any integer. The seed's
+SHA-256 digest gives the starting state, so nearby seeds give unrelated
+numbers.
+##
 function new_generator(seed: integer) -> Generator
     digest = host_sha256(host_bytes("sayon generator 1 {seed}"))
     state: Array<integer> = []
@@ -156,15 +166,19 @@ function new_generator(seed: integer) -> Generator
         state[3] = 1
     return Generator(state = state)
 
-# A float from 0 up to, but not including, 1, with all 53 bits of a float's
-# precision.
+##
+A float from 0 up to, but not including, 1, with all 53 bits of a float's
+precision.
+##
 function generator_float(update generator: Generator) -> float
     return float(below(generator, FLOAT_INTEGERS)) / float(FLOAT_INTEGERS)
 
-# An integer from `low` up to, but not including, `high`, each as likely as
-# the others: `integer(1, 7)` rolls a die. Fails with ValueError when `high`
-# is not above `low`, and with OverflowError when the range is wider than an
-# integer holds.
+##
+An integer from `low` up to, but not including, `high`, each as likely as
+the others: `integer(1, 7)` rolls a die. Fails with ValueError when `high`
+is not above `low`, and with OverflowError when the range is wider than an
+integer holds.
+##
 function generator_integer(update generator: Generator, low: integer, high: integer) -> integer
     if high <= low
         host_value_fail("a generator's integer needs `high` above `low`, not {low} and {high}")
@@ -177,8 +191,10 @@ function generator_shuffle<T>(update generator: Generator, update items: Array<T
         swap(items, position, below(generator, position + 1))
         position -= 1
 
-# The generator's next number, from 0 up to, but not including,
-# FIRST_MODULUS: the two recurrences' newest numbers, one less the other.
+##
+The generator's next number, from 0 up to, but not including,
+FIRST_MODULUS: the two recurrences' newest numbers, one less the other.
+##
 private function step(update generator: Generator) -> integer
     first = (FIRST_MULTIPLIER * generator.state[1] - FIRST_OLDEST_MULTIPLIER * generator.state[0]) % FIRST_MODULUS
     if first < 0
@@ -197,9 +213,11 @@ private function step(update generator: Generator) -> integer
         combined += FIRST_MODULUS
     return combined
 
-# An integer from 0 up to, but not including, `span`, each as likely as the
-# others: a number past the last whole multiple of `span` is drawn again. A
-# span wider than one number takes two, a count of FIRST_MODULUS and a rest.
+##
+An integer from 0 up to, but not including, `span`, each as likely as the
+others: a number past the last whole multiple of `span` is drawn again. A
+span wider than one number takes two, a count of FIRST_MODULUS and a rest.
+##
 private function below(update generator: Generator, span: integer) -> integer
     if span <= FIRST_MODULUS
         limit = FIRST_MODULUS - FIRST_MODULUS % span

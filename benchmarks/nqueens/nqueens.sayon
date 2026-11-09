@@ -1,0 +1,39 @@
+##
+N-queens: count the ways to put n queens on an n by n board so that none
+attacks another, placing one queen a row at a time and backing up when a row
+has no safe square left. Recursion, and three small arrays of flags.
+##
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+function place(row: integer, size: integer, update columns: Array<boolean>, update rising: Array<boolean>, update falling: Array<boolean>) -> integer
+    if row == size
+        return 1
+    count = 0
+    for column in range(size)
+        up = row + column
+        down = row - column + size - 1
+        if not columns[column] and not rising[up] and not falling[down]
+            columns[column] = true
+            rising[up] = true
+            falling[down] = true
+            count += place(row + 1, size, columns, rising, falling)
+            columns[column] = false
+            rising[up] = false
+            falling[down] = false
+    return count
+
+function main()
+    size = 8
+    arguments = os.arguments()
+    if length(arguments) > 0
+        size = strings.parse_integer(arguments[0])
+    columns: Array<boolean> = []
+    rising: Array<boolean> = []
+    falling: Array<boolean> = []
+    for _column in range(size)
+        push(columns, false)
+    for _diagonal in range(2 * size - 1)
+        push(rising, false)
+        push(falling, false)
+    print("{place(0, size, columns, rising, falling)} solutions for {size} queens")

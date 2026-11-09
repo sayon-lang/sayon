@@ -1,5 +1,7 @@
-// Spectral norm: the largest singular value of an infinite matrix, worked
-// out with the power method on an n by n corner of it.
+/*
+Spectral norm: the largest singular value of an infinite matrix, worked
+out with the power method on an n by n corner of it.
+*/
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>

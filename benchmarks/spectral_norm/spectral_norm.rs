@@ -1,5 +1,7 @@
-// Spectral norm: the largest singular value of an infinite matrix, worked
-// out with the power method on an n by n corner of it.
+/*
+Spectral norm: the largest singular value of an infinite matrix, worked
+out with the power method on an n by n corner of it.
+*/
 
 fn entry(i: usize, j: usize) -> f64 {
     1.0 / ((i + j) * (i + j + 1) / 2 + i + 1) as f64

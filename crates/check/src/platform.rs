@@ -1,19 +1,21 @@
-//! Compile-time names of the target: `platform`, `processor`, and
-//! `supports("capability")`.
-//!
-//! Each is the compiler's own only where nothing the program declares hides
-//! it. An `if` condition made of nothing but these, compared with written
-//! names and joined by `and`, `or`, and `not`, is decided while checking:
-//! only the branch it selects is checked and compiled, so a branch can call
-//! what only its platform has. Any other condition, including one that
-//! merely holds the text "windows", is an ordinary condition.
+/*!
+Compile-time names of the target: `platform`, `processor`, and
+`supports("capability")`.
+
+Each is the compiler's own only where nothing the program declares hides
+it. An `if` condition made of nothing but these, compared with written
+names and joined by `and`, `or`, and `not`, is decided while checking:
+only the branch it selects is checked and compiled, so a branch can call
+what only its platform has. Any other condition, including one that
+merely holds the text "windows", is an ordinary condition.
+*/
 
 use crate::checker::{Checker, FnCtx};
 use sayon_syntax::Diagnostic;
 use sayon_syntax::ast::{self, BinaryOp, ExprKind, StringSegment, UnaryOp};
 use sayon_target::{Capability, PLATFORMS, PROCESSORS};
 
-/// The text of a string literal without interpolation.
+/** The text of a string literal without interpolation. */
 fn literal(expr: &ast::Expr) -> Option<&str> {
     let ExprKind::String(segments) = &expr.kind else {
         return None;
@@ -26,15 +28,17 @@ fn literal(expr: &ast::Expr) -> Option<&str> {
 }
 
 impl<'a> Checker<'a> {
-    /// Whether `name` means the compiler's own name in this code.
+    /** Whether `name` means the compiler's own name in this code. */
     fn compiler_name(&self, cx: &FnCtx, name: &str) -> bool {
         !self.is_local_name(cx, name)
             && self.item(cx.module, name).is_none()
             && self.import(cx.module, name).is_none()
     }
 
-    /// The value of `platform` or `processor` for the target, where the name
-    /// is the compiler's.
+    /**
+    The value of `platform` or `processor` for the target, where the name
+    is the compiler's.
+    */
     pub fn compile_time_name(&self, cx: &FnCtx, name: &str) -> Option<&'static str> {
         let value = match name {
             "platform" => self.target.platform,
@@ -44,7 +48,7 @@ impl<'a> Checker<'a> {
         self.compiler_name(cx, name).then_some(value)
     }
 
-    /// Whether `expr` is a condition the compiler decides.
+    /** Whether `expr` is a condition the compiler decides. */
     fn decided(&self, cx: &FnCtx, expr: &ast::Expr) -> bool {
         match &expr.kind {
             ExprKind::Binary {
@@ -82,9 +86,11 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Decides an `if` condition made only of compile-time names, reporting
-    /// names that are no platform, processor, or capability; `None` for any
-    /// other condition.
+    /**
+    Decides an `if` condition made only of compile-time names, reporting
+    names that are no platform, processor, or capability; `None` for any
+    other condition.
+    */
     pub fn compile_time_condition(&mut self, cx: &FnCtx, expr: &ast::Expr) -> Option<bool> {
         if !self.decided(cx, expr) {
             return None;
@@ -99,7 +105,7 @@ impl<'a> Checker<'a> {
                 lhs,
                 rhs,
             } => {
-                // Both sides are checked for misspellings, whatever the first gives.
+                /* Both sides are checked for misspellings, whatever the first gives. */
                 let left = self.decide(cx, lhs);
                 let right = self.decide(cx, rhs);
                 left && right
@@ -133,8 +139,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Reports a written platform or processor that does not exist, which
-    /// would otherwise make its branch silently never apply.
+    /**
+    Reports a written platform or processor that does not exist, which
+    would otherwise make its branch silently never apply.
+    */
     fn known_value(&mut self, name: &str, text: &str, span: sayon_syntax::Span) {
         let known = if name == "platform" {
             PLATFORMS
@@ -154,7 +162,7 @@ impl<'a> Checker<'a> {
         self.error(diagnostic);
     }
 
-    /// `supports("name")`: whether the target provides the capability.
+    /** `supports("name")`: whether the target provides the capability. */
     fn supports(&mut self, arg: &ast::Expr) -> bool {
         let text = literal(arg).unwrap_or("");
         match Capability::named(text) {
@@ -180,8 +188,10 @@ impl<'a> Checker<'a> {
         self.error(diagnostic);
     }
 
-    /// `supports(...)` called where its name is the compiler's: a constant
-    /// boolean, also outside `if` conditions.
+    /**
+    `supports(...)` called where its name is the compiler's: a constant
+    boolean, also outside `if` conditions.
+    */
     pub fn check_supports(
         &mut self,
         cx: &mut FnCtx,
@@ -218,7 +228,7 @@ fn quoted(names: &[&str]) -> String {
     quoted.join(", ")
 }
 
-/// Whether two names are at most two edits apart.
+/** Whether two names are at most two edits apart. */
 fn close(a: &str, b: &str) -> bool {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();

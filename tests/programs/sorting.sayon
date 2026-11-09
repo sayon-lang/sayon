@@ -1,7 +1,9 @@
-# Sorting: the library's sorts checked against a simple one, on arrays of
-# many sizes, especially around the length sorted by insertion. Also
-# stability, strings, floats, and a comparison that fails in the middle of a
-# merge, after which every element must still be in the array.
+##
+Sorting: the library's sorts checked against a simple one, on arrays of
+many sizes, especially around the length sorted by insertion. Also
+stability, strings, floats, and a comparison that fails in the middle of a
+merge, after which every element must still be in the array.
+##
 
 collections = import("standard/collections.sayon")
 

@@ -261,7 +261,7 @@ fn foreign_calls_need_unsafe_code() {
         "unsafe function zero() -> integer\n    return 0\n\nprint(zero())\n",
         "E_UNSAFE",
     );
-    // A function literal in unsafe code is unsafe code.
+    /* A function literal in unsafe code is unsafe code. */
     ok(&format!(
         "{declarations}unsafe\n    f = function() -> c_int\n        return abs(-1)\n    print(f())\n"
     ));
@@ -360,7 +360,7 @@ fn strings_have_character_positions() {
     );
 }
 
-// ----- function values and closures -------------------------------------------
+/* ----- function values and closures ------------------------------------------- */
 
 #[test]
 fn functions_are_values() {
@@ -402,7 +402,7 @@ fn closures_own_what_they_capture() {
     ok("constant square = function(x: integer) return x * x\nprint(square(3))\n");
 }
 
-// ----- structures and enums ---------------------------------------------------
+/* ----- structures and enums --------------------------------------------------- */
 
 const POINT: &str = "type Point = [x: float, y: float]\n";
 const SHAPE: &str = "enum Shape\n    circle(radius: float)\n    point\n\n";
@@ -634,7 +634,7 @@ fn constants_are_initialized_in_dependency_order() {
     fails("constant A = A + 1\n", "E_INITIALIZATION_CYCLE");
 }
 
-// ----- ownership ------------------------------------------------------------
+/* ----- ownership ------------------------------------------------------------ */
 
 #[test]
 fn assignment_moves_owned_values() {

@@ -1,6 +1,8 @@
-# Strings of every length around the 23 bytes that fit inside a string,
-# built every way, then compared, copied, viewed, measured, sorted, and used
-# as keys.
+##
+Strings of every length around the 23 bytes that fit inside a string,
+built every way, then compared, copied, viewed, measured, sorted, and used
+as keys.
+##
 
 collections = import("standard/collections.sayon")
 strings = import("standard/strings.sayon")

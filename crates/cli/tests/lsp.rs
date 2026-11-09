@@ -1,6 +1,8 @@
-//! `sayon lsp`, driven as an editor drives it: a program of two files is
-//! opened, its diagnostics arrive, and hover, going to a definition,
-//! references, renaming, completion, and formatting answer as they should.
+/*!
+`sayon lsp`, driven as an editor drives it: a program of two files is
+opened, its diagnostics arrive, and hover, going to a definition,
+references, renaming, completion, and formatting answer as they should.
+*/
 
 use sayon_lsp::json::Json;
 use sayon_lsp::text::{path_of, uri_of};
@@ -96,7 +98,7 @@ impl Editor {
         ]));
     }
 
-    /// The next message `wanted` takes, passing over others.
+    /** The next message `wanted` takes, passing over others. */
     fn wait(&mut self, what: &str, wanted: impl Fn(&Json) -> bool) -> Json {
         loop {
             let message = self
@@ -137,7 +139,7 @@ impl Editor {
     }
 }
 
-/// A request's parameters for a place in a document.
+/** A request's parameters for a place in a document. */
 fn at(uri: &str, line: u32, character: u32) -> Json {
     Json::object(vec![
         (
@@ -154,7 +156,7 @@ fn at(uri: &str, line: u32, character: u32) -> Json {
     ])
 }
 
-/// The line and character of the `nth` place `needle` is in `text`.
+/** The line and character of the `nth` place `needle` is in `text`. */
 fn find(text: &str, needle: &str, nth: usize) -> (u32, u32) {
     let offset = text.match_indices(needle).nth(nth).expect(needle).0;
     let before = &text[..offset];
@@ -215,7 +217,7 @@ fn an_editor_gets_answers_about_a_program() {
     };
     editor.notify("textDocument/didOpen", open(MAIN, 1));
 
-    // The one error: `missing` is not defined.
+    /* The one error: `missing` is not defined. */
     let diagnostics = editor.diagnostics(&main);
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
     assert_eq!(
@@ -240,7 +242,7 @@ fn an_editor_gets_answers_about_a_program() {
         Some(character)
     );
 
-    // Hover shows the signature and the comment above it.
+    /* Hover shows the signature and the comment above it. */
     let (line, character) = find(MAIN, "double(21)", 0);
     let hover = editor.request("textDocument/hover", at(&main, line, character + 2));
     let shown = hover
@@ -264,7 +266,7 @@ fn an_editor_gets_answers_about_a_program() {
         .to_string();
     assert!(shown.contains("square: Square"), "{shown}");
 
-    // A definition in another file.
+    /* A definition in another file. */
     let (line, character) = find(MAIN, "area(square)", 0);
     let definition = editor.request("textDocument/definition", at(&main, line, character + 1));
     let target = path_of(definition.get("uri").as_str().expect("a location")).expect("a path");
@@ -276,7 +278,7 @@ fn an_editor_gets_answers_about_a_program() {
         definition.get("range").get("start").get("line").as_u32(),
         Some(2)
     );
-    // An import's alias goes to its module.
+    /* An import's alias goes to its module. */
     let (line, character) = find(MAIN, "graphics.canvas", 0);
     let module = editor.request("textDocument/definition", at(&main, line, character + 1));
     assert!(
@@ -287,7 +289,7 @@ fn an_editor_gets_answers_about_a_program() {
             .ends_with("graphics.sayon")
     );
 
-    // References, and renaming them all.
+    /* References, and renaming them all. */
     let (line, character) = find(MAIN, "total", 0);
     let mut params = at(&main, line, character);
     if let Json::Object(members) = &mut params {
@@ -310,7 +312,7 @@ fn an_editor_gets_answers_about_a_program() {
             .iter()
             .all(|e| e.get("newText").as_str() == Some("sum"))
     );
-    // The standard library's names stay.
+    /* The standard library's names stay. */
     let (line, character) = find(MAIN, "canvas(10", 0);
     editor.next_id += 1;
     let id = editor.next_id;
@@ -327,8 +329,10 @@ fn an_editor_gets_answers_about_a_program() {
     let refused = editor.wait("a refused rename", |m| m.get("id").as_u32() == Some(id));
     assert!(!refused.get("error").is_null(), "{refused}");
 
-    // Completion after a module's alias and after a value of a type, as the
-    // text is typed, with the syntax error the dot makes.
+    /*
+    Completion after a module's alias and after a value of a type, as the
+    text is typed, with the syntax error the dot makes.
+    */
     let typed = format!("{MAIN}shapes.\ncanvas.\n");
     editor.notify(
         "textDocument/didChange",
@@ -370,7 +374,7 @@ fn an_editor_gets_answers_about_a_program() {
         assert!(names.contains(&name.to_string()), "{name} in {names:?}");
     }
 
-    // Formatting a document that is not formatted.
+    /* Formatting a document that is not formatted. */
     let untidy = "x   =  1\nprint( x )\n";
     editor.notify("textDocument/didOpen", {
         let mut message = open(untidy, 1);
@@ -427,7 +431,7 @@ function area(shape: Shape) -> float
 canvas = graphics.canvas(8, 8)
 "#;
 
-/// Changes the document to `text`, as the editor does with each keystroke.
+/** Changes the document to `text`, as the editor does with each keystroke. */
 fn change(editor: &mut Editor, uri: &str, version: u32, text: &str) {
     editor.notify(
         "textDocument/didChange",
@@ -447,7 +451,7 @@ fn change(editor: &mut Editor, uri: &str, version: u32, text: &str) {
     );
 }
 
-/// The completion items at the end of the program with `typed` after it.
+/** The completion items at the end of the program with `typed` after it. */
 fn complete_after(editor: &mut Editor, uri: &str, version: u32, typed: &str) -> Vec<Json> {
     let text = format!("{SHAPES_PROGRAM}{typed}");
     change(editor, uri, version, &text);
@@ -478,7 +482,7 @@ fn item_named(items: &[Json], name: &str) -> Json {
         })
 }
 
-/// Whether an item comes first, as fitting the place.
+/** Whether an item comes first, as fitting the place. */
 fn fits(item: &Json) -> bool {
     item.get("sortText")
         .as_str()
@@ -486,9 +490,11 @@ fn fits(item: &Json) -> bool {
         .starts_with('0')
 }
 
-/// Completion that reads the place: what fits an argument's type first,
-/// fields to name, variants after `case`, types, import paths, modules to
-/// import, and nothing in comments; and signature help.
+/**
+Completion that reads the place: what fits an argument's type first,
+fields to name, variants after `case`, types, import paths, modules to
+import, and nothing in comments; and signature help.
+*/
 #[test]
 fn completion_fits_the_place() {
     let dir = std::env::temp_dir().join(format!("sayon-lsp-places-{}", std::process::id()));
@@ -519,12 +525,12 @@ fn completion_fits_the_place() {
         )]),
     );
 
-    // A color goes in the fourth argument: the module's colors come first.
+    /* A color goes in the fourth argument: the module's colors come first. */
     let items = complete_after(&mut editor, &uri, 2, "canvas.fill_circle(1, 2, 3, ");
     assert!(fits(&item_named(&items, "graphics.BLACK")));
     assert!(fits(&item_named(&items, "graphics.rgb")));
     assert!(!fits(&item_named(&items, "canvas")));
-    // A shape goes in `area`: its variants come first, with their fields.
+    /* A shape goes in `area`: its variants come first, with their fields. */
     let items = complete_after(&mut editor, &uri, 3, "print(area(");
     let circle = item_named(&items, "circle");
     assert!(fits(&circle));
@@ -532,14 +538,14 @@ fn completion_fits_the_place() {
         circle.get("insertText").as_str(),
         Some("circle(${1:radius})")
     );
-    // The fields left to name in a structure being built.
+    /* The fields left to name in a structure being built. */
     let items = complete_after(&mut editor, &uri, 4, "corner = graphics.Point(x = 1, ");
     assert_eq!(
         item_named(&items, "y").get("insertText").as_str(),
         Some("y = ")
     );
     assert!(!items.iter().any(|item| label(item) == "x"));
-    // Variants after `case`.
+    /* Variants after `case`. */
     let items = complete_after(
         &mut editor,
         &uri,
@@ -551,7 +557,7 @@ fn completion_fits_the_place() {
         names.contains(&"circle".to_string()) && names.contains(&"square".to_string()),
         "{names:?}"
     );
-    // Types after `:`.
+    /* Types after `:`. */
     let names: Vec<String> = complete_after(&mut editor, &uri, 6, "function f(value: ")
         .iter()
         .map(label)
@@ -560,16 +566,16 @@ fn completion_fits_the_place() {
         assert!(names.contains(&name.to_string()), "{name} in {names:?}");
     }
     assert!(!names.contains(&"area".to_string()), "{names:?}");
-    // Paths in an import, replacing what was typed of one.
+    /* Paths in an import, replacing what was typed of one. */
     let items = complete_after(&mut editor, &uri, 7, "strings = import(\"standard/st");
     let path = item_named(&items, "standard/strings.sayon");
     assert_eq!(
         path.get("textEdit").get("newText").as_str(),
         Some("standard/strings.sayon")
     );
-    // Nothing in a comment.
+    /* Nothing in a comment. */
     assert!(complete_after(&mut editor, &uri, 8, "# canvas.").is_empty());
-    // A standard module not imported yet, with its import after the others.
+    /* A standard module not imported yet, with its import after the others. */
     let items = complete_after(&mut editor, &uri, 9, "");
     let strings = item_named(&items, "strings");
     let edit = &strings.get("additionalTextEdits").as_array()[0];
@@ -578,14 +584,14 @@ fn completion_fits_the_place() {
         Some("strings = import(\"standard/strings.sayon\")\n")
     );
     assert_eq!(edit.get("range").get("start").get("line").as_u32(), Some(1));
-    // A function comes with placeholders for its arguments.
+    /* A function comes with placeholders for its arguments. */
     assert_eq!(
         item_named(&items, "area").get("insertText").as_str(),
         Some("area(${1:shape})")
     );
     assert!(!items.iter().any(|item| label(item) == "graphics.BLACK"));
 
-    // Signature help, the third parameter marked.
+    /* Signature help, the third parameter marked. */
     let text = format!("{SHAPES_PROGRAM}canvas.fill_circle(1, 2, ");
     change(&mut editor, &uri, 10, &text);
     let (line, character) = find(&text, "fill_circle(1, 2, ", 0);
@@ -604,11 +610,13 @@ fn completion_fits_the_place() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The VS Code extension's client, from its repository checked out beside
-/// this one (`../sayon-vscode`, or in `SAYON_REPOSITORIES`), run in Node
-/// with a stand-in for VS Code's API (its `test/client.cjs`), answers
-/// through the `sayon lsp` built here. Without the extension or Node, the
-/// check says it skipped.
+/**
+The VS Code extension's client, from its repository checked out beside
+this one (`../sayon-vscode`, or in `SAYON_REPOSITORIES`), run in Node
+with a stand-in for VS Code's API (its `test/client.cjs`), answers
+through the `sayon lsp` built here. Without the extension or Node, the
+check says it skipped.
+*/
 #[test]
 fn the_vscode_extension_talks_to_the_server() {
     let repositories = std::env::var_os("SAYON_REPOSITORIES")

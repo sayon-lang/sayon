@@ -1,23 +1,27 @@
-//! Building for Windows of another processor, such as Windows ARM64's
-//! programs on Windows x64. Clang compiles for the target's triple, and lld
-//! links with Visual Studio's C runtime and the Windows SDK's libraries for
-//! the target's processor, which clang finds where it finds this computer's.
-//! The SDK holds every processor's libraries; Visual Studio installs its C
-//! runtime for each processor with a component of its own.
+/*!
+Building for Windows of another processor, such as Windows ARM64's
+programs on Windows x64. Clang compiles for the target's triple, and lld
+links with Visual Studio's C runtime and the Windows SDK's libraries for
+the target's processor, which clang finds where it finds this computer's.
+The SDK holds every processor's libraries; Visual Studio installs its C
+runtime for each processor with a component of its own.
+*/
 
 use std::path::PathBuf;
 use std::process::Command;
 
 use sayon_target::Target;
 
-/// What Visual Studio calls the libraries of a processor.
+/** What Visual Studio calls the libraries of a processor. */
 pub struct Libraries {
-    /// The processor, as people write it.
+    /** The processor, as people write it. */
     pub processor: &'static str,
-    /// The folder of the libraries in Visual Studio's C++ tools.
+    /** The folder of the libraries in Visual Studio's C++ tools. */
     pub folder: &'static str,
-    /// The Visual Studio component that installs them, and its name in the
-    /// Visual Studio Installer.
+    /**
+    The Visual Studio component that installs them, and its name in the
+    Visual Studio Installer.
+    */
     pub component: &'static str,
     pub component_name: &'static str,
 }
@@ -40,9 +44,11 @@ pub fn libraries(target: &Target) -> Libraries {
     }
 }
 
-/// Visual Studio's C runtime library for `target` (`msvcrt.lib`), where
-/// clang finds Visual Studio's tools: in `VCToolsInstallDir`, or the default
-/// tools of the newest installation with C++ tools; or how to install it.
+/**
+Visual Studio's C runtime library for `target` (`msvcrt.lib`), where
+clang finds Visual Studio's tools: in `VCToolsInstallDir`, or the default
+tools of the newest installation with C++ tools; or how to install it.
+*/
 pub fn c_runtime(target: &Target) -> Result<PathBuf, String> {
     let names = libraries(target);
     let tools = match std::env::var_os("VCToolsInstallDir") {
@@ -59,8 +65,10 @@ pub fn c_runtime(target: &Target) -> Result<PathBuf, String> {
     }
 }
 
-/// The default C++ tools of the newest Visual Studio installation that has
-/// them, as `vswhere` and the version file Visual Studio keeps name them.
+/**
+The default C++ tools of the newest Visual Studio installation that has
+them, as `vswhere` and the version file Visual Studio keeps name them.
+*/
 fn default_tools() -> Option<PathBuf> {
     let vswhere = PathBuf::from(std::env::var_os("ProgramFiles(x86)")?)
         .join("Microsoft Visual Studio")
@@ -82,8 +90,10 @@ fn default_tools() -> Option<PathBuf> {
     Some(vc.join("Tools").join("MSVC").join(version.trim()))
 }
 
-/// The component of the C++ tools for this computer's own processor, which
-/// every installation that builds programs here has.
+/**
+The component of the C++ tools for this computer's own processor, which
+every installation that builds programs here has.
+*/
 fn libraries_of_this_computer() -> &'static str {
     libraries(sayon_target::host()).component
 }

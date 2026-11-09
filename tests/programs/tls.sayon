@@ -1,5 +1,7 @@
-# TLS that fails without another computer: a server that answers in plain
-# text, and a URL of neither http nor https
+##
+TLS that fails without another computer: a server that answers in plain
+text, and a URL of neither http nor https
+##
 network = import("standard/network.sayon")
 threads = import("standard/threads.sayon")
 

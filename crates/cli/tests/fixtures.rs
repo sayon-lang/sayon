@@ -1,17 +1,19 @@
-//! Runs the Sayon programs under `tests/` and compares their behavior with
-//! the recorded expectations next to them.
-//!
-//! - `tests/programs/NAME.sayon` runs with `sayon run`; its output must match
-//!   `NAME.stdout`, plus `NAME.stderr` and `NAME.status` when present.
-//! - `tests/errors/NAME.sayon` is checked with `sayon check`; the rendered
-//!   diagnostics must match `NAME.stderr` and the status must be 2.
-//! - `tests/windows/NAME.sayon` is like a program, and opens a window; it
-//!   runs where there is a screen.
-//! - `tests/online/NAME.sayon` is like a program, and talks to public
-//!   servers; it runs only with `cargo test -- --ignored`.
-//!
-//! Set `SAYON_BLESS=1` to write the current behavior as the expectation, then
-//! review the changes before committing them.
+/*!
+Runs the Sayon programs under `tests/` and compares their behavior with
+the recorded expectations next to them.
+
+- `tests/programs/NAME.sayon` runs with `sayon run`; its output must match
+  `NAME.stdout`, plus `NAME.stderr` and `NAME.status` when present.
+- `tests/errors/NAME.sayon` is checked with `sayon check`; the rendered
+  diagnostics must match `NAME.stderr` and the status must be 2.
+- `tests/windows/NAME.sayon` is like a program, and opens a window; it
+  runs where there is a screen.
+- `tests/online/NAME.sayon` is like a program, and talks to public
+  servers; it runs only with `cargo test -- --ignored`.
+
+Set `SAYON_BLESS=1` to write the current behavior as the expectation, then
+review the changes before committing them.
+*/
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -55,7 +57,7 @@ fn sayon(dir: &Path, args: &[&str]) -> Outcome {
     sayon_with_env(dir, args, &[], None)
 }
 
-/// Runs sayon with `input` as its standard input (empty without it).
+/** Runs sayon with `input` as its standard input (empty without it). */
 fn sayon_with_env(dir: &Path, args: &[&str], env: &[(&str, &str)], input: Option<&str>) -> Outcome {
     let mut command = Command::new(env!("CARGO_BIN_EXE_sayon"));
     command
@@ -82,7 +84,7 @@ fn sayon_with_env(dir: &Path, args: &[&str], env: &[(&str, &str)], input: Option
     }
 }
 
-/// Compares one expectation file, or records it when blessing.
+/** Compares one expectation file, or records it when blessing. */
 fn compare(failures: &mut Vec<String>, name: &str, path: &Path, actual: &str, required: bool) {
     match read_expectation(path) {
         _ if bless() => {
@@ -110,8 +112,10 @@ fn programs_produce_their_recorded_output() {
     run_programs(&tests_dir().join("programs"));
 }
 
-/// The programs under `tests/online`, which need the internet: their HTTPS
-/// requests go to public servers. Run them with `cargo test -- --ignored`.
+/**
+The programs under `tests/online`, which need the internet: their HTTPS
+requests go to public servers. Run them with `cargo test -- --ignored`.
+*/
 #[test]
 #[ignore = "needs the internet"]
 fn online_programs_produce_their_recorded_output() {
@@ -122,16 +126,20 @@ fn online_programs_produce_their_recorded_output() {
     }
 }
 
-/// Whether the interpreter calls C functions on this computer: on Windows
-/// and Linux, x64 and ARM64, so far (see crates/interp/src/foreign.rs).
+/**
+Whether the interpreter calls C functions on this computer: on Windows
+and Linux, x64 and ARM64, so far (see crates/interp/src/foreign.rs).
+*/
 const INTERPRETER_CALLS_C: bool = cfg!(all(
     any(windows, target_os = "linux"),
     any(target_arch = "x86_64", target_arch = "aarch64")
 ));
 
-/// Whether programs compiled for this computer pass C structures by value,
-/// as `structures_supported` in crates/codegen/src/layout.rs says for the
-/// C functions the tests declare, none of them variadic.
+/**
+Whether programs compiled for this computer pass C structures by value,
+as `structures_supported` in crates/codegen/src/layout.rs says for the
+C functions the tests declare, none of them variadic.
+*/
 const COMPILED_PROGRAMS_PASS_STRUCTURES: bool = cfg!(any(
     target_arch = "x86_64",
     all(
@@ -140,16 +148,20 @@ const COMPILED_PROGRAMS_PASS_STRUCTURES: bool = cfg!(any(
     )
 ));
 
-/// Whether a program has a line that starts with `what`, such as a block of
-/// C functions (`foreign "c"`) or a C structure (`foreign type`).
+/**
+Whether a program has a line that starts with `what`, such as a block of
+C functions (`foreign "c"`) or a C structure (`foreign type`).
+*/
 fn declares(source: &Path, what: &str) -> bool {
     std::fs::read_to_string(source)
         .is_ok_and(|text| text.lines().any(|line| line.starts_with(what)))
 }
 
-/// Runs each program under `dir` and compares its output, errors, and status
-/// with the recorded ones. On a computer where the interpreter does not call
-/// C functions yet, the programs that do are left out, and listed.
+/**
+Runs each program under `dir` and compares its output, errors, and status
+with the recorded ones. On a computer where the interpreter does not call
+C functions yet, the programs that do are left out, and listed.
+*/
 fn run_programs(dir: &Path) {
     serve_http();
     let mut failures = Vec::new();
@@ -160,7 +172,7 @@ fn run_programs(dir: &Path) {
             left_out.push(name);
             continue;
         }
-        // A program's `.stdin` file, when it has one, is its input.
+        /* A program's `.stdin` file, when it has one, is its input. */
         let input = read_expectation(&source.with_extension("stdin"));
         let outcome = sayon_with_env(
             dir,
@@ -209,10 +221,12 @@ fn run_programs(dir: &Path) {
     );
 }
 
-/// Compiles every example natively and checks that it behaves exactly like
-/// the interpreter and releases every allocation it made, including on error
-/// paths. Needs clang; set `SAYON_SKIP_NATIVE=1` to skip explicitly on a
-/// machine without it (the skip is reported, never silent).
+/**
+Compiles every example natively and checks that it behaves exactly like
+the interpreter and releases every allocation it made, including on error
+paths. Needs clang; set `SAYON_SKIP_NATIVE=1` to skip explicitly on a
+machine without it (the skip is reported, never silent).
+*/
 #[test]
 fn native_programs_match_the_interpreter() {
     if std::env::var_os("SAYON_SKIP_NATIVE").is_some() {
@@ -222,9 +236,11 @@ fn native_programs_match_the_interpreter() {
     run_native_programs(&tests_dir().join("programs"));
 }
 
-/// Builds each program under `dir` natively and compares its behavior with
-/// the interpreter's recorded one. Where compiled programs do not pass C
-/// structures yet, the programs that declare them are left out, and listed.
+/**
+Builds each program under `dir` natively and compares its behavior with
+the interpreter's recorded one. Where compiled programs do not pass C
+structures yet, the programs that declare them are left out, and listed.
+*/
 fn run_native_programs(dir: &Path) {
     serve_http();
     let mut failures = Vec::new();
@@ -242,7 +258,7 @@ fn run_native_programs(dir: &Path) {
             &[("SAYON_DEBUG_ALLOC", "1"), CLOSE_WINDOWS],
             read_expectation(&source.with_extension("stdin")).as_deref(),
         );
-        // Status 4 means the build failed, unless the program itself returns 4.
+        /* Status 4 means the build failed, unless the program itself returns 4. */
         if outcome.status == 4 && expected_status(&source) != 4 {
             failures.push(format!(
                 "{name}: the native build failed:\n{}",
@@ -272,17 +288,21 @@ fn run_native_programs(dir: &Path) {
     );
 }
 
-/// The WASI host the WebAssembly programs run under, pinned: a program's
-/// behavior is checked against this version.
+/**
+The WASI host the WebAssembly programs run under, pinned: a program's
+behavior is checked against this version.
+*/
 const WASMTIME_VERSION: &str = "wasmtime 50.0.0";
 
-/// Builds every example for WASI and runs it under wasmtime: it must behave
-/// exactly like the interpreter and release every allocation it made. A
-/// program that needs what WASI lacks, such as sockets, is diagnosed when
-/// it is built, and is left out. Needs clang with its WebAssembly linker,
-/// the Rust target `wasm32-wasip1` (`rust-toolchain.toml` installs it), and
-/// wasmtime on `PATH` or at `SAYON_WASMTIME`; set `SAYON_SKIP_WASI=1` to
-/// skip explicitly on a machine without them.
+/**
+Builds every example for WASI and runs it under wasmtime: it must behave
+exactly like the interpreter and release every allocation it made. A
+program that needs what WASI lacks, such as sockets, is diagnosed when
+it is built, and is left out. Needs clang with its WebAssembly linker,
+the Rust target `wasm32-wasip1` (`rust-toolchain.toml` installs it), and
+wasmtime on `PATH` or at `SAYON_WASMTIME`; set `SAYON_SKIP_WASI=1` to
+skip explicitly on a machine without them.
+*/
 #[test]
 fn wasi_programs_match_the_interpreter() {
     if std::env::var_os("SAYON_SKIP_WASI").is_some() {
@@ -311,15 +331,17 @@ fn wasi_programs_match_the_interpreter() {
     built.finish("WASI", failures);
 }
 
-/// Builds every example for Linux ARM64 and runs it under QEMU's user-mode
-/// emulator with the ARM64 C library: it must behave exactly like the
-/// interpreter and release every allocation it made. This is evidence for
-/// the ARM64 build, not for ARM hardware. It runs on Linux x64 with
-/// `qemu-aarch64` and the ARM64 C library (on Debian and Ubuntu, the
-/// packages `qemu-user`, `gcc-aarch64-linux-gnu`, and
-/// `libc6-dev-arm64-cross`) and the Rust target `aarch64-unknown-linux-gnu`;
-/// elsewhere, or without them, the check says it skipped. Set
-/// `SAYON_SKIP_ARM64=1` to skip.
+/**
+Builds every example for Linux ARM64 and runs it under QEMU's user-mode
+emulator with the ARM64 C library: it must behave exactly like the
+interpreter and release every allocation it made. This is evidence for
+the ARM64 build, not for ARM hardware. It runs on Linux x64 with
+`qemu-aarch64` and the ARM64 C library (on Debian and Ubuntu, the
+packages `qemu-user`, `gcc-aarch64-linux-gnu`, and
+`libc6-dev-arm64-cross`) and the Rust target `aarch64-unknown-linux-gnu`;
+elsewhere, or without them, the check says it skipped. Set
+`SAYON_SKIP_ARM64=1` to skip.
+*/
 #[test]
 fn linux_arm64_programs_match_the_interpreter_under_qemu() {
     if std::env::var_os("SAYON_SKIP_ARM64").is_some() {
@@ -371,12 +393,14 @@ fn linux_arm64_programs_match_the_interpreter_under_qemu() {
     built.finish("Linux ARM64, emulated", failures);
 }
 
-/// Builds every example for Windows ARM64 on Windows x64, which cannot run
-/// them: each must link into an executable for ARM64. This shows that the
-/// target builds, not that its programs behave. It needs Visual Studio's
-/// ARM64 libraries (the component "MSVC ARM64/ARM64EC build tools") and the
-/// Rust target `aarch64-pc-windows-msvc`; elsewhere, or without them, the
-/// check says it skipped. Set `SAYON_SKIP_ARM64=1` to skip.
+/**
+Builds every example for Windows ARM64 on Windows x64, which cannot run
+them: each must link into an executable for ARM64. This shows that the
+target builds, not that its programs behave. It needs Visual Studio's
+ARM64 libraries (the component "MSVC ARM64/ARM64EC build tools") and the
+Rust target `aarch64-pc-windows-msvc`; elsewhere, or without them, the
+check says it skipped. Set `SAYON_SKIP_ARM64=1` to skip.
+*/
 #[test]
 fn windows_arm64_programs_build() {
     if std::env::var_os("SAYON_SKIP_ARM64").is_some() {
@@ -407,7 +431,7 @@ fn windows_arm64_programs_build() {
     let mut built = build_programs(&dir, "windows-arm64", "link", "exe", &[]);
     let mut failures = std::mem::take(&mut built.failures);
     for (source, program) in &built.programs {
-        // IMAGE_FILE_MACHINE_ARM64
+        /* IMAGE_FILE_MACHINE_ARM64 */
         if pe_machine(program) != Some(0xAA64) {
             failures.push(format!(
                 "{}: the build is not an ARM64 executable (machine {:x?})",
@@ -435,7 +459,7 @@ fn windows_arm64_programs_build() {
     );
 }
 
-/// The machine a Windows executable is for: its file header's `Machine`.
+/** The machine a Windows executable is for: its file header's `Machine`. */
 fn pe_machine(path: &Path) -> Option<u16> {
     let bytes = std::fs::read(path).ok()?;
     if bytes.get(..2)? != b"MZ" {
@@ -450,8 +474,10 @@ fn pe_machine(path: &Path) -> Option<u16> {
     ))
 }
 
-/// Whether the Rust toolchain the repository uses has the standard library
-/// for `triple`.
+/**
+Whether the Rust toolchain the repository uses has the standard library
+for `triple`.
+*/
 fn rust_target_installed(triple: &str) -> bool {
     Command::new("rustc")
         .args(["--print", "sysroot"])
@@ -466,9 +492,11 @@ fn rust_target_installed(triple: &str) -> bool {
         })
 }
 
-/// Runs a program for another processor under QEMU's user-mode `emulator`,
-/// with the C library in `sysroot`, in `dir`, which it may use, with
-/// `SAYON_DEBUG_ALLOC` set and `input` as its standard input.
+/**
+Runs a program for another processor under QEMU's user-mode `emulator`,
+with the C library in `sysroot`, in `dir`, which it may use, with
+`SAYON_DEBUG_ALLOC` set and `input` as its standard input.
+*/
 fn run_emulated(
     emulator: &str,
     sysroot: &Path,
@@ -501,25 +529,29 @@ fn run_emulated(
     }
 }
 
-/// The programs the Linux ARM64 check under QEMU leaves out, and why.
+/** The programs the Linux ARM64 check under QEMU leaves out, and why. */
 const LINUX_ARM64_EMULATED_LEFT_OUT: &[&str] = &[
-    // glibc's posix_spawn learns that a program could not be started from
-    // memory the child shares, which QEMU's user-mode emulator does not
-    // share: the start seems to succeed, and the child exits with 127.
+    /*
+    glibc's posix_spawn learns that a program could not be started from
+    memory the child shares, which QEMU's user-mode emulator does not
+    share: the start seems to succeed, and the child exits with 127.
+    */
     "processes.sayon",
-    // The cross packages' C library has no OpenSSL to load.
+    /* The cross packages' C library has no OpenSSL to load. */
     "tls.sayon",
 ];
 
-/// The Node that runs web programs in the tests, pinned like wasmtime.
+/** The Node that runs web programs in the tests, pinned like wasmtime. */
 const NODE_VERSION: &str = "v24.22.1";
 
-/// Builds every example for web pages and runs it in Node through its
-/// generated glue (`tests/web/node.mjs`): it must behave exactly like the
-/// interpreter and release every allocation it made. Passing here does not
-/// show that browsers run it the same; the browser check does. Needs clang
-/// with its WebAssembly linker, the Rust target `wasm32-unknown-unknown`,
-/// and Node on `PATH` or at `SAYON_NODE`; set `SAYON_SKIP_WEB=1` to skip.
+/**
+Builds every example for web pages and runs it in Node through its
+generated glue (`tests/web/node.mjs`): it must behave exactly like the
+interpreter and release every allocation it made. Passing here does not
+show that browsers run it the same; the browser check does. Needs clang
+with its WebAssembly linker, the Rust target `wasm32-unknown-unknown`,
+and Node on `PATH` or at `SAYON_NODE`; set `SAYON_SKIP_WEB=1` to skip.
+*/
 #[test]
 fn web_programs_match_the_interpreter_in_node() {
     if std::env::var_os("SAYON_SKIP_WEB").is_some() {
@@ -561,14 +593,16 @@ fn web_programs_match_the_interpreter_in_node() {
     built.finish("Web in Node", failures);
 }
 
-/// Builds every example for web pages and runs each in actual browsers:
-/// Edge, Chrome, and Firefox where installed (or those `SAYON_BROWSERS`
-/// lists, separated by `;`), headless, through an HTTP server on this
-/// computer, as a page loads them: `tests/web/runner.html` runs each program
-/// through its glue and posts what it wrote back. Each must behave exactly
-/// like the interpreter and release every allocation it made. Set
-/// `SAYON_SKIP_BROWSERS=1` to skip; with no browser found, the check says
-/// it skipped.
+/**
+Builds every example for web pages and runs each in actual browsers:
+Edge, Chrome, and Firefox where installed (or those `SAYON_BROWSERS`
+lists, separated by `;`), headless, through an HTTP server on this
+computer, as a page loads them: `tests/web/runner.html` runs each program
+through its glue and posts what it wrote back. Each must behave exactly
+like the interpreter and release every allocation it made. Set
+`SAYON_SKIP_BROWSERS=1` to skip; with no browser found, the check says
+it skipped.
+*/
 #[test]
 fn web_programs_match_the_interpreter_in_browsers() {
     if std::env::var_os("SAYON_SKIP_BROWSERS").is_some() {
@@ -583,9 +617,11 @@ fn web_programs_match_the_interpreter_in_browsers() {
     check_in_browsers(&browsers, &tests_dir().join("programs"), "browsers");
 }
 
-/// Builds each program under `dir` for web pages and runs it in each of
-/// `browsers`, comparing it with the interpreter; `host` names the work
-/// directory.
+/**
+Builds each program under `dir` for web pages and runs it in each of
+`browsers`, comparing it with the interpreter; `host` names the work
+directory.
+*/
 fn check_in_browsers(browsers: &[Browser], dir: &Path, host: &str) {
     prepare_runtime("wasm32-unknown-unknown", &[]);
     serve_http();
@@ -621,22 +657,28 @@ fn check_in_browsers(browsers: &[Browser], dir: &Path, host: &str) {
     built.finish(&format!("Web in {}", used.join(", ")), failures);
 }
 
-/// Whether this computer has a screen for windows: Windows has, and Linux
-/// when an X display is set.
+/**
+Whether this computer has a screen for windows: Windows has, and Linux
+when an X display is set.
+*/
 fn has_screen() -> bool {
     cfg!(windows) || (cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some())
 }
 
-/// The host option that has each window ask to close after 120 frames, so
-/// that a program that runs until its window closes, as an example does,
-/// ends in a check. Every run of a program has it; programs that close
-/// their windows sooner never meet it.
+/**
+The host option that has each window ask to close after 120 frames, so
+that a program that runs until its window closes, as an example does,
+ends in a check. Every run of a program has it; programs that close
+their windows sooner never meet it.
+*/
 const CLOSE_WINDOWS: (&str, &str) = ("SAYON_CLOSE_WINDOWS", "1");
 
-/// The programs that show windows, gathered in a work directory named for
-/// `host`: those under `tests/windows`, and the examples that
-/// `tests/examples` records the output of, each project's files beside its
-/// entry, which is named for the project.
+/**
+The programs that show windows, gathered in a work directory named for
+`host`: those under `tests/windows`, and the examples that
+`tests/examples` records the output of, each project's files beside its
+entry, which is named for the project.
+*/
 fn window_programs(host: &str) -> PathBuf {
     let work = std::env::temp_dir().join(format!("sayon-windows-{host}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&work);
@@ -667,12 +709,14 @@ fn window_programs(host: &str) -> PathBuf {
     work
 }
 
-/// The programs that show windows (see [`window_programs`]) open a window,
-/// show frames, and close it, on this computer's screen: in the
-/// interpreter, compiled (releasing every allocation), and in each browser
-/// found, where the window is a canvas of the page. The Android check runs
-/// them as apps. Without a screen (on Linux, no `DISPLAY`), the check says
-/// it skipped; the browsers are skipped as their own check is.
+/**
+The programs that show windows (see [`window_programs`]) open a window,
+show frames, and close it, on this computer's screen: in the
+interpreter, compiled (releasing every allocation), and in each browser
+found, where the window is a canvas of the page. The Android check runs
+them as apps. Without a screen (on Linux, no `DISPLAY`), the check says
+it skipped; the browsers are skipped as their own check is.
+*/
 #[test]
 fn window_programs_match_the_interpreter() {
     if !has_screen() {
@@ -693,10 +737,12 @@ fn window_programs_match_the_interpreter() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The programs the Android check also runs as apps, through their
-/// packages: what they write goes to Android's log, and the files they
-/// write to the app's own directory. Every program that shows a window
-/// (see [`window_programs`]) runs as an app too, on the app's screen.
+/**
+The programs the Android check also runs as apps, through their
+packages: what they write goes to Android's log, and the files they
+write to the app's own directory. Every program that shows a window
+(see [`window_programs`]) runs as an app too, on the app's screen.
+*/
 const ANDROID_APPS: &[&str] = &[
     "threads.sayon",
     "uncaught.sayon",
@@ -706,23 +752,25 @@ const ANDROID_APPS: &[&str] = &[
     "zones.sayon",
 ];
 
-/// The programs the Android check runs only as apps, and why.
+/** The programs the Android check runs only as apps, and why. */
 const ANDROID_SHELL_LEFT_OUT: &[&str] = &[
-    // TLS on Android is Java's, which a program run from a shell lacks.
+    /* TLS on Android is Java's, which a program run from a shell lacks. */
     "tls.sayon",
 ];
 
-/// Builds every example for Android (x86-64) and runs it on an emulator or
-/// a device through `adb shell`, as an executable: it must behave exactly
-/// like the interpreter and release every allocation it made. Then a few
-/// ([`ANDROID_APPS`]) are built as apps, installed, and started, and what
-/// they write to Android's log, and their status, must match too. The
-/// device is the first x86-64 one `adb` lists, or else the emulator of the
-/// AVD `SAYON_AVD` (by default `sayon`), which the check starts and stops.
-/// Needs the Android SDK (`ANDROID_HOME`, or where Android Studio puts it)
-/// with its NDK, build tools, platform, emulator, and a JDK for signing; set
-/// `SAYON_SKIP_ANDROID=1` to skip. Without an SDK or a device, the check
-/// says it skipped.
+/**
+Builds every example for Android (x86-64) and runs it on an emulator or
+a device through `adb shell`, as an executable: it must behave exactly
+like the interpreter and release every allocation it made. Then a few
+([`ANDROID_APPS`]) are built as apps, installed, and started, and what
+they write to Android's log, and their status, must match too. The
+device is the first x86-64 one `adb` lists, or else the emulator of the
+AVD `SAYON_AVD` (by default `sayon`), which the check starts and stops.
+Needs the Android SDK (`ANDROID_HOME`, or where Android Studio puts it)
+with its NDK, build tools, platform, emulator, and a JDK for signing; set
+`SAYON_SKIP_ANDROID=1` to skip. Without an SDK or a device, the check
+says it skipped.
+*/
 #[test]
 fn android_programs_match_the_interpreter() {
     if std::env::var_os("SAYON_SKIP_ANDROID").is_some() {
@@ -739,7 +787,7 @@ fn android_programs_match_the_interpreter() {
     };
     prepare_runtime("x86_64-linux-android", &[]);
     serve_http();
-    // The device's own loopback reaches the test server through adb.
+    /* The device's own loopback reaches the test server through adb. */
     let port = HTTP_SERVER.rsplit(':').next().unwrap();
     device.adb(&["reverse", &format!("tcp:{port}"), &format!("tcp:{port}")]);
     let dir = tests_dir().join("programs");
@@ -763,9 +811,11 @@ fn android_programs_match_the_interpreter() {
     }
     built.finish("Android x64", failures);
     let _ = std::fs::remove_dir_all(&windows);
-    // ARM64 programs run on an x86-64 device through Android's translation
-    // of ARM code, where it has it: evidence for the ARM64 build, not for
-    // ARM hardware.
+    /*
+    ARM64 programs run on an x86-64 device through Android's translation
+    of ARM code, where it has it: evidence for the ARM64 build, not for
+    ARM hardware.
+    */
     let abis = device.shell("getprop ro.product.cpu.abilist").stdout;
     if abis.split(',').any(|abi| abi.trim() == "arm64-v8a") {
         prepare_runtime("aarch64-linux-android", &[]);
@@ -777,15 +827,17 @@ fn android_programs_match_the_interpreter() {
     }
 }
 
-/// The programs the ARM64 check leaves out, and why.
+/** The programs the ARM64 check leaves out, and why. */
 const ANDROID_ARM64_LEFT_OUT: &[&str] = &[
-    // As on x86-64, a program run from a shell has no TLS.
+    /* As on x86-64, a program run from a shell has no TLS. */
     "tls.sayon",
 ];
 
-/// Builds every example for an Android target as a program for
-/// `adb shell`, and runs each on the device in a directory of its own,
-/// comparing it with the interpreter. `left_out` names programs not run.
+/**
+Builds every example for an Android target as a program for
+`adb shell`, and runs each on the device in a directory of its own,
+comparing it with the interpreter. `left_out` names programs not run.
+*/
 fn run_android_programs(
     device: &Device,
     dir: &Path,
@@ -819,8 +871,10 @@ fn run_android_programs(
     (built, failures)
 }
 
-/// The Android SDK: `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or where Android
-/// Studio puts it.
+/**
+The Android SDK: `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or where Android
+Studio puts it.
+*/
 fn android_sdk() -> Option<PathBuf> {
     let from = |name: &str| std::env::var_os(name).map(PathBuf::from);
     let default = if cfg!(windows) {
@@ -836,26 +890,30 @@ fn android_sdk() -> Option<PathBuf> {
         .filter(|sdk| sdk.join("platform-tools").is_dir())
 }
 
-/// The suffix of this computer's programs.
+/** The suffix of this computer's programs. */
 fn exe(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
-/// An Android device or emulator the checks run programs on, through `adb`.
+/** An Android device or emulator the checks run programs on, through `adb`. */
 struct Device {
     adb: PathBuf,
     serial: String,
-    /// The emulator the check started, which it stops.
+    /** The emulator the check started, which it stops. */
     emulator: Option<std::process::Child>,
 }
 
-/// The port of the emulator a check starts, so that its name is known and
-/// it stays apart from the user's own.
+/**
+The port of the emulator a check starts, so that its name is known and
+it stays apart from the user's own.
+*/
 const EMULATOR_PORT: u16 = 5584;
 
 impl Device {
-    /// The first x86-64 device `adb` lists, or the emulator of the AVD,
-    /// started and booted.
+    /**
+    The first x86-64 device `adb` lists, or the emulator of the AVD,
+    started and booted.
+    */
     fn find(sdk: &Path) -> Option<Device> {
         let adb = sdk.join("platform-tools").join(exe("adb"));
         let listed = Command::new(&adb).arg("devices").output().ok()?;
@@ -896,7 +954,7 @@ impl Device {
             serial: format!("emulator-{EMULATOR_PORT}"),
             emulator: Some(child),
         };
-        // A cold boot on a small computer takes minutes.
+        /* A cold boot on a small computer takes minutes. */
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(900);
         while std::time::Instant::now() < deadline {
             if device.shell("getprop sys.boot_completed").stdout.trim() == "1" {
@@ -908,7 +966,7 @@ impl Device {
         None
     }
 
-    /// Runs `adb` for this device.
+    /** Runs `adb` for this device. */
     fn adb(&self, args: &[&str]) -> Outcome {
         let output = Command::new(&self.adb)
             .args(["-s", &self.serial])
@@ -916,8 +974,10 @@ impl Device {
             .stdin(Stdio::null())
             .output()
             .expect("run adb");
-        // Windows' adb writes each line break it passes on as CR LF; then,
-        // as in the other checks, a program's own CR LF counts as LF.
+        /*
+        Windows' adb writes each line break it passes on as CR LF; then,
+        as in the other checks, a program's own CR LF counts as LF.
+        */
         let text = |bytes: &[u8]| {
             let text = String::from_utf8_lossy(bytes);
             let passed = if cfg!(windows) {
@@ -934,8 +994,10 @@ impl Device {
         }
     }
 
-    /// Runs a command in the device's shell, which keeps its output and
-    /// errors apart and gives its status.
+    /**
+    Runs a command in the device's shell, which keeps its output and
+    errors apart and gives its status.
+    */
     fn shell(&self, command: &str) -> Outcome {
         self.adb(&["shell", command])
     }
@@ -950,9 +1012,11 @@ impl Drop for Device {
     }
 }
 
-/// Builds `source` as an app, installs it on the device, starts it, and
-/// gives what it wrote to Android's log, under the tag `sayon`, and the
-/// status it ended with, which the runtime logs under `sayon-app`.
+/**
+Builds `source` as an app, installs it on the device, starts it, and
+gives what it wrote to Android's log, under the tag `sayon`, and the
+status it ended with, which the runtime logs under `sayon-app`.
+*/
 fn run_android_app(
     device: &Device,
     dir: &Path,
@@ -987,7 +1051,7 @@ fn run_android_app(
     }
     let id = format!("sayon.app.{name}");
     device.adb(&["logcat", "-c"]);
-    // An app takes host options as its intent's extras.
+    /* An app takes host options as its intent's extras. */
     let started = device.shell(&format!(
         "am start -W -n {id}/android.app.NativeActivity --ez {} true",
         CLOSE_WINDOWS.0
@@ -999,7 +1063,7 @@ fn run_android_app(
         ));
     }
     const ENDED: &str = "I/sayon-app: the program ended with status ";
-    // Starting an app on a busy emulator can take most of a minute.
+    /* Starting an app on a busy emulator can take most of a minute. */
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
     let log = loop {
         let log = device
@@ -1017,7 +1081,7 @@ fn run_android_app(
         status: -1,
     };
     for line in log.lines() {
-        // The log pads short tags, as in `I/sayon   : text`.
+        /* The log pads short tags, as in `I/sayon   : text`. */
         let text = |prefix: &str| {
             line.strip_prefix(prefix)
                 .map(|rest| rest.trim_start_matches(' '))
@@ -1042,14 +1106,16 @@ fn run_android_app(
     Ok(outcome)
 }
 
-/// A browser to run web programs in.
+/** A browser to run web programs in. */
 struct Browser {
     name: String,
     path: PathBuf,
 }
 
-/// The browsers installed where they install themselves, or those that
-/// `SAYON_BROWSERS` lists.
+/**
+The browsers installed where they install themselves, or those that
+`SAYON_BROWSERS` lists.
+*/
 fn browsers() -> Vec<Browser> {
     let named = |path: PathBuf| {
         let file = path
@@ -1085,8 +1151,10 @@ fn browsers() -> Vec<Browser> {
     if let Some(local) = local {
         candidates.push(local.join(r"Google\Chrome\Application\chrome.exe"));
         candidates.push(local.join(r"Mozilla Firefox\firefox.exe"));
-        // Chrome for Testing unpacked, and Firefox extracted from its
-        // installer, uninstalled, as the developer setup has them.
+        /*
+        Chrome for Testing unpacked, and Firefox extracted from its
+        installer, uninstalled, as the developer setup has them.
+        */
         candidates.push(local.join(r"Programs\chrome-for-testing\chrome.exe"));
         candidates.push(local.join(r"Programs\firefox\core\firefox.exe"));
     }
@@ -1100,8 +1168,10 @@ fn browsers() -> Vec<Browser> {
     found
 }
 
-/// Serves `work` over HTTP on this computer, opens its runner page in the
-/// browser, headless, and collects the result of each of `count` programs.
+/**
+Serves `work` over HTTP on this computer, opens its runner page in the
+browser, headless, and collects the result of each of `count` programs.
+*/
 fn run_in_browser(browser: &Browser, work: &Path, count: usize) -> Vec<(String, Outcome)> {
     use std::net::TcpListener;
     let listener = TcpListener::bind("127.0.0.1:0").expect("listen");
@@ -1119,9 +1189,11 @@ fn run_in_browser(browser: &Browser, work: &Path, count: usize) -> Vec<(String, 
             .args(["--no-default-browser-check", "--disable-extensions"])
             .arg(format!("--user-data-dir={}", profile.display()));
         if browser.name == "Chrome" {
-            // Chrome for Testing, unpacked rather than installed, has no
-            // exemption that lets its network service's sandbox reach this
-            // computer's own addresses; the rest of its sandbox stays.
+            /*
+            Chrome for Testing, unpacked rather than installed, has no
+            exemption that lets its network service's sandbox reach this
+            computer's own addresses; the rest of its sandbox stays.
+            */
             command.arg("--disable-features=NetworkServiceSandbox");
         }
     }
@@ -1134,8 +1206,10 @@ fn run_in_browser(browser: &Browser, work: &Path, count: usize) -> Vec<(String, 
         .unwrap_or_else(|e| panic!("start {}: {e}", browser.path.display()));
     let (sender, receiver) = std::sync::mpsc::channel();
     let root = work.to_path_buf();
-    // A connection each, since a browser may open one ahead and send
-    // nothing on it for a while.
+    /*
+    A connection each, since a browser may open one ahead and send
+    nothing on it for a while.
+    */
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let (root, sender) = (root.clone(), sender.clone());
@@ -1143,9 +1217,11 @@ fn run_in_browser(browser: &Browser, work: &Path, count: usize) -> Vec<(String, 
         }
     });
     let mut results = Vec::new();
-    // A browser's first start with a new profile can take minutes on a
-    // small computer busy with the other checks; the wait ends as soon as
-    // the page says it is done.
+    /*
+    A browser's first start with a new profile can take minutes on a
+    small computer busy with the other checks; the wait ends as soon as
+    the page says it is done.
+    */
     let deadline =
         std::time::Instant::now() + std::time::Duration::from_secs(180 + 10 * count as u64);
     loop {
@@ -1167,12 +1243,16 @@ fn run_in_browser(browser: &Browser, work: &Path, count: usize) -> Vec<(String, 
     results
 }
 
-/// What the browser check's server sends on: a program's result, or `None`
-/// once the page has run them all.
+/**
+What the browser check's server sends on: a program's result, or `None`
+once the page has run them all.
+*/
 type Results = std::sync::mpsc::Sender<Option<(String, Outcome)>>;
 
-/// Answers one request of the runner page: a file of `root`, or a program's
-/// result posted back, which goes to `results`.
+/**
+Answers one request of the runner page: a file of `root`, or a program's
+result posted back, which goes to `results`.
+*/
 fn serve(mut stream: std::net::TcpStream, root: &Path, results: &Results) {
     use std::io::{BufRead, BufReader, Read};
     let Ok(clone) = stream.try_clone() else {
@@ -1206,8 +1286,10 @@ fn serve(mut stream: std::net::TcpStream, root: &Path, results: &Results) {
         );
         let _ = stream.write_all(head.as_bytes());
         let _ = stream.write_all(data);
-        // Closing at once can reset the connection before the browser has
-        // read the reply: finish sending, then wait for the browser to close.
+        /*
+        Closing at once can reset the connection before the browser has
+        read the reply: finish sending, then wait for the browser to close.
+        */
         let _ = stream.shutdown(std::net::Shutdown::Write);
         let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
         let _ = std::io::copy(&mut stream, &mut std::io::sink());
@@ -1250,14 +1332,18 @@ fn serve(mut stream: std::net::TcpStream, root: &Path, results: &Results) {
     }
 }
 
-/// Where the HTTP server that `tests/programs/http.sayon` makes its requests
-/// to listens: an address fixed in advance, which the program names, since
-/// a program built for a web page has no other way to learn it.
+/**
+Where the HTTP server that `tests/programs/http.sayon` makes its requests
+to listens: an address fixed in advance, which the program names, since
+a program built for a web page has no other way to learn it.
+*/
 const HTTP_SERVER: &str = "127.0.0.1:47613";
 
-/// Starts the server at [`HTTP_SERVER`], once for all the checks, which run
-/// at once. It answers each connection on a thread of its own, and lets web
-/// pages of any origin read its responses.
+/**
+Starts the server at [`HTTP_SERVER`], once for all the checks, which run
+at once. It answers each connection on a thread of its own, and lets web
+pages of any origin read its responses.
+*/
 fn serve_http() {
     static STARTED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     STARTED.get_or_init(|| {
@@ -1271,7 +1357,7 @@ fn serve_http() {
     });
 }
 
-/// Answers one request to the server at [`HTTP_SERVER`].
+/** Answers one request to the server at [`HTTP_SERVER`]. */
 fn answer_http(mut stream: std::net::TcpStream) {
     use std::io::{BufRead, BufReader, Read};
     let Ok(clone) = stream.try_clone() else {
@@ -1306,7 +1392,7 @@ fn answer_http(mut stream: std::net::TcpStream) {
     let path = words.next().unwrap_or("/").to_string();
     let (status, extra, data): (&str, Vec<String>, Vec<u8>) = match (method.as_str(), path.as_str())
     {
-        // A page asks first whether it may send what a form could not.
+        /* A page asks first whether it may send what a form could not. */
         ("OPTIONS", _) => (
             "204 No Content",
             vec![
@@ -1342,14 +1428,18 @@ fn answer_http(mut stream: std::net::TcpStream) {
         }
         (_, "/bytes") => ("200 OK", Vec::new(), (0..=255).collect()),
         (_, "/large") => ("200 OK", Vec::new(), vec![b'x'; 100]),
-        // Late enough that a task's short sleep ends first, even when a
-        // busy computer is late with timers.
+        /*
+        Late enough that a task's short sleep ends first, even when a
+        busy computer is late with timers.
+        */
         (_, "/later") => {
             std::thread::sleep(std::time::Duration::from_secs(2));
             ("200 OK", Vec::new(), b"late".to_vec())
         }
-        // Never answers, and waits for the client to give up, so that a
-        // request's timeout ends it however late its timer comes.
+        /*
+        Never answers, and waits for the client to give up, so that a
+        request's timeout ends it however late its timer comes.
+        */
         (_, "/stalled") => {
             let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(60)));
             let _ = std::io::copy(&mut stream, &mut std::io::sink());
@@ -1372,14 +1462,16 @@ fn answer_http(mut stream: std::net::TcpStream) {
     head.push_str("\r\n");
     let _ = stream.write_all(head.as_bytes());
     let _ = stream.write_all(&data);
-    // As the runner's server does: finish sending, then wait for the
-    // client to close.
+    /*
+    As the runner's server does: finish sending, then wait for the
+    client to close.
+    */
     let _ = stream.shutdown(std::net::Shutdown::Write);
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
     let _ = std::io::copy(&mut stream, &mut std::io::sink());
 }
 
-/// Stops a browser and the processes it started.
+/** Stops a browser and the processes it started. */
 fn stop_browser(child: &mut std::process::Child) {
     if cfg!(windows) {
         let _ = Command::new("taskkill")
@@ -1392,18 +1484,18 @@ fn stop_browser(child: &mut std::process::Child) {
     let _ = child.wait();
 }
 
-/// The programs built for a target, in a work directory removed with them.
+/** The programs built for a target, in a work directory removed with them. */
 struct Built {
-    /// Each program's source, with its module.
+    /** Each program's source, with its module. */
     programs: Vec<(PathBuf, PathBuf)>,
-    /// The programs that need what the target lacks, which are left out.
+    /** The programs that need what the target lacks, which are left out. */
     lacking: Vec<String>,
     failures: Vec<String>,
     work: PathBuf,
 }
 
 impl Built {
-    /// Reports what ran, and fails with the problems found.
+    /** Reports what ran, and fails with the problems found. */
     fn finish(self, host: &str, failures: Vec<String>) {
         let _ = std::fs::remove_dir_all(&self.work);
         eprintln!(
@@ -1422,11 +1514,13 @@ impl Built {
     }
 }
 
-/// Builds each program under `dir` for `target`, to run on `host`, in a
-/// work directory of the host's own, since the checks run at once; each is
-/// named for its source, with `extension`, and built with `extra` too. A
-/// program that needs a capability the target lacks is diagnosed
-/// (`E_CAPABILITY`) and left out.
+/**
+Builds each program under `dir` for `target`, to run on `host`, in a
+work directory of the host's own, since the checks run at once; each is
+named for its source, with `extension`, and built with `extra` too. A
+program that needs a capability the target lacks is diagnosed
+(`E_CAPABILITY`) and left out.
+*/
 fn build_programs(dir: &Path, target: &str, host: &str, extension: &str, extra: &[&str]) -> Built {
     let work = std::env::temp_dir().join(format!("sayon-{target}-{host}-{}", std::process::id()));
     std::fs::create_dir_all(&work).expect("create work directory");
@@ -1460,8 +1554,10 @@ fn build_programs(dir: &Path, target: &str, host: &str, extension: &str, extra: 
     built
 }
 
-/// Runs a WebAssembly program under wasmtime in `dir`, which it may use,
-/// with `SAYON_DEBUG_ALLOC` set and `input` as its standard input.
+/**
+Runs a WebAssembly program under wasmtime in `dir`, which it may use,
+with `SAYON_DEBUG_ALLOC` set and `input` as its standard input.
+*/
 fn run_wasm(wasmtime: &std::ffi::OsStr, dir: &Path, wasm: &Path, input: Option<&str>) -> Outcome {
     let mut child = Command::new(wasmtime)
         .args(["run", "--dir", ".", "--env", "SAYON_DEBUG_ALLOC=1"])
@@ -1485,17 +1581,21 @@ fn run_wasm(wasmtime: &std::ffi::OsStr, dir: &Path, wasm: &Path, input: Option<&
     }
 }
 
-/// The files of WASI's C library that WASI programs link with.
+/** The files of WASI's C library that WASI programs link with. */
 const WASI_C_LIBRARY: &[&str] = &["crt1-command.o", "libc.a"];
 
-/// Builds the runtime for `triple` and puts it, with the files of the C
-/// library it needs from the Rust toolchain, where `sayon` looks for another
-/// target's libraries: `lib/<triple>` beside the directory of the `sayon`
-/// executable. The runtime builds in a directory of its own, so this cargo
-/// never waits for the one running the tests.
+/**
+Builds the runtime for `triple` and puts it, with the files of the C
+library it needs from the Rust toolchain, where `sayon` looks for another
+target's libraries: `lib/<triple>` beside the directory of the `sayon`
+executable. The runtime builds in a directory of its own, so this cargo
+never waits for the one running the tests.
+*/
 fn prepare_runtime(triple: &str, c_library: &[&str]) {
-    // Once a run for each target: the checks run at once, and replacing a
-    // library while another check links with it fails on Windows.
+    /*
+    Once a run for each target: the checks run at once, and replacing a
+    library while another check links with it fails on Windows.
+    */
     static PREPARED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
     let mut prepared = PREPARED.lock().unwrap_or_else(|e| e.into_inner());
     if prepared.iter().any(|t| t == triple) {
@@ -1555,16 +1655,18 @@ fn prepare_runtime(triple: &str, c_library: &[&str]) {
     }
 }
 
-/// The status a program's recorded behavior ends with.
+/** The status a program's recorded behavior ends with. */
 fn expected_status(source: &Path) -> i32 {
     read_expectation(&source.with_extension("status"))
         .map(|text| text.trim().parse().expect("status"))
         .unwrap_or(0)
 }
 
-/// Compares how a compiled program behaved, run with `SAYON_DEBUG_ALLOC`,
-/// with the interpreter's recorded behavior, and checks that it released
-/// every allocation it made. `mode` names how it was compiled.
+/**
+Compares how a compiled program behaved, run with `SAYON_DEBUG_ALLOC`,
+with the interpreter's recorded behavior, and checks that it released
+every allocation it made. `mode` names how it was compiled.
+*/
 fn compare_with_interpreter(
     failures: &mut Vec<String>,
     source: &Path,
@@ -1573,8 +1675,10 @@ fn compare_with_interpreter(
 ) {
     let name = source.file_name().unwrap().to_string_lossy().to_string();
     const REPORT: &str = "sayon: allocations live at exit: ";
-    // A program stopped by a fatal error releases nothing, and reports
-    // nothing.
+    /*
+    A program stopped by a fatal error releases nothing, and reports
+    nothing.
+    */
     let fatal = expected_status(source) == 3;
     let mut stderr_lines: Vec<&str> = outcome.stderr.lines().collect();
     match stderr_lines
@@ -1603,7 +1707,7 @@ fn compare_with_interpreter(
     compare_recorded(failures, source, outcome, mode);
 }
 
-/// Compares how a program behaved with the interpreter's recorded behavior.
+/** Compares how a program behaved with the interpreter's recorded behavior. */
 fn compare_recorded(failures: &mut Vec<String>, source: &Path, outcome: Outcome, mode: &str) {
     let name = source.file_name().unwrap().to_string_lossy().to_string();
     let expected_stdout = read_expectation(&source.with_extension("stdout")).unwrap_or_default();
@@ -1629,9 +1733,11 @@ fn compare_recorded(failures: &mut Vec<String>, source: &Path, outcome: Outcome,
     }
 }
 
-/// `sayon init <name>` makes a project in a new folder, and `sayon init`
-/// alone makes the current folder one, named after it, keeping the files it
-/// has; either project checks, and a folder that is a project is refused.
+/**
+`sayon init <name>` makes a project in a new folder, and `sayon init`
+alone makes the current folder one, named after it, keeping the files it
+has; either project checks, and a folder that is a project is refused.
+*/
 #[test]
 fn init_makes_projects() {
     let work = std::env::temp_dir().join(format!("sayon-init-{}", std::process::id()));
@@ -1671,8 +1777,10 @@ fn init_makes_projects() {
     let _ = std::fs::remove_dir_all(&work);
 }
 
-/// Runs `sayon test` on each file under `tests/test_runner` and compares
-/// the report and exit status with `NAME.stdout` and `NAME.status`.
+/**
+Runs `sayon test` on each file under `tests/test_runner` and compares
+the report and exit status with `NAME.stdout` and `NAME.status`.
+*/
 #[test]
 fn test_runner_reports_results() {
     let dir = tests_dir().join("test_runner");
@@ -1725,11 +1833,13 @@ fn test_runner_reports_results() {
     );
 }
 
-/// Each example checks for every target it is for: a single file for
-/// `--target all`'s targets, and a project for each target its manifest
-/// names. A project that requires a capability is refused for a target
-/// that lacks it, with the capability named: the sketch pad, which shows a
-/// window, for WASI.
+/**
+Each example checks for every target it is for: a single file for
+`--target all`'s targets, and a project for each target its manifest
+names. A project that requires a capability is refused for a target
+that lacks it, with the capability named: the sketch pad, which shows a
+window, for WASI.
+*/
 #[test]
 fn examples_check_for_their_targets() {
     let examples = tests_dir().join("..").join("examples");
@@ -1767,7 +1877,7 @@ fn examples_check_for_their_targets() {
         if outcome.status != 0 {
             failures.push(format!("{name}: {}{}", outcome.stdout, outcome.stderr));
         }
-        // The checks report on standard error.
+        /* The checks report on standard error. */
         let said = format!("{}{}", outcome.stdout, outcome.stderr);
         for target in targets {
             if !said.contains(&format!("no problems found for {target}")) {
@@ -1794,8 +1904,10 @@ fn examples_check_for_their_targets() {
     );
 }
 
-/// The Sayon sources in this repository are formatted, so formatting them
-/// again changes nothing.
+/**
+The Sayon sources in this repository are formatted, so formatting them
+again changes nothing.
+*/
 #[test]
 fn repository_sources_are_formatted() {
     let root = tests_dir().join("..");
@@ -1816,9 +1928,11 @@ fn repository_sources_are_formatted() {
     assert_eq!(outcome.status, 0, "{}{}", outcome.stdout, outcome.stderr);
 }
 
-/// docs/api.md is what scripts/api_inventory.sayon writes from the standard
-/// library's declarations, so it says what the library has. With
-/// `SAYON_BLESS=1` the page is written again.
+/**
+docs/api.md is what scripts/api_inventory.sayon writes from the standard
+library's declarations, so it says what the library has. With
+`SAYON_BLESS=1` the page is written again.
+*/
 #[test]
 fn the_api_inventory_is_current() {
     let root = tests_dir().join("..");
@@ -1878,7 +1992,7 @@ fn invalid_programs_report_their_recorded_diagnostics() {
     let mut failures = Vec::new();
     for source in sources(&dir) {
         let name = source.file_name().unwrap().to_string_lossy().to_string();
-        // A first line `# check: --target web` adds its words to the command.
+        /* A first line `# check: --target web` adds its words to the command. */
         let text = std::fs::read_to_string(&source).unwrap();
         let extra: Vec<&str> = text
             .lines()

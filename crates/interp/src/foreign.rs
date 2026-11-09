@@ -1,36 +1,38 @@
-//! Calls of C functions from interpreted programs.
-//!
-//! A library is loaded the first time one of its functions is called, and
-//! each function is looked up by its name. The call itself goes through a
-//! small routine written for the target's calling convention, which takes
-//! the arguments as words already in their places, so one routine serves
-//! every signature, variadic ones included; the result comes back from the
-//! integer and the float result registers, and the caller keeps what the
-//! signature names.
-//!
-//! On Windows x64 each argument has a position, whose integer and float
-//! registers both get it (as a variadic function wants of a float), and a
-//! structure goes in its position's register when it has 1, 2, 4, or 8
-//! bytes, or by the address of a copy. On Linux (System V) integers and
-//! floats take the next register of their own kind, and a structure of up
-//! to 16 bytes goes in a register for each of its eightbytes, of the kind
-//! the eightbyte needs, while a larger one is copied onto the stack. A
-//! structure given back in memory, on either, is written where an address
-//! passed before the arguments points. On ARM64 (AAPCS64, which Windows
-//! keeps for functions that are not variadic), integers and floats take the
-//! next register of their own kind too, an aggregate of up to four floats
-//! goes in vector registers, another structure of up to 16 bytes in one or
-//! two general ones, and a larger one by the address of a copy; a structure
-//! given back in memory is written where X8 points. Windows ARM64 passes
-//! every argument of a variadic function in the general registers.
-//!
-//! A function value goes to C as one of a fixed set of entry points, one
-//! for each parameter of a C function that is a function, which C calls
-//! with its convention. An entry point finds the function value in the
-//! newest call of its C function, which the call recorded, and runs it on
-//! the machine making that call; as in compiled programs, the function
-//! cannot wait, and its first failure is kept for the call to raise once C
-//! returns, C getting 0 from it and from every later call meanwhile.
+/*!
+Calls of C functions from interpreted programs.
+
+A library is loaded the first time one of its functions is called, and
+each function is looked up by its name. The call itself goes through a
+small routine written for the target's calling convention, which takes
+the arguments as words already in their places, so one routine serves
+every signature, variadic ones included; the result comes back from the
+integer and the float result registers, and the caller keeps what the
+signature names.
+
+On Windows x64 each argument has a position, whose integer and float
+registers both get it (as a variadic function wants of a float), and a
+structure goes in its position's register when it has 1, 2, 4, or 8
+bytes, or by the address of a copy. On Linux (System V) integers and
+floats take the next register of their own kind, and a structure of up
+to 16 bytes goes in a register for each of its eightbytes, of the kind
+the eightbyte needs, while a larger one is copied onto the stack. A
+structure given back in memory, on either, is written where an address
+passed before the arguments points. On ARM64 (AAPCS64, which Windows
+keeps for functions that are not variadic), integers and floats take the
+next register of their own kind too, an aggregate of up to four floats
+goes in vector registers, another structure of up to 16 bytes in one or
+two general ones, and a larger one by the address of a copy; a structure
+given back in memory is written where X8 points. Windows ARM64 passes
+every argument of a variadic function in the general registers.
+
+A function value goes to C as one of a fixed set of entry points, one
+for each parameter of a C function that is a function, which C calls
+with its convention. An entry point finds the function value in the
+newest call of its C function, which the call recorded, and runs it on
+the machine making that call; as in compiled programs, the function
+cannot wait, and its first failure is kept for the call to raise once C
+returns, C getting 0 from it and from every later call meanwhile.
+*/
 
 use crate::value::{ErrorValue, Fields, Ref, Value};
 use sayon_check::types::{FloatType, FunctionType, IntType, Type, TypeDef, c_layout, c_size_align};
@@ -40,42 +42,48 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::Mutex;
 
-/// The libraries and functions found so far.
+/** The libraries and functions found so far. */
 #[derive(Default)]
 pub struct Foreign {
-    /// The handles of each library, by the name its `foreign` block gave it.
-    /// The C runtime is more than one library.
+    /**
+    The handles of each library, by the name its `foreign` block gave it.
+    The C runtime is more than one library.
+    */
     libraries: HashMap<String, Vec<usize>>,
-    /// The address of each function, by its position in the module.
+    /** The address of each function, by its position in the module. */
     functions: HashMap<u32, usize>,
-    /// The C runtime's `fflush`, called after each of its functions so that
-    /// what C prints comes out in order with what the program prints.
+    /**
+    The C runtime's `fflush`, called after each of its functions so that
+    what C prints comes out in order with what the program prints.
+    */
     flush: Option<usize>,
 }
 
-/// Why a call could not be made.
+/** Why a call could not be made. */
 pub type ForeignError = String;
 
-/// Why a call failed.
+/** Why a call failed. */
 pub enum CallFailure {
-    /// It could not be made.
+    /** It could not be made. */
     Foreign(ForeignError),
-    /// A function that C called back failed.
+    /** A function that C called back failed. */
     Callback(ErrorValue),
 }
 
-/// Where a C function is, found before it is called.
+/** Where a C function is, found before it is called. */
 pub struct Target {
     address: usize,
     flush: Option<usize>,
 }
 
-/// Runs a function value on a machine, for C that calls it back.
+/** Runs a function value on a machine, for C that calls it back. */
 pub type RunCallback = unsafe fn(*mut c_void, &Ref, Vec<Value>) -> Result<Value, ErrorValue>;
 
-/// What a call of a C function that takes functions gives the entry points
-/// C calls: the machine making the call, and the function value of each
-/// parameter that is a function.
+/**
+What a call of a C function that takes functions gives the entry points
+C calls: the machine making the call, and the function value of each
+parameter that is a function.
+*/
 pub struct Callbacks {
     pub machine: *mut c_void,
     pub run: RunCallback,
@@ -83,7 +91,7 @@ pub struct Callbacks {
 }
 
 impl Foreign {
-    /// Finds the function at `index` of the module's C functions.
+    /** Finds the function at `index` of the module's C functions. */
     pub fn target(
         &mut self,
         index: u32,
@@ -99,8 +107,10 @@ impl Foreign {
     }
 }
 
-/// Calls the function at `index` of the module's C functions with `args`,
-/// each value with its C type, and gives its result.
+/**
+Calls the function at `index` of the module's C functions with `args`,
+each value with its C type, and gives its result.
+*/
 pub fn call(
     target: Target,
     index: u32,
@@ -109,9 +119,11 @@ pub fn call(
     types: &[TypeDef],
     callbacks: Option<Callbacks>,
 ) -> Result<Value, CallFailure> {
-    // Windows ARM64 passes every parameter of a variadic function as it
-    // passes the variadic ones, which compiled programs do not do for
-    // structures yet either.
+    /*
+    Windows ARM64 passes every parameter of a variadic function as it
+    passes the variadic ones, which compiled programs do not do for
+    structures yet either.
+    */
     if cfg!(all(windows, target_arch = "aarch64"))
         && function.variadic
         && std::iter::once(&function.ret)
@@ -131,7 +143,7 @@ pub fn call(
             Type::Named(_) => {
                 let (size, _) = c_size_align(types, ty, sayon_target::host());
                 let mut words = vec![0u64; size.div_ceil(8).max(1) as usize];
-                // SAFETY: the words have room for the structure.
+                /* SAFETY: the words have room for the structure. */
                 unsafe { write(words.as_mut_ptr() as usize, value, ty, types) };
                 Piece::Structure(words, ty.clone())
             }
@@ -160,8 +172,10 @@ pub fn call(
             })
         });
     }
-    // SAFETY: the address is the named C function, and unsafe code
-    // vouched for the declared signature and the arguments.
+    /*
+    SAFETY: the address is the named C function, and unsafe code
+    vouched for the declared signature and the arguments.
+    */
     let value = unsafe {
         platform::invoke(
             target.address,
@@ -172,7 +186,7 @@ pub fn call(
         )
     };
     if let Some(flush) = target.flush {
-        // SAFETY: `fflush(NULL)` flushes every output stream.
+        /* SAFETY: `fflush(NULL)` flushes every output stream. */
         unsafe {
             platform::invoke(
                 flush,
@@ -194,8 +208,10 @@ pub fn call(
     Ok(value)
 }
 
-/// An argument, for the platform's convention to place. Where the
-/// interpreter calls no C functions, nothing places them.
+/**
+An argument, for the platform's convention to place. Where the
+interpreter calls no C functions, nothing places them.
+*/
 #[cfg_attr(
     not(any(
         all(windows, target_arch = "x86_64"),
@@ -205,22 +221,26 @@ pub fn call(
     allow(dead_code)
 )]
 enum Piece {
-    /// In an integer register, or a word of the stack.
+    /** In an integer register, or a word of the stack. */
     Integer(u64),
-    /// In a float register, or a word of the stack; a `float32` in the low
-    /// 32 bits.
+    /**
+    In a float register, or a word of the stack; a `float32` in the low
+    32 bits.
+    */
     Float(u64),
-    /// A structure's bytes, in words, and its type.
+    /** A structure's bytes, in words, and its type. */
     Structure(Vec<u64>, Type),
 }
 
-/// The value of the declared result type, from the registers C gave it in:
-/// the integer and the float ones in order, or, for one C wrote in memory,
-/// there.
-///
-/// # Safety
-/// `memory`, when there is one, holds the structure C wrote.
-#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
+/**
+The value of the declared result type, from the registers C gave it in:
+the integer and the float ones in order, or, for one C wrote in memory,
+there.
+
+# Safety
+`memory`, when there is one, holds the structure C wrote.
+*/
+#[cfg(all(target_arch = "x86_64", any(windows, target_os = "linux")))]
 unsafe fn given_back(
     ty: &Type,
     integers: [u64; 2],
@@ -230,7 +250,7 @@ unsafe fn given_back(
     eightbytes: Option<Vec<sayon_check::types::Eightbyte>>,
 ) -> Value {
     if let Some(words) = memory {
-        // SAFETY: as the caller vouches.
+        /* SAFETY: as the caller vouches. */
         return unsafe { read(words.as_ptr() as usize, ty, types) };
     }
     match (ty, eightbytes) {
@@ -243,14 +263,14 @@ unsafe fn given_back(
                     sayon_check::types::Eightbyte::Sse => float.next().unwrap_or(0),
                 })
                 .collect();
-            // SAFETY: the words hold the structure's eightbytes.
+            /* SAFETY: the words hold the structure's eightbytes. */
             unsafe { read(words.as_ptr() as usize, ty, types) }
         }
         _ => result(ty, integers[0], floats[0]),
     }
 }
 
-/// A call of a C function that takes functions, while C runs.
+/** A call of a C function that takes functions, while C runs. */
 struct Call {
     function: u32,
     machine: *mut c_void,
@@ -264,12 +284,14 @@ thread_local! {
     static CALLS: RefCell<Vec<Call>> = const { RefCell::new(Vec::new()) };
 }
 
-/// The C function and parameter each entry point serves, by its number.
+/** The C function and parameter each entry point serves, by its number. */
 static ENTRIES: Mutex<Vec<(u32, usize)>> = Mutex::new(Vec::new());
 
-/// The address of the entry point for parameter `position` of the C
-/// function at `index`. Where the interpreter calls no C functions, there
-/// are no entry points, and the count is always reached.
+/**
+The address of the entry point for parameter `position` of the C
+function at `index`. Where the interpreter calls no C functions, there
+are no entry points, and the count is always reached.
+*/
 #[cfg_attr(
     not(any(
         all(windows, target_arch = "x86_64"),
@@ -296,11 +318,13 @@ fn callback_entry(index: u32, position: usize) -> Result<usize, ForeignError> {
     Ok(platform::callback_entry(number))
 }
 
-/// What an entry point runs when C calls it: the function value of its
-/// parameter in the newest call of its C function, with the arguments C
-/// passed, whose bits `arguments` reads for their types, as the platform's
-/// convention placed them. Gives the result's bits for both result
-/// registers.
+/**
+What an entry point runs when C calls it: the function value of its
+parameter in the newest call of its C function, with the arguments C
+passed, whose bits `arguments` reads for their types, as the platform's
+convention placed them. Gives the result's bits for both result
+registers.
+*/
 #[cfg_attr(
     not(any(
         all(windows, target_arch = "x86_64"),
@@ -337,7 +361,7 @@ unsafe fn called_back(number: usize, arguments: impl FnOnce(&[Type]) -> Vec<u64>
         .zip(arguments(&params))
         .map(|(ty, bits)| result(ty, bits, bits))
         .collect();
-    // SAFETY: the machine waits in the call of the C function.
+    /* SAFETY: the machine waits in the call of the C function. */
     match unsafe { run(machine, &reference, args) } {
         Ok(value) => match value {
             Value::Int(number) => number as u64,
@@ -396,8 +420,10 @@ impl Foreign {
     }
 }
 
-/// The 64 bits an argument is passed in. Integers are extended to 64 bits;
-/// a `float32` is in the low 32.
+/**
+The 64 bits an argument is passed in. Integers are extended to 64 bits;
+a `float32` is in the low 32.
+*/
 fn slot(value: &Value, ty: &Type) -> u64 {
     match (value, ty) {
         (Value::Int(number), _) => *number as i64 as u64,
@@ -409,10 +435,10 @@ fn slot(value: &Value, ty: &Type) -> u64 {
     }
 }
 
-/// The result of the declared type from the result registers.
+/** The result of the declared type from the result registers. */
 fn result(ty: &Type, integer: u64, float: u64) -> Value {
     match ty {
-        // C leaves the bits above a narrow result undefined.
+        /* C leaves the bits above a narrow result undefined. */
         Type::Int(int) => {
             let shift = 64 - int.bits();
             let value = if int.signed() {
@@ -429,14 +455,16 @@ fn result(ty: &Type, integer: u64, float: u64) -> Value {
     }
 }
 
-/// Reads a number, pointer, or C structure of type `ty` at `address`.
-///
-/// # Safety
-/// The memory must hold that many readable bytes.
+/**
+Reads a number, pointer, or C structure of type `ty` at `address`.
+
+# Safety
+The memory must hold that many readable bytes.
+*/
 pub unsafe fn read(address: usize, ty: &Type, types: &[TypeDef]) -> Value {
     use sayon_check::types::IntType;
     let p = address as *const u8;
-    // SAFETY: the caller vouches for the memory; reads need no alignment.
+    /* SAFETY: the caller vouches for the memory; reads need no alignment. */
     unsafe {
         match ty {
             Type::Named(named) => {
@@ -465,14 +493,16 @@ pub unsafe fn read(address: usize, ty: &Type, types: &[TypeDef]) -> Value {
     }
 }
 
-/// Stores a number, pointer, or C structure at `address`.
-///
-/// # Safety
-/// The memory must have room for the value.
+/**
+Stores a number, pointer, or C structure at `address`.
+
+# Safety
+The memory must have room for the value.
+*/
 pub unsafe fn write(address: usize, value: &Value, ty: &Type, types: &[TypeDef]) {
     use sayon_check::types::IntType;
     let p = address as *mut u8;
-    // SAFETY: the caller vouches for the memory; writes need no alignment.
+    /* SAFETY: the caller vouches for the memory; writes need no alignment. */
     unsafe {
         match (ty, value) {
             (Type::Named(named), Value::Record(_, fields)) => {
@@ -495,7 +525,7 @@ pub unsafe fn write(address: usize, value: &Value, ty: &Type, types: &[TypeDef])
     }
 }
 
-/// Loading libraries and finding their functions on Windows.
+/** Loading libraries and finding their functions on Windows. */
 #[cfg(all(windows, any(target_arch = "x86_64", target_arch = "aarch64")))]
 mod libraries {
     use std::ffi::c_void;
@@ -506,9 +536,11 @@ mod libraries {
         fn GetProcAddress(module: *mut c_void, name: *const u8) -> *mut c_void;
     }
 
-    /// The files a library name stands for. The C runtime is the classic
-    /// one, which has every C function (the newer one leaves `printf` and
-    /// its kin to headers), then the newer one for what is only there.
+    /**
+    The files a library name stands for. The C runtime is the classic
+    one, which has every C function (the newer one leaves `printf` and
+    its kin to headers), then the newer one for what is only there.
+    */
     pub fn library_files(name: &str) -> Vec<String> {
         if name == "c" {
             return vec!["msvcrt.dll".to_string(), "ucrtbase.dll".to_string()];
@@ -523,7 +555,7 @@ mod libraries {
 
     pub fn open(file: &str) -> Option<usize> {
         let wide: Vec<u16> = file.encode_utf16().chain(std::iter::once(0)).collect();
-        // SAFETY: the name is NUL-terminated.
+        /* SAFETY: the name is NUL-terminated. */
         let handle = unsafe { LoadLibraryW(wide.as_ptr()) };
         (!handle.is_null()).then_some(handle as usize)
     }
@@ -531,8 +563,10 @@ mod libraries {
     pub fn symbol(handle: usize, name: &str) -> Option<usize> {
         let mut bytes = name.as_bytes().to_vec();
         bytes.push(0);
-        // SAFETY: the handle is a loaded library and the name is
-        // NUL-terminated.
+        /*
+        SAFETY: the handle is a loaded library and the name is
+        NUL-terminated.
+        */
         let address = unsafe { GetProcAddress(handle as *mut c_void, bytes.as_ptr()) };
         (!address.is_null()).then_some(address as usize)
     }
@@ -542,7 +576,7 @@ mod libraries {
     }
 }
 
-/// Loading libraries and finding their functions on Linux.
+/** Loading libraries and finding their functions on Linux. */
 #[cfg(all(
     target_os = "linux",
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -558,8 +592,10 @@ mod libraries {
 
     const RTLD_NOW: i32 = 2;
 
-    /// The files a library name stands for: the C runtime is the C library
-    /// and its math functions'.
+    /**
+    The files a library name stands for: the C runtime is the C library
+    and its math functions'.
+    */
     pub fn library_files(name: &str) -> Vec<String> {
         match name {
             "c" => vec!["libc.so.6".to_string(), "libm.so.6".to_string()],
@@ -570,20 +606,20 @@ mod libraries {
 
     pub fn open(file: &str) -> Option<usize> {
         let name = std::ffi::CString::new(file).ok()?;
-        // SAFETY: a NUL-terminated name.
+        /* SAFETY: a NUL-terminated name. */
         let handle = unsafe { dlopen(name.as_ptr(), RTLD_NOW) };
         (!handle.is_null()).then_some(handle as usize)
     }
 
     pub fn symbol(handle: usize, name: &str) -> Option<usize> {
         let name = std::ffi::CString::new(name).ok()?;
-        // SAFETY: a loaded library and a NUL-terminated name.
+        /* SAFETY: a loaded library and a NUL-terminated name. */
         let address = unsafe { dlsym(handle as *mut c_void, name.as_ptr()) };
         (!address.is_null()).then_some(address as usize)
     }
 
     pub fn missing_library(name: &str) -> String {
-        // SAFETY: dlerror gives null or the text of the last failure.
+        /* SAFETY: dlerror gives null or the text of the last failure. */
         let reason = unsafe {
             let text = dlerror();
             if text.is_null() {
@@ -604,11 +640,13 @@ mod platform {
 
     pub use super::libraries::{library_files, missing_library, open, symbol};
 
-    // Windows x64: the first four arguments go in RCX, RDX, R8, and R9, or
-    // XMM0 to XMM3 for floats, each with 32 bytes reserved for it on the
-    // stack; the rest follow on the stack. Loading every position into both
-    // kinds of register suits every signature, and is what a variadic
-    // function needs for a float. `count` is at least four.
+    /*
+    Windows x64: the first four arguments go in RCX, RDX, R8, and R9, or
+    XMM0 to XMM3 for floats, each with 32 bytes reserved for it on the
+    stack; the rest follow on the stack. Loading every position into both
+    kinds of register suits every signature, and is what a variadic
+    function needs for a float. `count` is at least four.
+    */
     std::arch::global_asm!(
         ".text",
         ".p2align 4",
@@ -674,10 +712,12 @@ mod platform {
         fn sayon_interp_callback_entries();
     }
 
-    /// Calls `function` with the pieces in their positions.
-    ///
-    /// # Safety
-    /// `function` must take arguments matching the pieces.
+    /**
+    Calls `function` with the pieces in their positions.
+
+    # Safety
+    `function` must take arguments matching the pieces.
+    */
     pub(super) unsafe fn invoke(
         function: usize,
         pieces: &[Piece],
@@ -685,8 +725,10 @@ mod platform {
         types: &[TypeDef],
         _variadic: bool,
     ) -> Value {
-        // The copies of structures C takes or gives by address, which live
-        // through the call.
+        /*
+        The copies of structures C takes or gives by address, which live
+        through the call.
+        */
         let mut copies: Vec<Vec<u64>> = Vec::new();
         let mut slots = Vec::new();
         let in_memory = match ret {
@@ -714,32 +756,34 @@ mod platform {
                 }
             }
         }
-        // The first four positions are always loaded.
+        /* The first four positions are always loaded. */
         while slots.len() < 4 {
             slots.push(0);
         }
         let mut out = [0u64; 2];
-        // SAFETY: the routine reads `slots.len()` slots and writes two words.
+        /* SAFETY: the routine reads `slots.len()` slots and writes two words. */
         unsafe { sayon_interp_call_c(function, slots.as_ptr(), slots.len(), out.as_mut_ptr()) };
         let memory = in_memory.map(|()| copies[0].as_slice());
-        // A structure in a register is the integer's bytes.
+        /* A structure in a register is the integer's bytes. */
         let eightbytes = match ret {
             Type::Named(_) => Some(vec![sayon_check::types::Eightbyte::Integer]),
             _ => None,
         };
-        // SAFETY: C wrote a structure in memory into the first copy.
+        /* SAFETY: C wrote a structure in memory into the first copy. */
         unsafe { given_back(ret, [out[0], 0], [out[1], 0], memory, types, eightbytes) }
     }
 
-    /// The entry points C can call back.
+    /** The entry points C can call back. */
     pub const CALLBACK_ENTRIES: usize = 64;
 
-    /// Entry points 16 bytes apart, each putting its number in EAX before
-    /// the routine they share. That routine stores the first four
-    /// arguments' integer registers in the 32 bytes the caller reserved for
-    /// them, just below the arguments on the stack, so that every argument
-    /// is in one array of words, and their float registers beside it; it
-    /// gives the result in both RAX and XMM0.
+    /**
+    Entry points 16 bytes apart, each putting its number in EAX before
+    the routine they share. That routine stores the first four
+    arguments' integer registers in the 32 bytes the caller reserved for
+    them, just below the arguments on the stack, so that every argument
+    is in one array of words, and their float registers beside it; it
+    gives the result in both RAX and XMM0.
+    */
     macro_rules! callback_entries {
         ($($number:literal)*) => {
             std::arch::global_asm!(
@@ -794,9 +838,11 @@ mod platform {
         ints: *const u64,
         floats: *const u64,
     ) -> u64 {
-        // SAFETY: the shared routine passes the arguments' words: each
-        // position's integer register, then the stack, and the first four
-        // positions' float registers.
+        /*
+        SAFETY: the shared routine passes the arguments' words: each
+        position's integer register, then the stack, and the first four
+        positions' float registers.
+        */
         unsafe {
             super::called_back(number as usize, |params| {
                 params
@@ -836,11 +882,13 @@ mod platform {
         fn sayon_interp_callback_entries();
     }
 
-    // System V on x86-64: integers in RDI, RSI, RDX, RCX, R8, and R9, floats
-    // in XMM0 to XMM7, and the rest on the stack, which is 16-byte aligned
-    // at the call. AL tells a variadic function how many vector registers
-    // may hold arguments; eight is always enough. The results come from RAX
-    // and RDX, and XMM0 and XMM1.
+    /*
+    System V on x86-64: integers in RDI, RSI, RDX, RCX, R8, and R9, floats
+    in XMM0 to XMM7, and the rest on the stack, which is 16-byte aligned
+    at the call. AL tells a variadic function how many vector registers
+    may hold arguments; eight is always enough. The results come from RAX
+    and RDX, and XMM0 and XMM1.
+    */
     std::arch::global_asm!(
         ".text",
         ".p2align 4",
@@ -897,11 +945,13 @@ mod platform {
         "ret",
     );
 
-    /// Calls `function` with the pieces in the registers and stack words the
-    /// convention gives them.
-    ///
-    /// # Safety
-    /// `function` must take arguments matching the pieces.
+    /**
+    Calls `function` with the pieces in the registers and stack words the
+    convention gives them.
+
+    # Safety
+    `function` must take arguments matching the pieces.
+    */
     pub(super) unsafe fn invoke(
         function: usize,
         pieces: &[Piece],
@@ -945,7 +995,7 @@ mod platform {
                                 }
                             }
                         }
-                        // In memory, or without registers enough for all of it.
+                        /* In memory, or without registers enough for all of it. */
                         _ => stack.extend_from_slice(words),
                     }
                 }
@@ -954,8 +1004,10 @@ mod platform {
         integers.resize(6, 0);
         floats.resize(8, 0);
         let mut out = [0u64; 4];
-        // SAFETY: the routine reads six integers, eight floats, and
-        // `stack.len()` stack words, and writes four words.
+        /*
+        SAFETY: the routine reads six integers, eight floats, and
+        `stack.len()` stack words, and writes four words.
+        */
         unsafe {
             sayon_interp_call_sysv(
                 function,
@@ -976,13 +1028,15 @@ mod platform {
         }
     }
 
-    /// The entry points C can call back.
+    /** The entry points C can call back. */
     pub const CALLBACK_ENTRIES: usize = 64;
 
-    /// Entry points 16 bytes apart, each putting its number in EAX before
-    /// the routine they share, which stores the integer and float argument
-    /// registers beside each other and passes them with the address of the
-    /// arguments on the stack; it gives the result in both RAX and XMM0.
+    /**
+    Entry points 16 bytes apart, each putting its number in EAX before
+    the routine they share, which stores the integer and float argument
+    registers beside each other and passes them with the address of the
+    arguments on the stack; it gives the result in both RAX and XMM0.
+    */
     macro_rules! callback_entries {
         ($($number:literal)*) => {
             std::arch::global_asm!(
@@ -1039,9 +1093,11 @@ mod platform {
         floats: *const u64,
         stack: *const u64,
     ) -> u64 {
-        // SAFETY: the shared routine passes the six integer and eight float
-        // argument registers, and the arguments on the stack, which take
-        // the convention's order.
+        /*
+        SAFETY: the shared routine passes the six integer and eight float
+        argument registers, and the arguments on the stack, which take
+        the convention's order.
+        */
         unsafe {
             super::called_back(number as usize, |params| {
                 let (mut integer, mut float, mut word) = (0, 0, 0);
@@ -1075,17 +1131,19 @@ mod platform {
     }
 }
 
-/// ARM64, by the procedure call standard (AAPCS64) Linux uses, which
-/// Windows keeps for functions that are not variadic: integers and addresses
-/// go in X0 to X7 and floats in V0 to V7, each kind taking its next
-/// register, and the rest on the stack, a word each. An aggregate of up to
-/// four floats, or four doubles, alone goes in that many vector registers,
-/// another structure of up to 16 bytes in one or two general registers, and
-/// a larger one by the address of a copy; once an aggregate finds too few
-/// registers of its kind left, it and every later argument of that kind go
-/// on the stack. A structure given back in memory is written where X8
-/// points. Windows passes every argument of a variadic function, floats
-/// too, in the general registers and on the stack.
+/**
+ARM64, by the procedure call standard (AAPCS64) Linux uses, which
+Windows keeps for functions that are not variadic: integers and addresses
+go in X0 to X7 and floats in V0 to V7, each kind taking its next
+register, and the rest on the stack, a word each. An aggregate of up to
+four floats, or four doubles, alone goes in that many vector registers,
+another structure of up to 16 bytes in one or two general registers, and
+a larger one by the address of a copy; once an aggregate finds too few
+registers of its kind left, it and every later argument of that kind go
+on the stack. A structure given back in memory is written where X8
+points. Windows passes every argument of a variadic function, floats
+too, in the general registers and on the stack.
+*/
 #[cfg(all(target_arch = "aarch64", any(windows, target_os = "linux")))]
 mod platform {
     use super::{Piece, read, result};
@@ -1094,14 +1152,16 @@ mod platform {
 
     pub use super::libraries::{library_files, missing_library, open, symbol};
 
-    /// Calls `function` with X0 to X7, the low 64 bits of V0 to V7, the
-    /// stack words, and X8, and gives back X0, X1, and the low 64 bits of
-    /// V0 to V3. The stack words go below the stack pointer, which stays
-    /// 16-byte aligned, for the call, and the stack pointer is restored from
-    /// X20, which the function keeps.
-    ///
-    /// # Safety
-    /// `function` must take arguments as they are placed.
+    /**
+    Calls `function` with X0 to X7, the low 64 bits of V0 to V7, the
+    stack words, and X8, and gives back X0, X1, and the low 64 bits of
+    V0 to V3. The stack words go below the stack pointer, which stays
+    16-byte aligned, for the call, and the stack pointer is restored from
+    X20, which the function keeps.
+
+    # Safety
+    `function` must take arguments as they are placed.
+    */
     unsafe fn call_c(
         function: usize,
         integers: &[u64; 8],
@@ -1112,7 +1172,7 @@ mod platform {
         let (x0, x1): (u64, u64);
         let (d0, d1, d2, d3): (f64, f64, f64, f64);
         let size = (stack.len() * 8).next_multiple_of(16);
-        // SAFETY: as the caller vouches.
+        /* SAFETY: as the caller vouches. */
         unsafe {
             std::arch::asm!(
                 "mov x20, sp",
@@ -1165,18 +1225,22 @@ mod platform {
         ]
     }
 
-    /// Where the arguments go, in order.
+    /** Where the arguments go, in order. */
     #[derive(Default)]
     struct Places {
         integers: Vec<u64>,
         floats: Vec<u64>,
         stack: Vec<u64>,
-        /// No later argument of the kind goes in a register, once an
-        /// aggregate found too few left.
+        /**
+        No later argument of the kind goes in a register, once an
+        aggregate found too few left.
+        */
         integers_closed: bool,
         floats_closed: bool,
-        /// Windows' convention for a variadic function: every argument in
-        /// the general registers and on the stack.
+        /**
+        Windows' convention for a variadic function: every argument in
+        the general registers and on the stack.
+        */
         words_only: bool,
     }
 
@@ -1199,8 +1263,10 @@ mod platform {
             }
         }
 
-        /// An aggregate of floats: each in a vector register of its own,
-        /// or, without registers enough, the aggregate's words on the stack.
+        /**
+        An aggregate of floats: each in a vector register of its own,
+        or, without registers enough, the aggregate's words on the stack.
+        */
         fn aggregate_of_floats(&mut self, members: &[u64], words: &[u64]) {
             if !self.floats_closed && self.floats.len() + members.len() <= 8 {
                 self.floats.extend_from_slice(members);
@@ -1210,9 +1276,11 @@ mod platform {
             }
         }
 
-        /// A structure of up to 16 bytes: its words in general registers,
-        /// or, without registers enough, on the stack; Windows' convention
-        /// for a variadic function splits it between the two.
+        /**
+        A structure of up to 16 bytes: its words in general registers,
+        or, without registers enough, on the stack; Windows' convention
+        for a variadic function splits it between the two.
+        */
         fn aggregate(&mut self, words: &[u64]) {
             if self.words_only {
                 for word in words {
@@ -1233,8 +1301,10 @@ mod platform {
         }
     }
 
-    /// The members of an aggregate of floats, from its words: each float's
-    /// bits, a `float32`'s in the low 32 bits of a word.
+    /**
+    The members of an aggregate of floats, from its words: each float's
+    bits, a `float32`'s in the low 32 bits of a word.
+    */
     fn members(words: &[u64], count: usize, kind: FloatType) -> Vec<u64> {
         (0..count)
             .map(|index| match kind {
@@ -1244,8 +1314,10 @@ mod platform {
             .collect()
     }
 
-    /// The words of an aggregate of floats, from the vector registers it
-    /// came back in.
+    /**
+    The words of an aggregate of floats, from the vector registers it
+    came back in.
+    */
     fn gathered(registers: &[u64], kind: FloatType) -> Vec<u64> {
         match kind {
             FloatType::F64 => registers.to_vec(),
@@ -1260,11 +1332,13 @@ mod platform {
         }
     }
 
-    /// Calls `function` with the pieces in the registers and stack words the
-    /// convention gives them.
-    ///
-    /// # Safety
-    /// `function` must take arguments matching the pieces.
+    /**
+    Calls `function` with the pieces in the registers and stack words the
+    convention gives them.
+
+    # Safety
+    `function` must take arguments matching the pieces.
+    */
     pub(super) unsafe fn invoke(
         function: usize,
         pieces: &[Piece],
@@ -1277,8 +1351,10 @@ mod platform {
             words_only: cfg!(windows) && variadic,
             ..Places::default()
         };
-        // The copies of structures C takes by address, which live through
-        // the call.
+        /*
+        The copies of structures C takes by address, which live through
+        the call.
+        */
         let mut copies: Vec<Vec<u64>> = Vec::new();
         let returned_floats = aapcs64_floats(types, ret, host);
         let memory: Option<Vec<u64>> = match ret {
@@ -1309,7 +1385,7 @@ mod platform {
             }
         }
         let address = memory.as_ref().map_or(0, |words| words.as_ptr() as usize);
-        // SAFETY: as the caller vouches.
+        /* SAFETY: as the caller vouches. */
         let out = unsafe {
             call_c(
                 function,
@@ -1327,22 +1403,24 @@ mod platform {
                     (None, Some((count, kind))) => gathered(&out[2..2 + count], kind),
                     (None, None) => vec![out[0], out[1]],
                 };
-                // SAFETY: the words hold the structure.
+                /* SAFETY: the words hold the structure. */
                 unsafe { read(words.as_ptr() as usize, ret, types) }
             }
             _ => result(ret, out[0], out[2]),
         }
     }
 
-    /// The entry points C can call back.
+    /** The entry points C can call back. */
     pub const CALLBACK_ENTRIES: usize = 64;
 
-    /// Entry points 16 bytes apart, each putting its number in W9 before
-    /// the routine they share, which stores the general and the vector
-    /// argument registers beside each other and passes them with the
-    /// address of the arguments on the stack; it gives the result in both X0
-    /// and D0. On Windows the routine has the unwinding information Windows
-    /// needs of a function that calls another.
+    /**
+    Entry points 16 bytes apart, each putting its number in W9 before
+    the routine they share, which stores the general and the vector
+    argument registers beside each other and passes them with the
+    address of the arguments on the stack; it gives the result in both X0
+    and D0. On Windows the routine has the unwinding information Windows
+    needs of a function that calls another.
+    */
     macro_rules! callback_entries {
         ($($number:literal)*) => {
             #[cfg(target_os = "linux")]
@@ -1443,10 +1521,12 @@ mod platform {
         floats: *const u64,
         stack: *const u64,
     ) -> u64 {
-        // SAFETY: the shared routine passes the eight general and eight
-        // vector argument registers, and the arguments on the stack, which
-        // take the convention's order; a function C calls back is never
-        // variadic.
+        /*
+        SAFETY: the shared routine passes the eight general and eight
+        vector argument registers, and the arguments on the stack, which
+        take the convention's order; a function C calls back is never
+        variadic.
+        */
         unsafe {
             super::called_back(number as usize, |params| {
                 let (mut integer, mut float, mut word) = (0, 0, 0);

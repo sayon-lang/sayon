@@ -1,24 +1,26 @@
-//! Calls into Java, for what Android gives an app only there, such as TLS
-//! (see `tls`). The app's activity gives the runtime its Java VM; each
-//! thread that calls into Java attaches to it the first time, and detaches
-//! as it ends, which Android requires. A program run from `adb shell` has
-//! no Java VM, so none of this is there for it.
-//!
-//! The JNI's functions are reached by their places in its tables, which
-//! the JNI specification fixes. Each call into Java runs in a frame of
-//! local references that ends with it, since a native thread never
-//! returns to Java to have them released.
+/*!
+Calls into Java, for what Android gives an app only there, such as TLS
+(see `tls`). The app's activity gives the runtime its Java VM; each
+thread that calls into Java attaches to it the first time, and detaches
+as it ends, which Android requires. A program run from `adb shell` has
+no Java VM, so none of this is there for it.
+
+The JNI's functions are reached by their places in its tables, which
+the JNI specification fixes. Each call into Java runs in a frame of
+local references that ends with it, since a native thread never
+returns to Java to have them released.
+*/
 
 use std::cell::Cell;
 use std::ffi::{CString, c_char, c_void};
 use std::sync::atomic::{AtomicPtr, Ordering};
 
-/// A reference to a Java object, as the JNI gives it.
+/** A reference to a Java object, as the JNI gives it. */
 pub(crate) type Object = *mut c_void;
-/// A method's identity.
+/** A method's identity. */
 pub(crate) type Method = *mut c_void;
 
-/// An argument of a call into Java.
+/** An argument of a call into Java. */
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(crate) union Value {
@@ -28,38 +30,42 @@ pub(crate) union Value {
     pub(crate) l: Object,
 }
 
-/// The app's Java VM, once its activity has started.
+/** The app's Java VM, once its activity has started. */
 static VM: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 
 const VERSION: i32 = 0x0001_0006;
 const DETACHED: i32 = -2;
 
-/// Remembers the app's Java VM.
+/** Remembers the app's Java VM. */
 pub(crate) fn set_vm(vm: *mut c_void) {
     VM.store(vm, Ordering::Relaxed);
 }
 
-/// The function at `index` of a JNI table.
-///
-/// # Safety
-/// `table` is a JNI table, and `T` the type of its function at `index`.
+/**
+The function at `index` of a JNI table.
+
+# Safety
+`table` is a JNI table, and `T` the type of its function at `index`.
+*/
 unsafe fn function<T: Copy>(table: *mut c_void, index: usize) -> T {
-    // SAFETY: as the caller says; the table is an array of function
-    // addresses after its pointer.
+    /*
+    SAFETY: as the caller says; the table is an array of function
+    addresses after its pointer.
+    */
     unsafe {
         let functions = *(table as *const *const *const c_void);
         std::mem::transmute_copy(&*functions.add(index))
     }
 }
 
-/// Detaches this thread from the Java VM as it ends, if it attached.
+/** Detaches this thread from the Java VM as it ends, if it attached. */
 struct Attached(Cell<bool>);
 
 impl Drop for Attached {
     fn drop(&mut self) {
         let vm = VM.load(Ordering::Relaxed);
         if self.0.get() && !vm.is_null() {
-            // SAFETY: the VM's `DetachCurrentThread`, for a thread it attached.
+            /* SAFETY: the VM's `DetachCurrentThread`, for a thread it attached. */
             unsafe {
                 let detach: unsafe extern "C" fn(*mut c_void) -> i32 = function(vm, 5);
                 detach(vm);
@@ -72,21 +78,23 @@ thread_local! {
     static ATTACHED: Attached = const { Attached(Cell::new(false)) };
 }
 
-/// A thread's way into Java: its `JNIEnv`.
+/** A thread's way into Java: its `JNIEnv`. */
 #[derive(Clone, Copy)]
 pub(crate) struct Env(*mut c_void);
 
-/// A Java exception, as its `toString` and those of its causes say.
+/** A Java exception, as its `toString` and those of its causes say. */
 pub(crate) struct Thrown(pub(crate) String);
 
-/// The calling thread's way into Java, attaching it the first time; none
-/// without a Java VM.
+/**
+The calling thread's way into Java, attaching it the first time; none
+without a Java VM.
+*/
 pub(crate) fn env() -> Option<Env> {
     let vm = VM.load(Ordering::Relaxed);
     if vm.is_null() {
         return None;
     }
-    // SAFETY: the VM's `GetEnv` and `AttachCurrentThread`.
+    /* SAFETY: the VM's `GetEnv` and `AttachCurrentThread`. */
     unsafe {
         let mut env: *mut c_void = std::ptr::null_mut();
         let get: unsafe extern "C" fn(*mut c_void, *mut *mut c_void, i32) -> i32 = function(vm, 6);
@@ -107,16 +115,18 @@ fn name(text: &str) -> CString {
 }
 
 impl Env {
-    /// # Safety
-    /// `T` is the type of the JNI function at `index`.
+    /**
+    # Safety
+    `T` is the type of the JNI function at `index`.
+    */
     unsafe fn get<T: Copy>(self, index: usize) -> T {
-        // SAFETY: as the caller says.
+        /* SAFETY: as the caller says. */
         unsafe { function(self.0, index) }
     }
 
-    /// The exception a call threw, cleared, as text.
+    /** The exception a call threw, cleared, as text. */
     pub(crate) fn thrown(self) -> Option<Thrown> {
-        // SAFETY: `ExceptionCheck`, `ExceptionOccurred`, and `ExceptionClear`.
+        /* SAFETY: `ExceptionCheck`, `ExceptionOccurred`, and `ExceptionClear`. */
         unsafe {
             let check: unsafe extern "C" fn(*mut c_void) -> u8 = self.get(228);
             if check(self.0) == 0 {
@@ -127,7 +137,7 @@ impl Env {
             let mut exception = occurred(self.0);
             clear(self.0);
             let mut parts = Vec::new();
-            // The exception and its causes, which say more.
+            /* The exception and its causes, which say more. */
             while !exception.is_null() && parts.len() < 8 {
                 let class = self.object_class(exception);
                 let to_string = self.method(class, "toString", "()Ljava/lang/String;");
@@ -145,7 +155,7 @@ impl Env {
         }
     }
 
-    /// Fails with the exception a call threw.
+    /** Fails with the exception a call threw. */
     pub(crate) fn check(self) -> Result<(), Thrown> {
         match self.thrown() {
             Some(thrown) => Err(thrown),
@@ -154,17 +164,19 @@ impl Env {
     }
 
     fn same(self, a: Object, b: Object) -> bool {
-        // SAFETY: `IsSameObject`.
+        /* SAFETY: `IsSameObject`. */
         unsafe {
             let same: unsafe extern "C" fn(*mut c_void, Object, Object) -> u8 = self.get(24);
             same(self.0, a, b) != 0
         }
     }
 
-    /// Runs `f` in a frame of local references, which end with it, but for
-    /// those it makes global.
+    /**
+    Runs `f` in a frame of local references, which end with it, but for
+    those it makes global.
+    */
     pub(crate) fn frame<T>(self, f: impl FnOnce() -> T) -> T {
-        // SAFETY: `PushLocalFrame` and `PopLocalFrame`, paired.
+        /* SAFETY: `PushLocalFrame` and `PopLocalFrame`, paired. */
         unsafe {
             let push: unsafe extern "C" fn(*mut c_void, i32) -> i32 = self.get(19);
             let pop: unsafe extern "C" fn(*mut c_void, Object) -> Object = self.get(20);
@@ -177,7 +189,7 @@ impl Env {
 
     pub(crate) fn find_class(self, class: &str) -> Object {
         let class = name(class);
-        // SAFETY: `FindClass`, with a class's name in JNI's form.
+        /* SAFETY: `FindClass`, with a class's name in JNI's form. */
         unsafe {
             let find: unsafe extern "C" fn(*mut c_void, *const c_char) -> Object = self.get(6);
             find(self.0, class.as_ptr())
@@ -185,7 +197,7 @@ impl Env {
     }
 
     fn object_class(self, object: Object) -> Object {
-        // SAFETY: `GetObjectClass`.
+        /* SAFETY: `GetObjectClass`. */
         unsafe {
             let get: unsafe extern "C" fn(*mut c_void, Object) -> Object = self.get(31);
             get(self.0, object)
@@ -194,7 +206,7 @@ impl Env {
 
     pub(crate) fn method(self, class: Object, method: &str, signature: &str) -> Method {
         let (method, signature) = (name(method), name(signature));
-        // SAFETY: `GetMethodID`.
+        /* SAFETY: `GetMethodID`. */
         unsafe {
             let get: unsafe extern "C" fn(
                 *mut c_void,
@@ -208,7 +220,7 @@ impl Env {
 
     pub(crate) fn static_method(self, class: Object, method: &str, signature: &str) -> Method {
         let (method, signature) = (name(method), name(signature));
-        // SAFETY: `GetStaticMethodID`.
+        /* SAFETY: `GetStaticMethodID`. */
         unsafe {
             let get: unsafe extern "C" fn(
                 *mut c_void,
@@ -221,7 +233,7 @@ impl Env {
     }
 
     pub(crate) fn call_object(self, object: Object, method: Method, args: &[Value]) -> Object {
-        // SAFETY: `CallObjectMethodA`, with the method's arguments.
+        /* SAFETY: `CallObjectMethodA`, with the method's arguments. */
         unsafe {
             let call: unsafe extern "C" fn(*mut c_void, Object, Method, *const Value) -> Object =
                 self.get(36);
@@ -230,7 +242,7 @@ impl Env {
     }
 
     pub(crate) fn call_boolean(self, object: Object, method: Method, args: &[Value]) -> bool {
-        // SAFETY: `CallBooleanMethodA`.
+        /* SAFETY: `CallBooleanMethodA`. */
         unsafe {
             let call: unsafe extern "C" fn(*mut c_void, Object, Method, *const Value) -> u8 =
                 self.get(39);
@@ -239,7 +251,7 @@ impl Env {
     }
 
     pub(crate) fn call_int(self, object: Object, method: Method, args: &[Value]) -> i32 {
-        // SAFETY: `CallIntMethodA`.
+        /* SAFETY: `CallIntMethodA`. */
         unsafe {
             let call: unsafe extern "C" fn(*mut c_void, Object, Method, *const Value) -> i32 =
                 self.get(51);
@@ -248,7 +260,7 @@ impl Env {
     }
 
     pub(crate) fn call_void(self, object: Object, method: Method, args: &[Value]) {
-        // SAFETY: `CallVoidMethodA`.
+        /* SAFETY: `CallVoidMethodA`. */
         unsafe {
             let call: unsafe extern "C" fn(*mut c_void, Object, Method, *const Value) =
                 self.get(63);
@@ -262,7 +274,7 @@ impl Env {
         method: Method,
         args: &[Value],
     ) -> Object {
-        // SAFETY: `CallStaticObjectMethodA`.
+        /* SAFETY: `CallStaticObjectMethodA`. */
         unsafe {
             let call: unsafe extern "C" fn(*mut c_void, Object, Method, *const Value) -> Object =
                 self.get(116);
@@ -272,20 +284,22 @@ impl Env {
 
     pub(crate) fn new_string(self, text: &str) -> Object {
         let text = name(&text.replace('\0', " "));
-        // SAFETY: `NewStringUTF`, with text of no NUL; ASCII and the rest of
-        // UTF-8 below U+10000 are the same in Java's modified form.
+        /*
+        SAFETY: `NewStringUTF`, with text of no NUL; ASCII and the rest of
+        UTF-8 below U+10000 are the same in Java's modified form.
+        */
         unsafe {
             let new: unsafe extern "C" fn(*mut c_void, *const c_char) -> Object = self.get(167);
             new(self.0, text.as_ptr())
         }
     }
 
-    /// A Java string's text.
+    /** A Java string's text. */
     pub(crate) fn string(self, string: Object) -> String {
         if string.is_null() {
             return String::new();
         }
-        // SAFETY: `GetStringUTFChars` and `ReleaseStringUTFChars`, paired.
+        /* SAFETY: `GetStringUTFChars` and `ReleaseStringUTFChars`, paired. */
         unsafe {
             let get: unsafe extern "C" fn(*mut c_void, Object, *mut u8) -> *const c_char =
                 self.get(169);
@@ -302,9 +316,9 @@ impl Env {
         }
     }
 
-    /// A reference that outlives the frame, until `drop_global`.
+    /** A reference that outlives the frame, until `drop_global`. */
     pub(crate) fn global(self, object: Object) -> Object {
-        // SAFETY: `NewGlobalRef`.
+        /* SAFETY: `NewGlobalRef`. */
         unsafe {
             let new: unsafe extern "C" fn(*mut c_void, Object) -> Object = self.get(21);
             new(self.0, object)
@@ -315,16 +329,16 @@ impl Env {
         if object.is_null() {
             return;
         }
-        // SAFETY: `DeleteGlobalRef`, of a reference `global` made.
+        /* SAFETY: `DeleteGlobalRef`, of a reference `global` made. */
         unsafe {
             let delete: unsafe extern "C" fn(*mut c_void, Object) = self.get(22);
             delete(self.0, object)
         }
     }
 
-    /// Where a direct byte buffer's bytes are.
+    /** Where a direct byte buffer's bytes are. */
     pub(crate) fn buffer_address(self, buffer: Object) -> *mut u8 {
-        // SAFETY: `GetDirectBufferAddress`.
+        /* SAFETY: `GetDirectBufferAddress`. */
         unsafe {
             let get: unsafe extern "C" fn(*mut c_void, Object) -> *mut u8 = self.get(230);
             get(self.0, buffer)

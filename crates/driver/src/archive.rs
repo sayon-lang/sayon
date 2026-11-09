@@ -1,32 +1,34 @@
-//! Package archives, as the registry stores them: the package's canonical
-//! digest input itself. An archive is the domain `sayon-package-digest-1\0`,
-//! then each file, in the order of its path, as the length of its path, the
-//! path (`/` between its parts), the length of its contents, and the
-//! contents, each length 8 bytes, least significant first. Its SHA-256 is
-//! the package's digest (`packages::digest`), so an archive, the files it
-//! holds, and a cached copy of them are checked against the same value.
-//!
-//! A package holds every file of its folder but hidden ones (any part
-//! starting with `.`), and `build`, `target`, and `sayon.lock` at its top.
-//! Unpacking refuses whatever would not have been packed: paths out of
-//! order or twice, paths that differ only in case, and paths that leave the
-//! folder.
+/*!
+Package archives, as the registry stores them: the package's canonical
+digest input itself. An archive is the domain `sayon-package-digest-1\0`,
+then each file, in the order of its path, as the length of its path, the
+path (`/` between its parts), the length of its contents, and the
+contents, each length 8 bytes, least significant first. Its SHA-256 is
+the package's digest (`packages::digest`), so an archive, the files it
+holds, and a cached copy of them are checked against the same value.
+
+A package holds every file of its folder but hidden ones (any part
+starting with `.`), and `build`, `target`, and `sayon.lock` at its top.
+Unpacking refuses whatever would not have been packed: paths out of
+order or twice, paths that differ only in case, and paths that leave the
+folder.
+*/
 
 use crate::sha256::{Sha256, hex};
 use std::path::{Component, Path, PathBuf};
 
 pub const DOMAIN: &[u8] = b"sayon-package-digest-1\0";
 
-/// The most an archive may hold.
+/** The most an archive may hold. */
 pub const LARGEST: usize = 10 * 1024 * 1024;
 const MOST_FILES: usize = 10_000;
 
-/// Whether a top-level name is left out of packages.
+/** Whether a top-level name is left out of packages. */
 fn left_out(name: &str) -> bool {
     matches!(name, "build" | "target" | crate::packages::LOCK_FILE)
 }
 
-/// The files a package holds, by their paths, in order.
+/** The files a package holds, by their paths, in order. */
 pub fn files(dir: &Path) -> Result<Vec<(String, PathBuf)>, String> {
     fn walk(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) -> Result<(), String> {
         let entries =
@@ -58,7 +60,7 @@ pub fn files(dir: &Path) -> Result<Vec<(String, PathBuf)>, String> {
     Ok(out)
 }
 
-/// The archive of the package at `dir`, and the paths of its files.
+/** The archive of the package at `dir`, and the paths of its files. */
 pub fn pack(dir: &Path) -> Result<(Vec<u8>, Vec<String>), String> {
     let mut archive = DOMAIN.to_vec();
     let mut paths = Vec::new();
@@ -83,14 +85,14 @@ pub fn pack(dir: &Path) -> Result<(Vec<u8>, Vec<String>), String> {
     Ok((archive, paths))
 }
 
-/// The digest of an archive, as `sha256:...`.
+/** The digest of an archive, as `sha256:...`. */
 pub fn digest(archive: &[u8]) -> String {
     let mut hasher = Sha256::default();
     hasher.update(archive);
     format!("sha256:{}", hex(&hasher.finish()))
 }
 
-/// Whether a path inside a package is one a package can hold.
+/** Whether a path inside a package is one a package can hold. */
 fn valid_path(path: &str) -> bool {
     !path.is_empty()
         && !path.contains('\\')
@@ -106,8 +108,10 @@ fn valid_path(path: &str) -> bool {
         && !left_out(path.split('/').next().unwrap_or(path))
 }
 
-/// The files an archive holds, checked: each path once, in order, none
-/// differing from another only in case, and none leaving the package.
+/**
+The files an archive holds, checked: each path once, in order, none
+differing from another only in case, and none leaving the package.
+*/
 pub fn entries(archive: &[u8]) -> Result<Vec<(String, &[u8])>, String> {
     let damaged = || "the archive is damaged or not a Sayon package".to_string();
     let rest = archive.strip_prefix(DOMAIN).ok_or_else(damaged)?;
@@ -156,7 +160,7 @@ pub fn entries(archive: &[u8]) -> Result<Vec<(String, &[u8])>, String> {
     Ok(out)
 }
 
-/// Writes an archive's files into `dir`, which must not exist yet.
+/** Writes an archive's files into `dir`, which must not exist yet. */
 pub fn unpack(archive: &[u8], dir: &Path) -> Result<(), String> {
     let entries = entries(archive)?;
     std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;

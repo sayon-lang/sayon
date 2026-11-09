@@ -1,57 +1,65 @@
-//! Drawing for `standard/graphics`. A canvas is pixels the runtime holds,
-//! in a stream entry, so that drawing is the same code, and gives the same
-//! pixels, in the interpreter and in compiled programs on every target: it
-//! uses integers and IEEE arithmetic only, with no platform's renderer. A
-//! window only shows a canvas (see `window`).
-//!
-//! Pixels are 8-bit red, green, blue, and alpha, not premultiplied, in rows
-//! from the top. A color crosses from the library packed in an integer as
-//! `0xRRGGBBAA`. Drawing blends the source over what is there. Rectangles,
-//! circles, and polygons cover the pixels whose centers they hold; a
-//! polygon's points are pixel corners, so a square of 10 covers 10 by 10
-//! pixels as a rectangle of 10 does, and a line runs between the centers
-//! of the pixels it names.
-//!
-//! Smooth shapes, and text in a font (see `font`), cover each pixel as
-//! much as they cover its area instead, which blends the color that much:
-//! a pixel's area is sampled on 16 rows, and across each row the coverage
-//! is exact.
+/*!
+Drawing for `standard/graphics`. A canvas is pixels the runtime holds,
+in a stream entry, so that drawing is the same code, and gives the same
+pixels, in the interpreter and in compiled programs on every target: it
+uses integers and IEEE arithmetic only, with no platform's renderer. A
+window only shows a canvas (see `window`).
+
+Pixels are 8-bit red, green, blue, and alpha, not premultiplied, in rows
+from the top. A color crosses from the library packed in an integer as
+`0xRRGGBBAA`. Drawing blends the source over what is there. Rectangles,
+circles, and polygons cover the pixels whose centers they hold; a
+polygon's points are pixel corners, so a square of 10 covers 10 by 10
+pixels as a rectangle of 10 does, and a line runs between the centers
+of the pixels it names.
+
+Smooth shapes, and text in a font (see `font`), cover each pixel as
+much as they cover its area instead, which blends the color that much:
+a pixel's area is sampled on 16 rows, and across each row the coverage
+is exact.
+*/
 
 use crate::font_table::GLYPHS;
 use crate::host::HostError;
 
-/// The longest side of a canvas, and the most pixels one holds.
+/** The longest side of a canvas, and the most pixels one holds. */
 const LONGEST_SIDE: i64 = 16384;
 pub const MOST_PIXELS: i64 = 1 << 26;
 
-/// What a character the font lacks looks like: a box.
+/** What a character the font lacks looks like: a box. */
 const MISSING: [u8; 8] = [0x00, 0x7E, 0x42, 0x42, 0x42, 0x42, 0x7E, 0x00];
 
-/// The rows each row of pixels is sampled on for smooth shapes.
+/** The rows each row of pixels is sampled on for smooth shapes. */
 const SAMPLES: usize = 16;
 
-/// An edge of an outline, from its top to its bottom, and whether it runs
-/// down (1) or up (-1) the way the outline goes.
+/**
+An edge of an outline, from its top to its bottom, and whether it runs
+down (1) or up (-1) the way the outline goes.
+*/
 #[derive(Clone, Copy, Debug)]
 struct Edge {
     top: f64,
     bottom: f64,
-    /// Where it is at its top, and how far it goes across for each pixel
-    /// down.
+    /**
+    Where it is at its top, and how far it goes across for each pixel
+    down.
+    */
     x: f64,
     slope: f64,
     winding: i32,
 }
 
-/// The edges of closed outlines, such as a polygon's or a line of text's,
-/// to fill smooth.
+/**
+The edges of closed outlines, such as a polygon's or a line of text's,
+to fill smooth.
+*/
 #[derive(Default)]
 pub struct Outline {
     edges: Vec<Edge>,
 }
 
 impl Outline {
-    /// Adds the edge from one point to another; a level one adds nothing.
+    /** Adds the edge from one point to another; a level one adds nothing. */
     pub fn edge(&mut self, from: (f64, f64), to: (f64, f64)) {
         if from.1 == to.1 {
             return;
@@ -70,8 +78,10 @@ impl Outline {
         });
     }
 
-    /// Adds a polygon's edges, from each point to the next and from the
-    /// last to the first.
+    /**
+    Adds a polygon's edges, from each point to the next and from the
+    last to the first.
+    */
     pub fn polygon(&mut self, points: &[(f64, f64)]) {
         for (index, &point) in points.iter().enumerate() {
             self.edge(point, points[(index + 1) % points.len()]);
@@ -79,14 +89,18 @@ impl Outline {
     }
 }
 
-/// How much a smooth shape covers of each pixel of a row, from the spans
-/// it covers on each of the row's samples.
+/**
+How much a smooth shape covers of each pixel of a row, from the spans
+it covers on each of the row's samples.
+*/
 struct Coverage {
-    /// The first column.
+    /** The first column. */
     start: usize,
-    /// The parts of pixels the spans cover, and where whole pixels start
-    /// (1) and stop (-1) being covered, for each column, with room for one
-    /// past the last.
+    /**
+    The parts of pixels the spans cover, and where whole pixels start
+    (1) and stop (-1) being covered, for each column, with room for one
+    past the last.
+    */
     parts: Vec<f64>,
     whole: Vec<i32>,
 }
@@ -100,7 +114,7 @@ impl Coverage {
         }
     }
 
-    /// Adds the span from `from` to `to` across a sample.
+    /** Adds the span from `from` to `to` across a sample. */
     fn span(&mut self, from: f64, to: f64) {
         let end = (self.parts.len() - 1) as f64;
         let from = (from - self.start as f64).clamp(0.0, end);
@@ -123,7 +137,7 @@ impl Coverage {
 pub struct Canvas {
     pub width: usize,
     pub height: usize,
-    /// Red, green, blue, and alpha for each pixel, row by row.
+    /** Red, green, blue, and alpha for each pixel, row by row. */
     pub pixels: Vec<u8>,
 }
 
@@ -136,13 +150,15 @@ fn unpack(color: i64) -> [u8; 4] {
     ]
 }
 
-/// The pixels of a run of `from` that pixel `index` of a run of `to` is
-/// made of: the first of them, and each one's share, out of 2^16. Made
-/// smaller, the shares are how much of each pixel it covers; made larger,
-/// it takes the nearest two by distance.
+/**
+The pixels of a run of `from` that pixel `index` of a run of `to` is
+made of: the first of them, and each one's share, out of 2^16. Made
+smaller, the shares are how much of each pixel it covers; made larger,
+it takes the nearest two by distance.
+*/
 fn weights(from: u64, to: u64, index: u64) -> (usize, Vec<u64>) {
     if from >= to {
-        // Pixel `index` covers from index * from / to to (index + 1) * from / to.
+        /* Pixel `index` covers from index * from / to to (index + 1) * from / to. */
         let (from, to, index) = (from as u128, to as u128, index as u128);
         let (start, end) = (index * from, (index + 1) * from);
         let (first, last) = (start / to, (end - 1) / to);
@@ -152,14 +168,14 @@ fn weights(from: u64, to: u64, index: u64) -> (usize, Vec<u64>) {
                 (covered * 65536 / from) as u64
             })
             .collect();
-        // What rounding lost goes to the largest share, so that they add to 1.
+        /* What rounding lost goes to the largest share, so that they add to 1. */
         let total: u64 = shares.iter().sum();
         if let Some(largest) = shares.iter_mut().max() {
             *largest += 65536 - total;
         }
         return (first as usize, shares);
     }
-    // The center of pixel `index`, in pixels of `from`, times 2 * to.
+    /* The center of pixel `index`, in pixels of `from`, times 2 * to. */
     let (from, to) = (from as i128, to as i128);
     let center = (2 * index as i128 + 1) * from - to;
     let first = center.div_euclid(2 * to);
@@ -172,7 +188,7 @@ fn weights(from: u64, to: u64, index: u64) -> (usize, Vec<u64>) {
     }
 }
 
-/// A range of whole pixels, `start..end`, clipped to `0..limit`.
+/** A range of whole pixels, `start..end`, clipped to `0..limit`. */
 fn clip(start: i64, end: i64, limit: usize) -> std::ops::Range<usize> {
     let limit = limit as i64;
     let start = start.clamp(0, limit);
@@ -181,7 +197,7 @@ fn clip(start: i64, end: i64, limit: usize) -> std::ops::Range<usize> {
 }
 
 impl Canvas {
-    /// A canvas of transparent pixels.
+    /** A canvas of transparent pixels. */
     pub fn new(width: i64, height: i64) -> Result<Canvas, HostError> {
         if !(1..=LONGEST_SIDE).contains(&width)
             || !(1..=LONGEST_SIDE).contains(&height)
@@ -202,7 +218,7 @@ impl Canvas {
         })
     }
 
-    /// A canvas of the given pixels, four bytes each, row by row.
+    /** A canvas of the given pixels, four bytes each, row by row. */
     pub fn from_bytes(width: i64, height: i64, bytes: &[u8]) -> Result<Canvas, HostError> {
         let mut canvas = Canvas::new(width, height)?;
         if bytes.len() != canvas.pixels.len() {
@@ -219,7 +235,7 @@ impl Canvas {
         Ok(canvas)
     }
 
-    /// The color of a pixel, packed; transparent outside the canvas.
+    /** The color of a pixel, packed; transparent outside the canvas. */
     pub fn pixel(&self, x: i64, y: i64) -> i64 {
         if x < 0 || y < 0 || x as usize >= self.width || y as usize >= self.height {
             return 0;
@@ -229,7 +245,7 @@ impl Canvas {
         ((p[0] as i64) << 24) | ((p[1] as i64) << 16) | ((p[2] as i64) << 8) | p[3] as i64
     }
 
-    /// Blends `color` over the pixel at `x`, `y`, which is on the canvas.
+    /** Blends `color` over the pixel at `x`, `y`, which is on the canvas. */
     fn blend(&mut self, x: usize, y: usize, color: [u8; 4]) {
         let at = (y * self.width + x) * 4;
         let alpha = color[3] as u32;
@@ -241,7 +257,7 @@ impl Canvas {
             return;
         }
         let pixel = &mut self.pixels[at..at + 4];
-        // What shows of the pixel below, and how opaque the result is.
+        /* What shows of the pixel below, and how opaque the result is. */
         let below = (pixel[3] as u32 * (255 - alpha) + 127) / 255;
         let total = alpha + below;
         for channel in 0..3 {
@@ -251,7 +267,7 @@ impl Canvas {
         pixel[3] = total as u8;
     }
 
-    /// Makes every pixel `color`, without blending.
+    /** Makes every pixel `color`, without blending. */
     pub fn clear(&mut self, color: i64) {
         let color = unpack(color);
         for pixel in self.pixels.as_chunks_mut::<4>().0 {
@@ -259,8 +275,10 @@ impl Canvas {
         }
     }
 
-    /// Blends `color` over the pixels of `row` as much as `coverage` says
-    /// they are covered, and empties it for the next row.
+    /**
+    Blends `color` over the pixels of `row` as much as `coverage` says
+    they are covered, and empties it for the next row.
+    */
     fn blend_coverage(&mut self, row: usize, coverage: &mut Coverage, color: [u8; 4]) {
         let mut whole = 0;
         for index in 0..coverage.parts.len() - 1 {
@@ -279,8 +297,10 @@ impl Canvas {
         coverage.whole.fill(0);
     }
 
-    /// Fills a smooth shape within `top` to `bottom` and `left` to `right`,
-    /// whose spans `spans` adds for the sample at each height.
+    /**
+    Fills a smooth shape within `top` to `bottom` and `left` to `right`,
+    whose spans `spans` adds for the sample at each height.
+    */
     fn fill_smooth(
         &mut self,
         (top, bottom): (f64, f64),
@@ -304,9 +324,11 @@ impl Canvas {
         }
     }
 
-    /// Fills outlines smooth, by the nonzero rule, where they go around a
-    /// pixel more times one way than the other, or else by the even-odd
-    /// rule.
+    /**
+    Fills outlines smooth, by the nonzero rule, where they go around a
+    pixel more times one way than the other, or else by the even-odd
+    rule.
+    */
     pub fn fill_outline(&mut self, outline: &mut Outline, nonzero: bool, color: i64) {
         let edges = &mut outline.edges;
         if edges.is_empty() {
@@ -325,8 +347,10 @@ impl Canvas {
             .flat_map(ends)
             .fold(f64::NEG_INFINITY, f64::max);
         let edges = &*edges;
-        // The edges that may cross the samples still to come, and where
-        // those that cross one do, in order across.
+        /*
+        The edges that may cross the samples still to come, and where
+        those that cross one do, in order across.
+        */
         let (mut next, mut active, mut crossings) = (0, Vec::new(), Vec::new());
         self.fill_smooth((top, bottom), (left, right), color, |height, coverage| {
             while next < edges.len() && edges[next].top <= height {
@@ -369,8 +393,10 @@ impl Canvas {
         }
     }
 
-    /// Covers the pixels whose centers lie within `radius` of the center of
-    /// the pixel `x`, `y`.
+    /**
+    Covers the pixels whose centers lie within `radius` of the center of
+    the pixel `x`, `y`.
+    */
     pub fn fill_circle(&mut self, x: i64, y: i64, radius: i64, color: i64) {
         if radius <= 0 {
             return;
@@ -398,7 +424,7 @@ impl Canvas {
         }
     }
 
-    /// A disc of `radius` around the center of the pixel `x`, `y`, smooth.
+    /** A disc of `radius` around the center of the pixel `x`, `y`, smooth. */
     pub fn fill_circle_smooth(&mut self, x: i64, y: i64, radius: i64, color: i64) {
         if radius <= 0 {
             return;
@@ -418,8 +444,10 @@ impl Canvas {
         );
     }
 
-    /// Covers the pixels whose centers lie inside the polygon of `points`,
-    /// by the even-odd rule.
+    /**
+    Covers the pixels whose centers lie inside the polygon of `points`,
+    by the even-odd rule.
+    */
     pub fn fill_polygon(&mut self, points: &[(f64, f64)], color: i64) {
         if points.len() < 3 {
             return;
@@ -440,8 +468,10 @@ impl Canvas {
             }
             crossings.sort_by(f64::total_cmp);
             for pair in crossings.as_chunks::<2>().0 {
-                // The pixels whose centers lie from the one crossing to the
-                // other.
+                /*
+                The pixels whose centers lie from the one crossing to the
+                other.
+                */
                 let first = (pair[0] - 0.5).ceil() as i64;
                 let last = (pair[1] - 0.5).ceil() as i64;
                 for column in clip(first, last, self.width) {
@@ -451,17 +481,19 @@ impl Canvas {
         }
     }
 
-    /// The polygon of `points`, smooth, by the even-odd rule.
+    /** The polygon of `points`, smooth, by the even-odd rule. */
     pub fn fill_polygon_smooth(&mut self, points: &[(f64, f64)], color: i64) {
         let mut outline = Outline::default();
         outline.polygon(points);
         self.fill_outline(&mut outline, false, color);
     }
 
-    /// A line from the center of one pixel to the center of another,
-    /// `thickness` pixels wide: one pixel of each row or column it crosses
-    /// when it is 1, else the band around it. A smooth line is the band,
-    /// at least a pixel wide.
+    /**
+    A line from the center of one pixel to the center of another,
+    `thickness` pixels wide: one pixel of each row or column it crosses
+    when it is 1, else the band around it. A smooth line is the band,
+    at least a pixel wide.
+    */
     pub fn line(
         &mut self,
         from: (i64, i64),
@@ -502,8 +534,10 @@ impl Canvas {
         self.fill_polygon(&band(from, to, thickness), color);
     }
 
-    /// Blends `color` over the pixels of a mask `width` pixels wide, its top
-    /// left corner at `x`, `y`, as much as the mask's byte for each says.
+    /**
+    Blends `color` over the pixels of a mask `width` pixels wide, its top
+    left corner at `x`, `y`, as much as the mask's byte for each says.
+    */
     #[cfg(all(target_family = "wasm", target_os = "unknown"))]
     pub fn blend_mask(&mut self, mask: &[u8], width: usize, (x, y): (i64, i64), color: i64) {
         let color = unpack(color);
@@ -518,8 +552,10 @@ impl Canvas {
         }
     }
 
-    /// Draws `source` with its top left corner at `x`, `y`, blending it
-    /// over what is there.
+    /**
+    Draws `source` with its top left corner at `x`, `y`, blending it
+    over what is there.
+    */
     pub fn draw(&mut self, source: &Canvas, x: i64, y: i64) {
         for row in clip(y, y.saturating_add(source.height as i64), self.height) {
             let from_row = (row as i64 - y) as usize;
@@ -536,12 +572,14 @@ impl Canvas {
         }
     }
 
-    /// Draws a part of `source`, given as its left, top, width, and height,
-    /// scaled to fill the rectangle `to`, blending it over what is there.
-    /// Made smaller, each pixel takes the average of the pixels it covers,
-    /// by how much of each; made larger, a blend of the nearest two each
-    /// way, by distance. Colors count as much as they are opaque. A part
-    /// reaching outside the source is cut to it.
+    /**
+    Draws a part of `source`, given as its left, top, width, and height,
+    scaled to fill the rectangle `to`, blending it over what is there.
+    Made smaller, each pixel takes the average of the pixels it covers,
+    by how much of each; made larger, a blend of the nearest two each
+    way, by distance. Colors count as much as they are opaque. A part
+    reaching outside the source is cut to it.
+    */
     pub fn draw_scaled(&mut self, source: &Canvas, part: [i64; 4], to: [i64; 4]) {
         let [left, top, wide, high] = part;
         let left_end = left.saturating_add(wide).min(source.width as i64);
@@ -558,8 +596,10 @@ impl Canvas {
         if columns.is_empty() || rows.is_empty() {
             return;
         }
-        // Across first: each row of the part to the columns drawn, its
-        // colors times their opacity, out of 255 * 255.
+        /*
+        Across first: each row of the part to the columns drawn, its
+        colors times their opacity, out of 255 * 255.
+        */
         let shown = columns.len();
         let column_weights: Vec<(usize, Vec<u64>)> = columns
             .clone()
@@ -584,7 +624,7 @@ impl Canvas {
                 }
             }
         }
-        // Then down, for each row drawn, and blended in.
+        /* Then down, for each row drawn, and blended in. */
         for row in rows {
             let (first, shares) = weights(from_high, height as u64, (row as i64 - y) as u64);
             for (index, column) in columns.clone().enumerate() {
@@ -607,9 +647,11 @@ impl Canvas {
         }
     }
 
-    /// Draws text in the built-in font, each character in a square cell of
-    /// `size` pixels, its top left corner at `x`, `y`; a line break starts
-    /// a line below.
+    /**
+    Draws text in the built-in font, each character in a square cell of
+    `size` pixels, its top left corner at `x`, `y`; a line break starts
+    a line below.
+    */
     pub fn text(&mut self, text: &str, x: i64, y: i64, size: i64, color: i64) {
         if size <= 0 {
             return;
@@ -640,9 +682,11 @@ impl Canvas {
     }
 }
 
-/// The band `thickness` wide around the line from the center of one pixel
-/// to the center of another, cut square at the centers; for a point, a
-/// square as wide.
+/**
+The band `thickness` wide around the line from the center of one pixel
+to the center of another, cut square at the centers; for a point, a
+square as wide.
+*/
 fn band(from: (i64, i64), to: (i64, i64), thickness: i64) -> [(f64, f64); 4] {
     let start = (from.0 as f64 + 0.5, from.1 as f64 + 0.5);
     let end = (to.0 as f64 + 0.5, to.1 as f64 + 0.5);
@@ -662,8 +706,10 @@ fn band(from: (i64, i64), to: (i64, i64), thickness: i64) -> [(f64, f64); 4] {
     ]
 }
 
-/// The rows of a character of the built-in font: nothing for a space, and
-/// a box for one it lacks.
+/**
+The rows of a character of the built-in font: nothing for a space, and
+a box for one it lacks.
+*/
 fn glyph(character: char) -> [u8; 8] {
     if character.is_whitespace() {
         return [0; 8];
@@ -674,8 +720,10 @@ fn glyph(character: char) -> [u8; 8] {
     }
 }
 
-/// How wide and high text is in the built-in font at `size`: its longest
-/// line's characters, and its lines.
+/**
+How wide and high text is in the built-in font at `size`: its longest
+line's characters, and its lines.
+*/
 pub fn text_size(text: &str, size: i64) -> (i64, i64) {
     let size = size.max(0);
     let lines: Vec<i64> = text
@@ -729,14 +777,16 @@ mod tests {
     #[test]
     fn smooth_shapes_cover_pixels_by_their_area() {
         let mut canvas = Canvas::new(8, 8).unwrap();
-        // A square half a pixel off the grid: whole pixels inside, halves
-        // along its sides, and quarters at its corners.
+        /*
+        A square half a pixel off the grid: whole pixels inside, halves
+        along its sides, and quarters at its corners.
+        */
         canvas.fill_polygon_smooth(&[(1.5, 1.5), (5.5, 1.5), (5.5, 5.5), (1.5, 5.5)], RED);
         assert_eq!(canvas.pixel(3, 3), RED);
         assert_eq!(canvas.pixel(1, 3), 0xFF00_0080);
         assert_eq!(canvas.pixel(5, 1), 0xFF00_0040);
         assert_eq!(canvas.pixel(0, 0), 0);
-        // On the grid, a smooth polygon covers what the other does.
+        /* On the grid, a smooth polygon covers what the other does. */
         let mut a = Canvas::new(20, 20).unwrap();
         let mut b = Canvas::new(20, 20).unwrap();
         a.fill_rectangle(3, 4, 10, 10, RED);
@@ -762,7 +812,7 @@ mod tests {
 
     #[test]
     fn the_nonzero_rule_fills_what_goes_around_twice() {
-        // Two squares the same way, one inside the other.
+        /* Two squares the same way, one inside the other. */
         let squares = || {
             let mut outline = Outline::default();
             outline.polygon(&[(0.0, 0.0), (6.0, 0.0), (6.0, 6.0), (0.0, 6.0)]);
@@ -798,7 +848,7 @@ mod tests {
     fn text_is_drawn_a_cell_per_character() {
         let mut canvas = Canvas::new(32, 16).unwrap();
         canvas.text("A b", 0, 0, 8, RED);
-        // The top of A's left side, in its own cell, and nothing in the space.
+        /* The top of A's left side, in its own cell, and nothing in the space. */
         assert_eq!(canvas.pixel(2, 1), RED);
         assert!((8..16).all(|x| (0..8).all(|y| canvas.pixel(x, y) == 0)));
         assert_eq!(text_size("A b\nlonger", 8), (48, 16));
@@ -811,7 +861,7 @@ mod tests {
         assert!(Canvas::from_bytes(2, 2, &[0; 15]).is_err());
     }
 
-    /// A canvas of one row of opaque grays.
+    /** A canvas of one row of opaque grays. */
     fn grays(values: &[u8]) -> Canvas {
         let pixels: Vec<u8> = values.iter().flat_map(|&v| [v, v, v, 255]).collect();
         Canvas::from_bytes(values.len() as i64, 1, &pixels).unwrap()
@@ -826,7 +876,7 @@ mod tests {
         let source = grays(&[0, 90, 180]);
         let mut two = Canvas::new(2, 1).unwrap();
         two.draw_scaled(&source, [0, 0, 3, 1], [0, 0, 2, 1]);
-        // Each covers one pixel whole and half of the middle one.
+        /* Each covers one pixel whole and half of the middle one. */
         assert_eq!(row(&two), [30, 150]);
         let mut one = Canvas::new(1, 1).unwrap();
         one.draw_scaled(&source, [1, 0, 2, 1], [0, 0, 1, 1]);
@@ -846,7 +896,7 @@ mod tests {
         let source = Canvas::from_bytes(2, 1, &[255, 0, 0, 255, 0, 0, 0, 0]).unwrap();
         let mut one = Canvas::new(1, 1).unwrap();
         one.draw_scaled(&source, [0, 0, 2, 1], [0, 0, 1, 1]);
-        // Half red, half nothing: red, half transparent, not darker.
+        /* Half red, half nothing: red, half transparent, not darker. */
         assert_eq!(&one.pixels[..3], &[255, 0, 0]);
         assert!((127..=128).contains(&one.pixels[3]));
     }

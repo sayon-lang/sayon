@@ -1,5 +1,7 @@
-// N-body: the Sun and the four gas giants, moved step by step by each
-// other's gravity, with the system's energy before and after.
+/*
+N-body: the Sun and the four gas giants, moved step by step by each
+other's gravity, with the system's energy before and after.
+*/
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>

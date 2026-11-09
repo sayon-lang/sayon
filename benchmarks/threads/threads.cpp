@@ -1,7 +1,9 @@
-// Threads: count the steps of the Collatz sequence from every number below
-// a limit, the numbers shared out among four threads. Plain integer work
-// spread over the processor's cores, so time on the clock falls as the
-// cores share it.
+/*
+Threads: count the steps of the Collatz sequence from every number below
+a limit, the numbers shared out among four threads. Plain integer work
+spread over the processor's cores, so time on the clock falls as the
+cores share it.
+*/
 #include <cstdio>
 #include <cstdlib>
 #include <thread>

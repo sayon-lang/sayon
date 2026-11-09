@@ -1,21 +1,23 @@
-//! HTTP/1.1 requests for the registry commands, over the runtime's
-//! connections and the system's TLS: one request for each connection, with
-//! the whole answer read before it returns.
+/*!
+HTTP/1.1 requests for the registry commands, over the runtime's
+connections and the system's TLS: one request for each connection, with
+the whole answer read before it returns.
+*/
 
 use sayon_runtime::host::HostError;
 use sayon_runtime::network;
 use sayon_runtime::streams;
 use std::time::{Duration, Instant};
 
-/// How long connecting, and each wait for the server afterwards, may last.
+/** How long connecting, and each wait for the server afterwards, may last. */
 const TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The most an answer's body may hold.
+/** The most an answer's body may hold. */
 const LARGEST: usize = 32 * 1024 * 1024;
 
 pub struct Response {
     pub status: u16,
-    /// Names in lowercase.
+    /** Names in lowercase. */
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
 }
@@ -33,7 +35,7 @@ struct Address {
     secure: bool,
     host: String,
     port: u16,
-    /// The path and query, starting with `/`.
+    /** The path and query, starting with `/`. */
     target: String,
 }
 
@@ -69,8 +71,10 @@ fn address(url: &str) -> Result<Address, String> {
     })
 }
 
-/// Runs an operation of the runtime's until it no longer waits, waiting
-/// for its socket in between.
+/**
+Runs an operation of the runtime's until it no longer waits, waiting
+for its socket in between.
+*/
 fn finish<T>(mut operation: impl FnMut() -> Result<T, HostError>) -> Result<T, String> {
     let started = Instant::now();
     loop {
@@ -90,7 +94,7 @@ fn finish<T>(mut operation: impl FnMut() -> Result<T, HostError>) -> Result<T, S
     }
 }
 
-/// A connection, closed when dropped.
+/** A connection, closed when dropped. */
 struct Connection(i64);
 
 impl Drop for Connection {
@@ -99,8 +103,10 @@ impl Drop for Connection {
     }
 }
 
-/// Sends a request and reads the whole answer. `headers` go with the ones
-/// every request has: the host, the length of the body, and who asks.
+/**
+Sends a request and reads the whole answer. `headers` go with the ones
+every request has: the host, the length of the body, and who asks.
+*/
 pub fn request(
     method: &str,
     url: &str,

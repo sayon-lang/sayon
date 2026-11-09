@@ -1,9 +1,11 @@
-//! `sayon lint`: warnings about code that compiles but is probably not what
-//! was meant, or does not follow the naming conventions.
-//!
-//! The lints run on a checked program and the modules it was built from; the
-//! standard library is not linted. A warning is suppressed by a comment on
-//! its line or the line above naming it, such as `# allow(unused_variable)`.
+/*!
+`sayon lint`: warnings about code that compiles but is probably not what
+was meant, or does not follow the naming conventions.
+
+The lints run on a checked program and the modules it was built from; the
+standard library is not linted. A warning is suppressed by a comment on
+its line or the line above naming it, such as `# allow(unused_variable)`.
+*/
 
 use crate::ModuleSource;
 use crate::hir::{self, Block, Expr, ExprKind, LocalId, LocalKind, Pattern, StmtKind};
@@ -11,7 +13,7 @@ use sayon_syntax::ast::{self, DeclKind, PatternKind, TypeExprKind, Visibility};
 use sayon_syntax::{Diagnostic, Diagnostics, FileId, Severity, SourceMap, Span};
 use std::collections::{HashMap, HashSet};
 
-/// The warnings `sayon lint` adds to those of the compiler.
+/** The warnings `sayon lint` adds to those of the compiler. */
 pub const LINTS: &[&str] = &[
     "W_UNUSED_VARIABLE",
     "W_UNUSED_PARAMETER",
@@ -23,7 +25,7 @@ pub const LINTS: &[&str] = &[
     "W_UNKNOWN_LINT",
 ];
 
-/// Warnings the compiler reports on its own, which can be suppressed too.
+/** Warnings the compiler reports on its own, which can be suppressed too. */
 const COMPILER_WARNINGS: &[&str] = &[
     "W_UNUSED_OUTCOME",
     "W_UNUSED_TASK",
@@ -31,12 +33,12 @@ const COMPILER_WARNINGS: &[&str] = &[
     "W_SHADOWED_BUILTIN",
 ];
 
-/// The name used in `# allow(...)` for a warning code.
+/** The name used in `# allow(...)` for a warning code. */
 fn lint_name(code: &str) -> String {
     code.trim_start_matches("W_").to_ascii_lowercase()
 }
 
-/// Lints the modules of a program that are not part of the standard library.
+/** Lints the modules of a program that are not part of the standard library. */
 pub fn lint(program: &hir::Program, modules: &[ModuleSource]) -> Vec<Diagnostic> {
     let files: HashSet<FileId> = modules
         .iter()
@@ -55,7 +57,7 @@ pub fn lint(program: &hir::Program, modules: &[ModuleSource]) -> Vec<Diagnostic>
     out
 }
 
-// ----- names in the source -------------------------------------------------------
+/* ----- names in the source ------------------------------------------------------- */
 
 fn is_snake(name: &str) -> bool {
     let name = name.trim_start_matches('_');
@@ -75,7 +77,7 @@ fn is_upper(name: &str) -> bool {
         .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
-/// The words of a name in any case style.
+/** The words of a name in any case style. */
 fn words(name: &str) -> Vec<String> {
     let mut words: Vec<String> = Vec::new();
     let mut current = String::new();
@@ -149,8 +151,10 @@ fn check_pascal(what: &str, name: &ast::Ident, out: &mut Vec<Diagnostic>) {
     }
 }
 
-/// Lints that need only the module's source: names of declarations, and
-/// imports and private items the module never uses.
+/**
+Lints that need only the module's source: names of declarations, and
+imports and private items the module never uses.
+*/
 fn lint_module(module: &ast::Module, out: &mut Vec<Diagnostic>) {
     let mut used = HashSet::new();
     for stmt in &module.stmts {
@@ -230,7 +234,7 @@ fn unused_private(
     }
 }
 
-/// Naming conventions for functions, types, variants, and fields.
+/** Naming conventions for functions, types, variants, and fields. */
 fn declaration_names(stmt: &ast::Stmt, out: &mut Vec<Diagnostic>) {
     match &stmt.kind {
         ast::StmtKind::Function(function) => {
@@ -297,7 +301,7 @@ fn block_declarations(block: &ast::Block, out: &mut Vec<Diagnostic>) {
     }
 }
 
-// Every name a module refers to, in expressions, types, and patterns.
+/* Every name a module refers to, in expressions, types, and patterns. */
 
 fn stmt_names(stmt: &ast::Stmt, used: &mut HashSet<String>) {
     match &stmt.kind {
@@ -427,7 +431,7 @@ fn expr_names(expr: &ast::Expr, used: &mut HashSet<String>) {
             expr_names(value, used);
         }),
         E::Record(fields) => {
-            // Names in a field list can also be dictionary keys.
+            /* Names in a field list can also be dictionary keys. */
             for (name, value) in fields {
                 used.insert(name.name.clone());
                 expr_names(value, used);
@@ -521,10 +525,12 @@ fn pattern_names(pattern: &ast::Pattern, used: &mut HashSet<String>) {
     }
 }
 
-// ----- locals --------------------------------------------------------------------
+/* ----- locals -------------------------------------------------------------------- */
 
-/// Whether two names differ by one inserted, removed, replaced, or swapped
-/// character.
+/**
+Whether two names differ by one inserted, removed, replaced, or swapped
+character.
+*/
 fn one_edit_apart(a: &str, b: &str) -> bool {
     let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
     if a == b || a.len().abs_diff(b.len()) > 1 {
@@ -545,10 +551,10 @@ fn one_edit_apart(a: &str, b: &str) -> bool {
     }
 }
 
-/// The locals in scope: name, where declared, and block depth.
+/** The locals in scope: name, where declared, and block depth. */
 type Visible = Vec<(String, Span, usize)>;
 
-/// Whether two names differ only in their digits, like `total` and `total2`.
+/** Whether two names differ only in their digits, like `total` and `total2`. */
 fn only_digits_differ(a: &str, b: &str) -> bool {
     let strip = |s: &str| {
         s.chars()
@@ -561,7 +567,7 @@ fn only_digits_differ(a: &str, b: &str) -> bool {
 struct FunctionLint<'p, 'o> {
     program: &'p hir::Program,
     out: &'o mut Vec<Diagnostic>,
-    /// How many blocks deep the walk is.
+    /** How many blocks deep the walk is. */
     depth: usize,
 }
 
@@ -574,8 +580,10 @@ impl<'p, 'o> FunctionLint<'p, 'o> {
         }
     }
 
-    /// Lints a function and the closures inside it. `visible` holds the
-    /// names of the enclosing functions' locals, for a closure.
+    /**
+    Lints a function and the closures inside it. `visible` holds the
+    names of the enclosing functions' locals, for a closure.
+    */
     fn run(&mut self, function: &'p hir::Function, visible: &mut Visible) {
         let mut reads: HashSet<LocalId> = HashSet::new();
         for param in &function.params {
@@ -637,7 +645,7 @@ impl<'p, 'o> FunctionLint<'p, 'o> {
         if matches!(local.kind, LocalKind::Captured | LocalKind::Hidden) || is_snake(&local.name) {
             return;
         }
-        // A local constant may be written as a module constant would be.
+        /* A local constant may be written as a module constant would be. */
         if local.kind == LocalKind::Constant && is_upper(&local.name) {
             return;
         }
@@ -652,7 +660,7 @@ impl<'p, 'o> FunctionLint<'p, 'o> {
         naming(what, &ident, "snake_case", to_snake(&local.name), self.out);
     }
 
-    /// Checks a new name against the names already visible, then adds it.
+    /** Checks a new name against the names already visible, then adds it. */
     fn declare(&mut self, name: &str, span: Span, implicit: bool, visible: &mut Visible) {
         if !name.starts_with('_') {
             if let Some((_, outer, _)) = visible.iter().rev().find(|(n, _, _)| n == name) {
@@ -668,7 +676,7 @@ impl<'p, 'o> FunctionLint<'p, 'o> {
             } else if implicit
                 && name.chars().count() >= 3
                 && let Some((close, outer, _)) = visible.iter().rev().find(|(n, _, depth)| {
-                    // A typo usually updates a variable of an enclosing block.
+                    /* A typo usually updates a variable of an enclosing block. */
                     *depth < self.depth && one_edit_apart(n, name) && !only_digits_differ(n, name)
                 })
             {
@@ -781,7 +789,7 @@ impl<'p, 'o> FunctionLint<'p, 'o> {
         }
     }
 
-    /// Lints the closures made in an expression, with the names visible there.
+    /** Lints the closures made in an expression, with the names visible there. */
     fn closures(&mut self, expr: &'p Expr, visible: &mut Visible) {
         let mut found = Vec::new();
         each_expr(expr, &mut |e| {
@@ -796,15 +804,17 @@ impl<'p, 'o> FunctionLint<'p, 'o> {
     }
 }
 
-/// Records a read of a local, including the captures of a closure.
+/** Records a read of a local, including the captures of a closure. */
 fn note_read(expr: &Expr, reads: &mut HashSet<LocalId>) {
     if let ExprKind::Local { local, .. } = &expr.kind {
         reads.insert(*local);
     }
 }
 
-/// Calls `f` on an expression and everything inside it, but not on the
-/// bodies of closures, which belong to their own functions.
+/**
+Calls `f` on an expression and everything inside it, but not on the
+bodies of closures, which belong to their own functions.
+*/
 fn each_expr<'e>(expr: &'e Expr, f: &mut dyn FnMut(&'e Expr)) {
     f(expr);
     for child in expr.children() {
@@ -812,7 +822,7 @@ fn each_expr<'e>(expr: &'e Expr, f: &mut dyn FnMut(&'e Expr)) {
     }
 }
 
-/// `changed` receives the variables whose parts are changed.
+/** `changed` receives the variables whose parts are changed. */
 fn each_block_expr<'e>(
     block: &'e Block,
     f: &mut dyn FnMut(&'e Expr),
@@ -877,8 +887,10 @@ fn each_block_expr<'e>(
     }
 }
 
-/// The expressions inside an assignment target; the target's own local is
-/// written, not read, unless an element or field of it is assigned.
+/**
+The expressions inside an assignment target; the target's own local is
+written, not read, unless an element or field of it is assigned.
+*/
 fn each_place_expr<'e>(
     place: &'e hir::Place,
     f: &mut dyn FnMut(&'e Expr),
@@ -896,7 +908,7 @@ fn each_place_expr<'e>(
     }
 }
 
-/// Changing part of a variable counts as using it.
+/** Changing part of a variable counts as using it. */
 fn mark_place_root<'e>(
     place: &'e hir::Place,
     f: &mut dyn FnMut(&'e Expr),
@@ -926,11 +938,13 @@ fn each_pattern_expr<'e>(pattern: &'e Pattern, f: &mut dyn FnMut(&'e Expr)) {
     }
 }
 
-// ----- suppressions ------------------------------------------------------------
+/* ----- suppressions ------------------------------------------------------------ */
 
-/// Drops warnings that a comment on their line, or the line above, allows:
-/// `# allow(unused_variable, naming)`. With `report_unknown`, a name that is
-/// not a warning is itself reported.
+/**
+Drops warnings that a comment on their line, or the line above, allows:
+`# allow(unused_variable, naming)`. With `report_unknown`, a name that is
+not a warning is itself reported.
+*/
 pub fn suppress(
     diagnostics: Diagnostics,
     sources: &SourceMap,
@@ -942,7 +956,7 @@ pub fn suppress(
         .chain(COMPILER_WARNINGS)
         .map(|code| lint_name(code))
         .collect();
-    // For each file, the allowed names on each line.
+    /* For each file, the allowed names on each line. */
     let mut allowed: HashMap<FileId, HashMap<usize, Vec<String>>> = HashMap::new();
     let mut unknown = Vec::new();
     for &file in files {
@@ -978,7 +992,7 @@ pub fn suppress(
                 };
                 let (line, _) = sources.get(span.file).line_col(span.start);
                 let name = lint_name(diagnostic.code);
-                // `line_col` counts lines from 1.
+                /* `line_col` counts lines from 1. */
                 [line.checked_sub(1), line.checked_sub(2)]
                     .into_iter()
                     .flatten()

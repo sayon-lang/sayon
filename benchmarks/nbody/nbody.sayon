@@ -1,6 +1,8 @@
-# N-body: the Sun and the four gas giants, moved step by step by each
-# other's gravity, with the system's energy before and after. Floating
-# point math on an array of structures.
+##
+N-body: the Sun and the four gas giants, moved step by step by each
+other's gravity, with the system's energy before and after. Floating
+point math on an array of structures.
+##
 
 math = import("standard/math.sayon")
 os = import("standard/os.sayon")

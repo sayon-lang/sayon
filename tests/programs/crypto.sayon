@@ -24,8 +24,10 @@ rounds = try crypto.pbkdf2_sha256([], [], 0, 32)
 if rounds is error
     print(rounds.code)
 
-# A kept password: the same password twice gives different text, and only
-# the password checks out.
+##
+A kept password: the same password twice gives different text, and only
+the password checks out.
+##
 kept = crypto.hash_password("correct horse battery staple")
 again = crypto.hash_password("correct horse battery staple")
 print(strings.starts_with(kept, "pbkdf2-sha256$600000$"), length(kept), kept != again)

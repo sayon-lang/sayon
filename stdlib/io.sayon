@@ -1,18 +1,22 @@
-# Console and file input and output.
-#
-#     io = import("standard/io.sayon")
-#     for line in io.read_lines("notes.txt")
-#         print(line)
-#
-# A file can also be opened and read or written a part at a time:
-#
-#     file = io.open("large.txt")
-#     for line in file.lines()
-#         print(line)
-#     file.close()
+##
+Console and file input and output.
 
-# The whole content of a text file. Fails with IOError, or EncodingError
-# when the file is not UTF-8.
+    io = import("standard/io.sayon")
+    for line in io.read_lines("notes.txt")
+        print(line)
+
+A file can also be opened and read or written a part at a time:
+
+    file = io.open("large.txt")
+    for line in file.lines()
+        print(line)
+    file.close()
+##
+
+##
+The whole content of a text file. Fails with IOError, or EncodingError
+when the file is not UTF-8.
+##
 function read_file(path: string) -> string
     return readfile(path)
 
@@ -36,8 +40,10 @@ function read_file_bytes(path: string) -> Array<byte>
 function write_file_bytes(path: string, bytes: Array<byte>)
     host_write_file_bytes(path, bytes)
 
-# The next line of standard input without its line ending, or nothing at the
-# end of input.
+##
+The next line of standard input without its line ending, or nothing at the
+end of input.
+##
 function read_line() -> string or nothing
     return host_read_line()
 
@@ -49,14 +55,18 @@ function write(text: string)
 function write_error(text: string)
     host_write_error(text + "\n")
 
-# Standard input as a file, to read with `read_line`, `lines`, `read`, and
-# `read_bytes`, sharing what it has read with `io.read_line`. It cannot
-# `seek`, and closing it only stops this file from reading.
+##
+Standard input as a file, to read with `read_line`, `lines`, `read`, and
+`read_bytes`, sharing what it has read with `io.read_line`. It cannot
+`seek`, and closing it only stops this file from reading.
+##
 function input() -> File
     return File(stream = host_standard_input(), path = "standard input", line_limit = LINE_LIMIT)
 
-# Standard output as a file, for code that takes one; what it writes comes
-# in order with what `print` does. Closing it only stops this file.
+##
+Standard output as a file, for code that takes one; what it writes comes
+in order with what `print` does. Closing it only stops this file.
+##
 function output() -> File
     return File(stream = host_standard_output(), path = "standard output", line_limit = LINE_LIMIT)
 
@@ -66,34 +76,44 @@ function errors() -> File
 
 # ----- open files -----------------------------------------------------------------
 
-# The longest line, in bytes, that a file's `read_line` and `lines` accept
-# unless its `line_limit` is changed. A longer line fails with IOError
-# instead of filling memory.
+##
+The longest line, in bytes, that a file's `read_line` and `lines` accept
+unless its `line_limit` is changed. A longer line fails with IOError
+instead of filling memory.
+##
 constant LINE_LIMIT = 1_048_576
 
-# An open file, from `open`. Reading and writing go through a buffer.
-# `file.close()` finishes with it and reports any error in writing what is
-# still buffered; a file that is not closed is closed when it is no longer
-# used, without a report. A file has one owner, so it cannot be cloned.
+##
+An open file, from `open`. Reading and writing go through a buffer.
+`file.close()` finishes with it and reports any error in writing what is
+still buffered; a file that is not closed is closed when it is no longer
+used, without a report. A file has one owner, so it cannot be cloned.
+##
 type File = [stream: HostStream, path: string, line_limit: integer]
 
-# Opens a file: with "r" to read it, "w" to write it from the start (creating
-# it, or emptying it first), or "a" to write at its end (creating it when
-# needed). Its text is in `encoding`: UTF-8 unless given, or one of the
-# encodings of standard/strings's `encode`; in another than UTF-8, the file
-# has no positions to `seek` to, and its bytes are those of its text in
-# UTF-8. Fails with IOError when the file cannot be opened, and with
-# EncodingError when it does not hold text in its encoding.
+##
+Opens a file: with "r" to read it, "w" to write it from the start (creating
+it, or emptying it first), or "a" to write at its end (creating it when
+needed). Its text is in `encoding`: UTF-8 unless given, or one of the
+encodings of standard/strings's `encode`; in another than UTF-8, the file
+has no positions to `seek` to, and its bytes are those of its text in
+UTF-8. Fails with IOError when the file cannot be opened, and with
+EncodingError when it does not hold text in its encoding.
+##
 function open(path: string, mode = "r", encoding = "utf-8") -> File
     return File(stream = host_open(path, mode, encoding), path = clone(path), line_limit = LINE_LIMIT)
 
-# The next line without its line ending (LF or CRLF), or nothing at the end
-# of the file. The last line need not end with a line ending.
+##
+The next line without its line ending (LF or CRLF), or nothing at the end
+of the file. The last line need not end with a line ending.
+##
 function file_read_line(update file: File) -> string or nothing
     return host_stream_read_line(file.stream, file.line_limit)
 
-# The lines that remain, for a `for` loop. The loop borrows the file until
-# it finishes.
+##
+The lines that remain, for a `for` loop. The loop borrows the file until
+it finishes.
+##
 function file_lines(update file: File) -> Lines
     return Lines(stream = host_stream_share(file.stream), limit = file.line_limit)
 
@@ -105,9 +125,11 @@ function file_read(update file: File) -> string
 function file_read_bytes(update file: File, count: integer) -> Array<byte>
     return host_stream_read_bytes(file.stream, count)
 
-# Up to `count` bytes of text, or a few more to end with a whole character;
-# "" only at the end of the file. Reading a file a part at a time this way
-# never cuts a character in two.
+##
+Up to `count` bytes of text, or a few more to end with a whole character;
+"" only at the end of the file. Reading a file a part at a time this way
+never cuts a character in two.
+##
 function file_read_text(update file: File, count: integer) -> string
     return host_stream_read_text(file.stream, count)
 
@@ -123,8 +145,10 @@ function file_write_line(update file: File, text: string)
 function file_write_bytes(update file: File, bytes: Array<byte>)
     host_stream_write_bytes(file.stream, bytes)
 
-# Passes what the file buffers to the system. This does not wait for it to
-# reach the disk.
+##
+Passes what the file buffers to the system. This does not wait for it to
+reach the disk.
+##
 function file_flush(update file: File)
     host_stream_flush(file.stream)
 
@@ -136,20 +160,26 @@ function file_position(file: File) -> integer
 function file_seek(update file: File, position: integer)
     host_stream_seek(file.stream, position)
 
-# Finishes with a file: writes what it still buffers and closes it. Fails
-# with IOError if writing fails. The file cannot be used afterwards.
+##
+Finishes with a file: writes what it still buffers and closes it. Fails
+with IOError if writing fails. The file cannot be used afterwards.
+##
 function file_close(own file: File)
     host_stream_close(file.stream)
 
-# The lines of a file, from `file.lines()`. They are read from the file
-# itself, so they end when it is closed.
+##
+The lines of a file, from `file.lines()`. They are read from the file
+itself, so they end when it is closed.
+##
 type Lines = [stream: HostStream, limit: integer]
 
 # The next line, or nothing at the end; a `for` loop calls it.
 function lines_next(lines: Lines) -> string or nothing
     return host_stream_read_line(lines.stream, lines.limit)
 
-# Copies the rest of `source` to the end of what was written to `target`, a
-# part at a time, and returns the number of bytes copied.
+##
+Copies the rest of `source` to the end of what was written to `target`, a
+part at a time, and returns the number of bytes copied.
+##
 function copy(update source: File, update target: File) -> integer
     return host_stream_copy(source.stream, target.stream)

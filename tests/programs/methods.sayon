@@ -32,8 +32,10 @@ waiting.add(1)
 waiting.add(2)
 print(waiting.take(), waiting.size())
 
-# A `for` loop goes through a value whose type has a `next` method, until
-# `next` returns nothing.
+##
+A `for` loop goes through a value whose type has a `next` method, until
+`next` returns nothing.
+##
 type Countdown = [from: integer]
 
 function next(update countdown: Countdown) -> integer or nothing

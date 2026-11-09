@@ -160,8 +160,10 @@ for n in range(500)
     sum += threads.receive(queue)
 print(sum)
 
-# A timer is a channel that receives a message once a delay has passed, so
-# `select` can wait for a message or for too long.
+##
+A timer is a channel that receives a message once a delay has passed, so
+`select` can wait for a message or for too long.
+##
 enum Event
     arrived(text: string)
     late

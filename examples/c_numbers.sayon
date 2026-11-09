@@ -1,12 +1,14 @@
-# A growing list of numbers kept in C memory, which C sorts and searches,
-# and which gives its memory back by itself.
-#
-#     sayon run examples/c_numbers.sayon
-#
-# `Numbers` owns memory from `malloc`, and its finally function frees it
-# when the list is destroyed, however that happens. The functions here make
-# their C calls correct for every argument, checking positions, so the code
-# that uses them needs no `unsafe`.
+##
+A growing list of numbers kept in C memory, which C sorts and searches,
+and which gives its memory back by itself.
+
+    sayon run examples/c_numbers.sayon
+
+`Numbers` owns memory from `malloc`, and its finally function frees it
+when the list is destroyed, however that happens. The functions here make
+their C calls correct for every argument, checking positions, so the code
+that uses them needs no `unsafe`.
+##
 
 memory = import("standard/memory.sayon")
 strings = import("standard/strings.sayon")

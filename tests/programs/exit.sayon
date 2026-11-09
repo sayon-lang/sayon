@@ -1,5 +1,7 @@
-# `os.exit` ends the program in order: `finally` blocks run, but `catch` and
-# `try` do not stop it.
+##
+`os.exit` ends the program in order: `finally` blocks run, but `catch` and
+`try` do not stop it.
+##
 os = import("standard/os.sayon")
 
 outcome = try os.exit(300)

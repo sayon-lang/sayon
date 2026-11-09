@@ -1,18 +1,22 @@
-//! The registry tokens `sayon login` keeps, one for each registry: in the
-//! Windows Credential Manager, or elsewhere in a file only its user can
-//! read, `credentials` in Sayon's configuration folder. `SAYON_CREDENTIALS`
-//! names a file to use instead on every system.
+/*!
+The registry tokens `sayon login` keeps, one for each registry: in the
+Windows Credential Manager, or elsewhere in a file only its user can
+read, `credentials` in Sayon's configuration folder. `SAYON_CREDENTIALS`
+names a file to use instead on every system.
+*/
 
 use std::path::PathBuf;
 
-/// A token, and the account it belongs to.
+/** A token, and the account it belongs to. */
 pub struct Saved {
     pub account: String,
     pub token: String,
 }
 
-/// The file `SAYON_CREDENTIALS` names, or, but on Windows, the one in the
-/// configuration folder.
+/**
+The file `SAYON_CREDENTIALS` names, or, but on Windows, the one in the
+configuration folder.
+*/
 fn file() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("SAYON_CREDENTIALS") {
         return Some(PathBuf::from(path));
@@ -27,7 +31,7 @@ fn file() -> Option<PathBuf> {
     Some(base.join("sayon").join("credentials"))
 }
 
-/// Where tokens are kept, for messages.
+/** Where tokens are kept, for messages. */
 pub fn place() -> String {
     match file() {
         Some(path) => path.display().to_string(),
@@ -63,7 +67,7 @@ pub fn save(registry: &str, saved: &Saved) -> Result<(), String> {
     }
 }
 
-/// Forgets a registry's token; whether there was one.
+/** Forgets a registry's token; whether there was one. */
 pub fn forget(registry: &str) -> Result<bool, String> {
     match file() {
         Some(path) => {
@@ -80,7 +84,7 @@ pub fn forget(registry: &str) -> Result<bool, String> {
     }
 }
 
-/// The file's lines: a registry's address, the account, and the token.
+/** The file's lines: a registry's address, the account, and the token. */
 fn read_file(path: &std::path::Path) -> Result<Vec<(String, Saved)>, String> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
@@ -132,7 +136,7 @@ mod windows {
     const CRED_PERSIST_LOCAL_MACHINE: u32 = 2;
     const ERROR_NOT_FOUND: u32 = 1168;
 
-    /// `CREDENTIALW`.
+    /** `CREDENTIALW`. */
     #[repr(C)]
     struct Credential {
         flags: u32,
@@ -171,7 +175,7 @@ mod windows {
         text.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
-    /// The credential's name, as the Credential Manager lists it.
+    /** The credential's name, as the Credential Manager lists it. */
     fn target(registry: &str) -> Vec<u16> {
         wide(&format!("sayon-registry:{registry}"))
     }
@@ -190,8 +194,10 @@ mod windows {
             }
             return Err(failed("read"));
         }
-        // SAFETY: CredReadW succeeded, so `found` is a credential it
-        // allocated, freed below.
+        /*
+        SAFETY: CredReadW succeeded, so `found` is a credential it
+        allocated, freed below.
+        */
         let saved = unsafe {
             let credential = &*found;
             let blob = std::slice::from_raw_parts(credential.blob, credential.blob_size as usize);
@@ -252,7 +258,7 @@ mod windows {
     }
 }
 
-/// Elsewhere tokens are always in a file.
+/** Elsewhere tokens are always in a file. */
 #[cfg(not(windows))]
 mod windows {
     use super::Saved;

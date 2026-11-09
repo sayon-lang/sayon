@@ -1,0 +1,81 @@
+##
+VM: run a little program on a stack machine, an interpreter that decodes one
+instruction at a time. The program adds up i * i modulo a prime for every i
+below n, seventeen instructions for each i. A loop around a match on the
+instruction's code, with the stack and the variables kept in arrays.
+
+The codes: 0 push a number, 1 load a variable, 2 store into a variable,
+3 add, 4 multiply, 5 remainder, 6 less than, 7 jump unless, 8 jump, 9 stop.
+##
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+function run(code: Array<integer>, update variables: Array<integer>)
+    stack: Array<integer> = []
+    for _place in range(16)
+        push(stack, 0)
+    top = 0
+    at = 0
+    while true
+        match code[at]
+            case 0
+                stack[top] = code[at + 1]
+                top += 1
+                at += 2
+            case 1
+                stack[top] = variables[code[at + 1]]
+                top += 1
+                at += 2
+            case 2
+                top -= 1
+                variables[code[at + 1]] = stack[top]
+                at += 2
+            case 3
+                top -= 1
+                stack[top - 1] = stack[top - 1] + stack[top]
+                at += 1
+            case 4
+                top -= 1
+                stack[top - 1] = stack[top - 1] * stack[top]
+                at += 1
+            case 5
+                top -= 1
+                stack[top - 1] = stack[top - 1] % stack[top]
+                at += 1
+            case 6
+                top -= 1
+                less = 0
+                if stack[top - 1] < stack[top]
+                    less = 1
+                stack[top - 1] = less
+                at += 1
+            case 7
+                top -= 1
+                if stack[top] == 0
+                    at = code[at + 1]
+                else
+                    at += 2
+            case 8
+                at = code[at + 1]
+            case _
+                return
+
+function main()
+    limit = 1000
+    arguments = os.arguments()
+    if length(arguments) > 0
+        limit = strings.parse_integer(arguments[0])
+    # Variable 0 is i, 1 the total, and 2 the limit.
+    code = [
+        0, 0, 2, 0,
+        0, 0, 2, 1,
+        1, 0, 1, 2, 6,
+        7, 37,
+        1, 1, 1, 0, 1, 0, 4, 3, 0, 1000000007, 5, 2, 1,
+        1, 0, 0, 1, 3, 2, 0,
+        8, 8,
+        9
+    ]
+    variables = [0, 0, limit]
+    run(code, variables)
+    print("{variables[1]} for {limit}")

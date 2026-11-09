@@ -23,6 +23,8 @@ sayon-lsp = { path = "crates/lsp" }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
+unused = { level = "deny", priority = -1 }
+dead_code = "deny"
 
 [profile.release]
 debug = "line-tables-only"

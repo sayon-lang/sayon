@@ -1,0 +1,45 @@
+##
+Life: run Conway's Game of Life on a 512 by 512 board whose edges wrap
+around, from a pseudo-random start, for a number of generations, then count
+the cells alive. A grid walked in nested loops, reading the eight neighbours
+of every cell, a byte each.
+##
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+constant SIZE = 512
+
+function main()
+    generations = 10
+    arguments = os.arguments()
+    if length(arguments) > 0
+        generations = strings.parse_integer(arguments[0])
+    cells: Array<byte> = []
+    next: Array<byte> = []
+    state = 42
+    for _cell in range(SIZE * SIZE)
+        state = (state * 1103515245 + 12345) % 2147483648
+        push(cells, byte(state / 65536 % 2))
+        push(next, 0)
+    for _generation in range(generations)
+        for row in range(SIZE)
+            above = (row + SIZE - 1) % SIZE * SIZE
+            here = row * SIZE
+            below = (row + 1) % SIZE * SIZE
+            for column in range(SIZE)
+                left = (column + SIZE - 1) % SIZE
+                right = (column + 1) % SIZE
+                neighbours = cells[above + left] + cells[above + column] + cells[above + right]
+                neighbours += cells[here + left] + cells[here + right]
+                neighbours += cells[below + left] + cells[below + column] + cells[below + right]
+                alive: byte = 0
+                if neighbours == 3 or neighbours == 2 and cells[here + column] == 1
+                    alive = 1
+                next[here + column] = alive
+        previous = cells
+        cells = next
+        next = previous
+    count = 0
+    for cell in cells
+        count += integer(cell)
+    print("{count} cells alive after {generations} generations")

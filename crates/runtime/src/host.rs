@@ -1,16 +1,18 @@
-//! Host primitives used by the standard library modules.
-//!
-//! Each primitive is implemented once here, over plain Rust values. The
-//! interpreter calls [`invoke`] directly; compiled programs reach the same
-//! code through each primitive's entry in [`entries`], so both execution
-//! modes behave the same.
-//! Standard library modules call a primitive as `host_<name>(...)`; other
-//! modules cannot see them.
+/*!
+Host primitives used by the standard library modules.
+
+Each primitive is implemented once here, over plain Rust values. The
+interpreter calls [`invoke`] directly; compiled programs reach the same
+code through each primitive's entry in [`entries`], so both execution
+modes behave the same.
+Standard library modules call a primitive as `host_<name>(...)`; other
+modules cannot see them.
+*/
 
 use std::io::{BufRead, Write};
 use std::sync::Mutex;
 
-/// The value types that cross the host boundary.
+/** The value types that cross the host boundary. */
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HostType {
     String,
@@ -19,25 +21,25 @@ pub enum HostType {
     Boolean,
     Nothing,
     StringArray,
-    /// `Array<integer>`, for arguments only.
+    /** `Array<integer>`, for arguments only. */
     Integers,
-    /// `string or nothing`.
+    /** `string or nothing`. */
     OptionalString,
-    /// An open file of `standard/io`, `HostStream` in the library's code.
+    /** An open file of `standard/io`, `HostStream` in the library's code. */
     Stream,
-    /// `Array<byte>`.
+    /** `Array<byte>`. */
     Bytes,
-    /// `unsigned` (64 bits), for results only.
+    /** `unsigned` (64 bits), for results only. */
     Unsigned,
-    /// A raw address, `pointer`.
+    /** A raw address, `pointer`. */
     Pointer,
-    /// An owned NUL-terminated buffer, `c_string`; passed as its address.
+    /** An owned NUL-terminated buffer, `c_string`; passed as its address. */
     CString,
 }
 
 macro_rules! hosts {
     ($($variant:ident = $name:literal ($($param:ident),*) -> $result:ident;)*) => {
-        /// A host primitive.
+        /** A host primitive. */
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         #[repr(u32)]
         pub enum Host { $($variant),* }
@@ -45,7 +47,7 @@ macro_rules! hosts {
         impl Host {
             pub const ALL: &'static [Host] = &[$(Host::$variant),*];
 
-            /// The name after the `host_` prefix.
+            /** The name after the `host_` prefix. */
             pub fn name(self) -> &'static str {
                 match self { $(Host::$variant => $name),* }
             }
@@ -59,10 +61,12 @@ macro_rules! hosts {
             }
         }
 
-        /// The entry of each primitive for compiled code, `sayon_host_` and
-        /// the primitive's name. It takes the error slot, a pointer to one
-        /// pointer per argument, where the result goes, where whether an
-        /// optional string is present goes, and the place in the source.
+        /**
+        The entry of each primitive for compiled code, `sayon_host_` and
+        the primitive's name. It takes the error slot, a pointer to one
+        pointer per argument, where the result goes, where whether an
+        optional string is present goes, and the place in the source.
+        */
         pub mod entries {
             #![allow(non_snake_case, clippy::missing_safety_doc)]
             use super::Host;
@@ -77,8 +81,10 @@ macro_rules! hosts {
                     present: *mut bool,
                     location: *const c_char,
                 ) -> i32 {
-                    // SAFETY: the generated code passes what `host_entry`
-                    // needs for this primitive.
+                    /*
+                    SAFETY: the generated code passes what `host_entry`
+                    needs for this primitive.
+                    */
                     unsafe { crate::ffi::host_entry(Host::$variant, err, args, out, present, location) }
                 }
             )*
@@ -255,8 +261,10 @@ hosts! {
 }
 
 impl Host {
-    /// Whether the primitive always fails, so that the code after a call of
-    /// it never runs.
+    /**
+    Whether the primitive always fails, so that the code after a call of
+    it never runs.
+    */
     pub fn always_fails(self) -> bool {
         matches!(
             self,
@@ -264,8 +272,10 @@ impl Host {
         )
     }
 
-    /// Whether the primitive can wait for a socket, returning
-    /// `network::BLOCKED_CODE` until it can finish.
+    /**
+    Whether the primitive can wait for a socket, returning
+    `network::BLOCKED_CODE` until it can finish.
+    */
     pub fn may_wait(self) -> bool {
         matches!(
             self,
@@ -288,25 +298,31 @@ impl Host {
         )
     }
 
-    /// Whether the primitive stops the task to wait for its host, which
-    /// runs it meanwhile: in a web page, a request the browser fetches.
-    /// Compiled code waits for it as for another task.
+    /**
+    Whether the primitive stops the task to wait for its host, which
+    runs it meanwhile: in a web page, a request the browser fetches.
+    Compiled code waits for it as for another task.
+    */
     pub fn suspends(self) -> bool {
         matches!(self, Host::Fetch)
     }
 }
 
-/// The code of the error `os.exit` raises to end the program. `catch` and
-/// `try` let it pass, so the program ends after its `finally` blocks and
-/// cleanup; the entry boundary turns it into the exit status, which is the
-/// last word of its message.
+/**
+The code of the error `os.exit` raises to end the program. `catch` and
+`try` let it pass, so the program ends after its `finally` blocks and
+cleanup; the entry boundary turns it into the exit status, which is the
+last word of its message.
+*/
 pub const EXIT_CODE: &str = "Exit";
 
-/// The code of the error a cancelled task stops with where it waits. Like
-/// `Exit`, `catch` and `try` let it pass, so the task unwinds in order.
+/**
+The code of the error a cancelled task stops with where it waits. Like
+`Exit`, `catch` and `try` let it pass, so the task unwinds in order.
+*/
 pub const CANCELLED_CODE: &str = "Cancelled";
 
-/// The exit status an `Exit` error carries.
+/** The exit status an `Exit` error carries. */
 pub fn exit_status(message: &str) -> i32 {
     message
         .rsplit(' ')
@@ -316,19 +332,17 @@ pub fn exit_status(message: &str) -> i32 {
 }
 
 impl Host {
-    /// Finds a primitive by the name a standard library module calls it by,
-    /// for example `host_read_line`.
+    /**
+    Finds a primitive by the name a standard library module calls it by,
+    for example `host_read_line`.
+    */
     pub fn lookup(name: &str) -> Option<Host> {
         let bare = name.strip_prefix("host_")?;
         Host::ALL.iter().copied().find(|host| host.name() == bare)
     }
-
-    pub fn from_code(code: u32) -> Option<Host> {
-        Host::ALL.get(code as usize).copied()
-    }
 }
 
-/// An argument passed to a primitive.
+/** An argument passed to a primitive. */
 #[derive(Clone, Debug)]
 pub enum HostArg<'a> {
     String(&'a str),
@@ -339,11 +353,11 @@ pub enum HostArg<'a> {
     Integers(Vec<i64>),
     Stream(i64),
     Bytes(Vec<u8>),
-    /// An address: a `pointer`, or where a `c_string`'s bytes are.
+    /** An address: a `pointer`, or where a `c_string`'s bytes are. */
     Pointer(usize),
 }
 
-/// A primitive's result.
+/** A primitive's result. */
 #[derive(Clone, Debug, PartialEq)]
 pub enum HostValue {
     String(String),
@@ -353,27 +367,27 @@ pub enum HostValue {
     Nothing,
     Strings(Vec<String>),
     OptionalString(Option<String>),
-    /// A new stream, with one reference.
+    /** A new stream, with one reference. */
     Stream(i64),
     Bytes(Vec<u8>),
     Unsigned(u64),
     Pointer(usize),
-    /// The bytes of a new C string, without the NUL that ends it.
+    /** The bytes of a new C string, without the NUL that ends it. */
     CString(Vec<u8>),
 }
 
-/// A recoverable error: code and message.
+/** A recoverable error: code and message. */
 pub type HostError = (&'static str, String);
 
 static ARGUMENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-/// Sets the arguments a program sees through `os.arguments()`.
+/** Sets the arguments a program sees through `os.arguments()`. */
 pub fn set_arguments(arguments: Vec<String>) {
     *ARGUMENTS.lock().unwrap_or_else(|e| e.into_inner()) = arguments;
 }
 
 pub(crate) fn io_error(action: &str, path: &str, error: &std::io::Error) -> HostError {
-    // A file read in an encoding it is not in.
+    /* A file read in an encoding it is not in. */
     if error.kind() == std::io::ErrorKind::InvalidData {
         return ("EncodingError", format!("\"{path}\": {error}"));
     }
@@ -432,7 +446,7 @@ fn pointer(args: &[HostArg], index: usize) -> usize {
     }
 }
 
-/// The address of argument `index`, or the error for `null_pointer`.
+/** The address of argument `index`, or the error for `null_pointer`. */
 fn non_null(args: &[HostArg], index: usize, action: &str) -> Result<usize, HostError> {
     match pointer(args, index) {
         0 => Err(("NullPointerError", format!("cannot {action} null_pointer"))),
@@ -447,8 +461,10 @@ fn float(args: &[HostArg], index: usize) -> f64 {
     }
 }
 
-/// Converts a character index of `text` to a byte offset, if it is within
-/// `0..=character count`.
+/**
+Converts a character index of `text` to a byte offset, if it is within
+`0..=character count`.
+*/
 fn char_offset(text: &str, index: i64) -> Option<usize> {
     if index < 0 {
         return None;
@@ -470,7 +486,7 @@ fn random() -> f64 {
     if *state == 0 {
         *state = crate::clock::random_seed();
     }
-    // xorshift64*: not suitable for security, as documented.
+    /* xorshift64*: not suitable for security, as documented. */
     let mut x = *state;
     x ^= x >> 12;
     x ^= x << 25;
@@ -480,9 +496,11 @@ fn random() -> f64 {
     bits as f64 / (1u64 << 53) as f64
 }
 
-/// The entries of a directory, sorted by name, as paths relative to the
-/// directory walked (`prefix`), with whether each is a directory to enter.
-/// A symbolic link is never entered, even when it points to a directory.
+/**
+The entries of a directory, sorted by name, as paths relative to the
+directory walked (`prefix`), with whether each is a directory to enter.
+A symbolic link is never entered, even when it points to a directory.
+*/
 fn walk_entries(
     directory: &std::path::Path,
     prefix: &str,
@@ -515,13 +533,15 @@ fn walk_entries(
     Ok(found)
 }
 
-/// Whether JSON number text is an integer: no fraction and no exponent.
+/** Whether JSON number text is an integer: no fraction and no exponent. */
 fn json_integral(digits: &str) -> bool {
     !digits.contains(['.', 'e', 'E'])
 }
 
-/// A JSON number read as an integer of the type with `code` (see
-/// `text::INTEGER_TYPE_NAMES`), or the error to report at `path`.
+/**
+A JSON number read as an integer of the type with `code` (see
+`text::INTEGER_TYPE_NAMES`), or the error to report at `path`.
+*/
 fn json_integer(digits: &str, path: &str, code: i64) -> Result<i128, HostError> {
     let name = crate::text::INTEGER_TYPE_NAMES[code as usize];
     if !json_integral(digits) {
@@ -540,18 +560,22 @@ fn json_integer(digits: &str, path: &str, code: i64) -> Result<i128, HostError> 
     }
 }
 
-/// Runs a primitive. Output primitives write to the process's standard
-/// streams; the interpreter routes `Write` through its own output instead so
-/// it stays ordered with `print`.
+/**
+Runs a primitive. Output primitives write to the process's standard
+streams; the interpreter routes `Write` through its own output instead so
+it stays ordered with `print`.
+*/
 pub fn invoke(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> {
     run(host, args)
 }
 
-/// What [`invoke`] does. In a release build of the runtime, which is what
-/// installations ship, each primitive's entry for compiled code (see
-/// [`entries`]) has a copy, in which the primitive is known: the optimizer
-/// keeps only its own code there, so a program links only the primitives it
-/// calls. Development builds share one copy, which builds in half the time.
+/**
+What [`invoke`] does. In a release build of the runtime, which is what
+installations ship, each primitive's entry for compiled code (see
+[`entries`]) has a copy, in which the primitive is known: the optimizer
+keeps only its own code there, so a program links only the primitives it
+calls. Development builds share one copy, which builds in half the time.
+*/
 #[cfg_attr(not(debug_assertions), inline(always))]
 pub(crate) fn run(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> {
     use HostValue as V;
@@ -697,8 +721,10 @@ pub(crate) fn run(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> 
         Host::FinishSending => crate::streams::finish_sending(stream(args, 0)).map(|()| V::Nothing),
         Host::Resolve => crate::network::resolve(string(args, 0)).map(V::Strings),
         Host::HttpFail => Err(("HttpError", string(args, 0).to_string())),
-        // Only a page's code calls it, through its entry, which lets the
-        // task wait for the browser.
+        /*
+        Only a page's code calls it, through its entry, which lets the
+        task wait for the browser.
+        */
         Host::Fetch => Err(("HttpError", "only web pages fetch".to_string())),
         Host::FetchHead => crate::streams::fetched_head(stream(args, 0)).map(V::Strings),
         Host::FetchBody => crate::streams::fetched_body(stream(args, 0)).map(V::Bytes),
@@ -957,11 +983,13 @@ pub(crate) fn run(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> 
             }
         }
         Host::CStringAddress => Ok(V::Pointer(pointer(args, 0))),
-        // The raw accesses below are reached only from `unsafe` functions
-        // of `standard/foreign`, whose callers vouch for the memory.
+        /*
+        The raw accesses below are reached only from `unsafe` functions
+        of `standard/foreign`, whose callers vouch for the memory.
+        */
         Host::ReadCString => {
             let address = non_null(args, 0, "read text from")?;
-            // SAFETY: unsafe code promised a NUL-terminated buffer here.
+            /* SAFETY: unsafe code promised a NUL-terminated buffer here. */
             let bytes =
                 unsafe { std::ffi::CStr::from_ptr(address as *const std::ffi::c_char) }.to_bytes();
             String::from_utf8(bytes.to_vec())
@@ -985,7 +1013,7 @@ pub(crate) fn run(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> 
                 return Ok(V::Bytes(Vec::new()));
             }
             let address = non_null(args, 0, "read from")?;
-            // SAFETY: unsafe code promised `count` readable bytes here.
+            /* SAFETY: unsafe code promised `count` readable bytes here. */
             let bytes = unsafe { std::slice::from_raw_parts(address as *const u8, count as usize) };
             Ok(V::Bytes(bytes.to_vec()))
         }
@@ -995,7 +1023,7 @@ pub(crate) fn run(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> 
                 return Ok(V::Nothing);
             }
             let address = non_null(args, 0, "write to")?;
-            // SAFETY: unsafe code promised room for the bytes here.
+            /* SAFETY: unsafe code promised room for the bytes here. */
             unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), address as *mut u8, data.len()) };
             Ok(V::Nothing)
         }
@@ -1221,7 +1249,7 @@ pub(crate) fn run(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> 
         }
         Host::ParseError => Err(("ParseError", string(args, 0).to_string())),
         Host::Monotonic => {
-            // Nanoseconds since the clock was first read in this process.
+            /* Nanoseconds since the clock was first read in this process. */
             static START: std::sync::OnceLock<crate::clock::Instant> = std::sync::OnceLock::new();
             let start = START.get_or_init(crate::clock::Instant::now);
             Ok(V::Integer(
@@ -1342,9 +1370,11 @@ pub(crate) fn run(host: Host, args: &[HostArg]) -> Result<HostValue, HostError> 
     }
 }
 
-/// A path without the `\\?\` that Windows' canonical paths start with, which
-/// many programs do not accept: `\\?\C:\notes` is `C:\notes`, and
-/// `\\?\UNC\server\share` is `\\server\share`. Other paths stay as they are.
+/**
+A path without the `\\?\` that Windows' canonical paths start with, which
+many programs do not accept: `\\?\C:\notes` is `C:\notes`, and
+`\\?\UNC\server\share` is `\\server\share`. Other paths stay as they are.
+*/
 fn without_verbatim_prefix(path: String) -> String {
     if let Some(share) = path.strip_prefix(r"\\?\UNC\") {
         return format!(r"\\{share}");
@@ -1363,7 +1393,6 @@ mod tests {
     fn names_round_trip() {
         for host in Host::ALL {
             assert_eq!(Host::lookup(&format!("host_{}", host.name())), Some(*host));
-            assert_eq!(Host::from_code(*host as u32), Some(*host));
         }
         assert_eq!(Host::lookup("read_line"), None);
     }
@@ -1430,7 +1459,7 @@ mod tests {
         }
     }
 
-    /// Decimals round the float's exact value, and a tie to the even digit.
+    /** Decimals round the float's exact value, and a tie to the even digit. */
     #[test]
     fn decimals_round_exactly() {
         let decimal = |value: f64, places: i64| {

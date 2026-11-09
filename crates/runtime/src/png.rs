@@ -1,7 +1,9 @@
-//! PNG images for `standard/graphics`: decoding every kind of PNG into a
-//! canvas's red, green, blue, and alpha bytes, and encoding a canvas as one.
-//! The runtime has its own DEFLATE, as zlib has it (RFC 1950 and 1951), so
-//! that images need no library of the system's.
+/*!
+PNG images for `standard/graphics`: decoding every kind of PNG into a
+canvas's red, green, blue, and alpha bytes, and encoding a canvas as one.
+The runtime has its own DEFLATE, as zlib has it (RFC 1950 and 1951), so
+that images need no library of the system's.
+*/
 
 use crate::host::HostError;
 
@@ -9,9 +11,9 @@ fn fail(message: impl Into<String>) -> HostError {
     ("ImageError", message.into())
 }
 
-// ----- checksums -----------------------------------------------------------------------------
+/* ----- checksums ----------------------------------------------------------------------------- */
 
-/// The CRC-32 a PNG chunk is checked with.
+/** The CRC-32 a PNG chunk is checked with. */
 pub fn crc32(bytes: &[u8]) -> u32 {
     let mut crc = !0u32;
     for &byte in bytes {
@@ -27,7 +29,7 @@ pub fn crc32(bytes: &[u8]) -> u32 {
     !crc
 }
 
-/// The Adler-32 a zlib stream ends with.
+/** The Adler-32 a zlib stream ends with. */
 fn adler32(bytes: &[u8]) -> u32 {
     let (mut a, mut b) = (1u32, 0u32);
     for chunk in bytes.chunks(5552) {
@@ -41,9 +43,9 @@ fn adler32(bytes: &[u8]) -> u32 {
     (b << 16) | a
 }
 
-// ----- inflating ------------------------------------------------------------------------------
+/* ----- inflating ------------------------------------------------------------------------------ */
 
-/// The bits of a DEFLATE stream, the lowest of each byte first.
+/** The bits of a DEFLATE stream, the lowest of each byte first. */
 struct Bits<'a> {
     data: &'a [u8],
     position: usize,
@@ -69,8 +71,10 @@ impl Bits<'_> {
     }
 }
 
-/// A canonical Huffman code: how many codes each length has, and the
-/// symbols in the order of their codes.
+/**
+A canonical Huffman code: how many codes each length has, and the
+symbols in the order of their codes.
+*/
 struct Huffman {
     counts: [u16; 16],
     symbols: Vec<u16>,
@@ -97,7 +101,7 @@ impl Huffman {
         Huffman { counts, symbols }
     }
 
-    /// Reads one symbol, a bit at a time, as zlib's `puff` does.
+    /** Reads one symbol, a bit at a time, as zlib's `puff` does. */
     fn decode(&self, bits: &mut Bits) -> Result<u16, HostError> {
         let (mut code, mut first, mut index) = (0i32, 0i32, 0i32);
         for length in 1..16 {
@@ -130,7 +134,7 @@ const DISTANCE_EXTRA: [u8; 30] = [
     13,
 ];
 
-/// The lengths of the fixed Huffman codes of literals and lengths.
+/** The lengths of the fixed Huffman codes of literals and lengths. */
 fn fixed_lengths() -> Vec<u8> {
     let mut lengths = vec![8u8; 288];
     lengths[144..256].fill(9);
@@ -138,7 +142,7 @@ fn fixed_lengths() -> Vec<u8> {
     lengths
 }
 
-/// Decompresses a raw DEFLATE stream, stopping past `limit` bytes.
+/** Decompresses a raw DEFLATE stream, stopping past `limit` bytes. */
 fn inflate(data: &[u8], limit: usize) -> Result<Vec<u8>, HostError> {
     let mut bits = Bits { data, position: 0 };
     let mut out = Vec::new();
@@ -146,8 +150,10 @@ fn inflate(data: &[u8], limit: usize) -> Result<Vec<u8>, HostError> {
         let last = bits.bit()?;
         match bits.bits(2)? {
             0 => {
-                // Stored: from the next byte, its length and the length's
-                // complement.
+                /*
+                Stored: from the next byte, its length and the length's
+                complement.
+                */
                 bits.position = bits.position.div_ceil(8) * 8;
                 let length = bits.bits(16)?;
                 let complement = bits.bits(16)?;
@@ -216,7 +222,7 @@ fn inflate(data: &[u8], limit: usize) -> Result<Vec<u8>, HostError> {
     }
 }
 
-/// The codes a dynamic block gives at its start.
+/** The codes a dynamic block gives at its start. */
 fn dynamic_codes(bits: &mut Bits) -> Result<(Huffman, Huffman), HostError> {
     const ORDER: [usize; 19] = [
         16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
@@ -254,7 +260,7 @@ fn dynamic_codes(bits: &mut Bits) -> Result<(Huffman, Huffman), HostError> {
     ))
 }
 
-/// Decompresses a zlib stream, checking what it ends with.
+/** Decompresses a zlib stream, checking what it ends with. */
 fn unzlib(data: &[u8], limit: usize) -> Result<Vec<u8>, HostError> {
     if data.len() < 6
         || data[0] & 0x0F != 8
@@ -275,9 +281,9 @@ fn unzlib(data: &[u8], limit: usize) -> Result<Vec<u8>, HostError> {
     Ok(out)
 }
 
-// ----- deflating ------------------------------------------------------------------------------
+/* ----- deflating ------------------------------------------------------------------------------ */
 
-/// Writes bits, the lowest first, as DEFLATE wants them.
+/** Writes bits, the lowest first, as DEFLATE wants them. */
 struct Writer {
     out: Vec<u8>,
     bits: u64,
@@ -295,7 +301,7 @@ impl Writer {
         }
     }
 
-    /// A Huffman code, which goes the highest bit first.
+    /** A Huffman code, which goes the highest bit first. */
     fn code(&mut self, code: u32, length: u32) {
         let reversed = code.reverse_bits() >> (32 - length);
         self.put(reversed, length);
@@ -309,7 +315,7 @@ impl Writer {
     }
 }
 
-/// The fixed code of a literal or length symbol, and its length.
+/** The fixed code of a literal or length symbol, and its length. */
 fn fixed_code(symbol: u32) -> (u32, u32) {
     match symbol {
         0..=143 => (0x30 + symbol, 8),
@@ -319,10 +325,12 @@ fn fixed_code(symbol: u32) -> (u32, u32) {
     }
 }
 
-/// Compresses with the fixed codes, finding repeats of three bytes or more
-/// in the last 32 KiB greedily, through a table of where each three bytes
-/// were last seen and, for each place in the window, the place before with
-/// the same three.
+/**
+Compresses with the fixed codes, finding repeats of three bytes or more
+in the last 32 KiB greedily, through a table of where each three bytes
+were last seen and, for each place in the window, the place before with
+the same three.
+*/
 fn deflate(data: &[u8]) -> Vec<u8> {
     const WINDOW: usize = 32 * 1024;
     const CHAIN: usize = 32;
@@ -331,7 +339,7 @@ fn deflate(data: &[u8]) -> Vec<u8> {
         bits: 0,
         count: 0,
     };
-    // One block, the last, of fixed codes.
+    /* One block, the last, of fixed codes. */
     writer.put(1, 1);
     writer.put(1, 2);
     let hash = |at: usize| {
@@ -411,18 +419,18 @@ fn zlib(data: &[u8]) -> Vec<u8> {
     out
 }
 
-// ----- PNG ------------------------------------------------------------------------------------
+/* ----- PNG ------------------------------------------------------------------------------------ */
 
 const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1A, b'\n'];
 
-/// An image: its size, and its red, green, blue, and alpha bytes.
+/** An image: its size, and its red, green, blue, and alpha bytes. */
 pub struct Image {
     pub width: usize,
     pub height: usize,
     pub pixels: Vec<u8>,
 }
 
-/// Undoes a row's filter, given the row above.
+/** Undoes a row's filter, given the row above. */
 fn unfilter(kind: u8, row: &mut [u8], above: &[u8], step: usize) -> Result<(), HostError> {
     let paeth = |a: i16, b: i16, c: i16| {
         let p = a + b - c;
@@ -460,12 +468,12 @@ fn unfilter(kind: u8, row: &mut [u8], above: &[u8], step: usize) -> Result<(), H
     Ok(())
 }
 
-/// Whether bytes start as a PNG image does.
+/** Whether bytes start as a PNG image does. */
 pub fn is_png(bytes: &[u8]) -> bool {
     bytes.get(..8) == Some(&SIGNATURE)
 }
 
-/// The width and height of a PNG image, read from its header alone.
+/** The width and height of a PNG image, read from its header alone. */
 pub fn size(bytes: &[u8]) -> Result<(usize, usize), HostError> {
     if !is_png(bytes) {
         return Err(fail("the data is not a PNG image"));
@@ -479,7 +487,7 @@ pub fn size(bytes: &[u8]) -> Result<(usize, usize), HostError> {
     }
 }
 
-/// Decodes a PNG image of at most `most` pixels.
+/** Decodes a PNG image of at most `most` pixels. */
 pub fn decode(bytes: &[u8], most: usize) -> Result<Image, HostError> {
     if bytes.get(..8) != Some(&SIGNATURE) {
         return Err(fail("the data is not a PNG image"));
@@ -519,7 +527,7 @@ pub fn decode(bytes: &[u8], most: usize) -> Result<Image, HostError> {
             b"tRNS" => transparent = Some(data.to_vec()),
             b"IDAT" => compressed.extend_from_slice(data),
             b"IEND" => break,
-            // Chunks that must be understood have an upper-case first letter.
+            /* Chunks that must be understood have an upper-case first letter. */
             _ if kind[0].is_ascii_uppercase() && kind != b"IHDR" => {
                 return Err(fail(format!(
                     "the PNG image has a {} chunk, which Sayon does not read",
@@ -573,7 +581,7 @@ pub fn decode(bytes: &[u8], most: usize) -> Result<Image, HostError> {
     }
     let bits = channels * depth as usize;
     let step = bits.div_ceil(8);
-    // The passes of Adam7: where each starts, and how far apart its pixels are.
+    /* The passes of Adam7: where each starts, and how far apart its pixels are. */
     let passes: &[(usize, usize, usize, usize)] = if interlace == 1 {
         &[
             (0, 0, 8, 8),
@@ -620,7 +628,7 @@ pub fn decode(bytes: &[u8], most: usize) -> Result<Image, HostError> {
             offset += 1 + stride;
             unfilter(kind, &mut line, &above, step)?;
             for column in 0..columns {
-                // The samples of the pixel, each as read at its depth.
+                /* The samples of the pixel, each as read at its depth. */
                 let sample = |channel: usize| -> u16 {
                     match depth {
                         16 => u16::from_be_bytes([
@@ -695,8 +703,10 @@ pub fn decode(bytes: &[u8], most: usize) -> Result<Image, HostError> {
     })
 }
 
-/// Encodes red, green, blue, and alpha bytes as a PNG image, each row with
-/// the filter that leaves the smallest differences.
+/**
+Encodes red, green, blue, and alpha bytes as a PNG image, each row with
+the filter that leaves the smallest differences.
+*/
 pub fn encode(width: usize, height: usize, pixels: &[u8]) -> Vec<u8> {
     let stride = width * 4;
     let mut raw = Vec::with_capacity((stride + 1) * height);

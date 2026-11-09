@@ -3,8 +3,10 @@ filesystem = import("standard/filesystem.sayon")
 io = import("standard/io.sayon")
 json = import("standard/json.sayon")
 
-# An array written an item at a time, larger than one read of the file, with
-# characters of several bytes where the reads may fall.
+##
+An array written an item at a time, larger than one read of the file, with
+characters of several bytes where the reads may fall.
+##
 out = io.open("json_streams.tmp", "w")
 writer = json.write_items(out)
 for index in range(1000)

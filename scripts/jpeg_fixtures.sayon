@@ -1,12 +1,14 @@
-# Makes the JPEG images that crates/runtime/src/jpeg.rs is tested with, and
-# the pixels libjpeg-turbo decodes them to, which its tests compare with
-# Sayon's own, in crates/runtime/tests/jpeg:
-#
-#     sayon run scripts/jpeg_fixtures.sayon
-#
-# on a computer with libjpeg-turbo's cjpeg, jpegtran, and djpeg (on Debian
-# and Ubuntu, the package libjpeg-turbo-progs). The picture is 45 by 29
-# pixels, so that its right and bottom edges cut blocks and MCUs.
+##
+Makes the JPEG images that crates/runtime/src/jpeg.rs is tested with, and
+the pixels libjpeg-turbo decodes them to, which its tests compare with
+Sayon's own, in crates/runtime/tests/jpeg:
+
+    sayon run scripts/jpeg_fixtures.sayon
+
+on a computer with libjpeg-turbo's cjpeg, jpegtran, and djpeg (on Debian
+and Ubuntu, the package libjpeg-turbo-progs). The picture is 45 by 29
+pixels, so that its right and bottom edges cut blocks and MCUs.
+##
 
 filesystem = import("standard/filesystem.sayon")
 io = import("standard/io.sayon")
@@ -17,8 +19,10 @@ constant FOLDER = "crates/runtime/tests/jpeg"
 constant WIDTH = 45
 constant HEIGHT = 29
 
-# The picture, as a binary PPM: red across and green down, a pattern of
-# blue, and a white square, for sharp edges.
+##
+The picture, as a binary PPM: red across and green down, a pattern of
+blue, and a white square, for sharp edges.
+##
 function picture() -> Array<byte>
     out = strings.bytes("P6\n{WIDTH} {HEIGHT}\n255\n")
     for y in range(HEIGHT)
@@ -39,8 +43,10 @@ function run(program: string, arguments: Array<string>)
 function main()
     filesystem.create_directory(FOLDER)
     io.write_file_bytes(filesystem.join(FOLDER, "picture.ppm"), picture())
-    # Baseline images of each sampling and kind of color, and the pixels
-    # djpeg gives them with libjpeg's integer IDCT, its color repeated.
+    ##
+    Baseline images of each sampling and kind of color, and the pixels
+    djpeg gives them with libjpeg's integer IDCT, its color repeated.
+    ##
     run("cjpeg", ["-quality", "85", "-sample", "2x2", "-outfile", "420.jpg", "picture.ppm"])
     run("cjpeg", ["-quality", "85", "-sample", "2x1", "-outfile", "422.jpg", "picture.ppm"])
     run("cjpeg", ["-quality", "85", "-sample", "1x1", "-outfile", "444.jpg", "picture.ppm"])
@@ -50,8 +56,10 @@ function main()
     for name in ["420", "422", "444", "rgb", "restart"]
         run("djpeg", ["-nosmooth", "-dct", "int", "-ppm", "-outfile", name + ".ppm", name + ".jpg"])
     run("djpeg", ["-nosmooth", "-dct", "int", "-pnm", "-outfile", "gray.pgm", "gray.jpg"])
-    # The same coefficients again, in progressive scans and with restarts,
-    # which must decode to the very same pixels.
+    ##
+    The same coefficients again, in progressive scans and with restarts,
+    which must decode to the very same pixels.
+    ##
     run("jpegtran", ["-progressive", "-outfile", "420-progressive.jpg", "420.jpg"])
     run("jpegtran", ["-progressive", "-restart", "1B", "-outfile", "420-progressive-restart.jpg", "420.jpg"])
     run("jpegtran", ["-progressive", "-outfile", "444-progressive.jpg", "444.jpg"])

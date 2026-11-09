@@ -1,6 +1,8 @@
-# Text in a TrueType font, which the runtime draws the same everywhere:
-# glyphs of lines and of curves, glyphs made of others, a character beyond
-# the basic plane, and one the font lacks.
+##
+Text in a TrueType font, which the runtime draws the same everywhere:
+glyphs of lines and of curves, glyphs made of others, a character beyond
+the basic plane, and one the font lacks.
+##
 graphics = import("standard/graphics.sayon")
 data = import("modules/graphics_data.sayon")
 
@@ -26,8 +28,10 @@ canvas.write(font, "lo lo\nAl?", 10, 60, 13, graphics.rgba(200, 0, 0, 160))
 canvas.write(font, "off the canvas", -500, -500, 40, graphics.BLACK)
 print(canvas.pixel(26, 20), canvas.pixel(14, 20), canvas.pixel(100, 100), digest(canvas))
 
-# The same glyphs in a collection, which maps characters by format 4
-# alone: it has no glyph for the character beyond the basic plane.
+##
+The same glyphs in a collection, which maps characters by format 4
+alone: it has no glyph for the character beyond the basic plane.
+##
 same = graphics.decode_font(data.collection())
 print(same.name, same.width("Allo! Å", 32), same.width("😀", 32), font.width("😀", 32))
 first = graphics.canvas(120, 50)

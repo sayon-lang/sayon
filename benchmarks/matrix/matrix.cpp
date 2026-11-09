@@ -1,6 +1,8 @@
-// Matrix: multiply two square matrices of floating point numbers, each
-// kept row by row in one array. Three nested loops over arrays, the kind
-// of work compilers like to turn into vector instructions.
+/*
+Matrix: multiply two square matrices of floating point numbers, each
+kept row by row in one array. Three nested loops over arrays, the kind
+of work compilers like to turn into vector instructions.
+*/
 #include <cstdio>
 #include <cstdlib>
 #include <vector>

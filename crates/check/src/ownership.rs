@@ -1,11 +1,13 @@
-//! Ownership checking: moves, initialization, borrow conflicts, and inference
-//! of parameter modes.
-//!
-//! The analysis walks each function's HIR with a flow-sensitive record of
-//! which locals hold a value. It decides, for every read of a local, whether
-//! the value is copied, moved, or borrowed, and rejects programs that use a
-//! value after transferring it, change a collection while a loop reads it, or
-//! move or change data they only borrow.
+/*!
+Ownership checking: moves, initialization, borrow conflicts, and inference
+of parameter modes.
+
+The analysis walks each function's HIR with a flow-sensitive record of
+which locals hold a value. It decides, for every read of a local, whether
+the value is copied, moved, or borrowed, and rejects programs that use a
+value after transferring it, change a collection while a loop reads it, or
+move or change data they only borrow.
+*/
 
 use crate::hir::*;
 use crate::types::{Type, TypeDef, Wrapper, holds_function};
@@ -29,7 +31,7 @@ enum MoveReason {
 struct MoveSite {
     span: Span,
     reason: MoveReason,
-    /// The move happened on an earlier iteration of an enclosing loop.
+    /** The move happened on an earlier iteration of an enclosing loop. */
     earlier_iteration: bool,
 }
 
@@ -40,7 +42,7 @@ enum Status {
     MaybeMoved(MoveSite),
 }
 
-/// `None` marks unreachable code.
+/** `None` marks unreachable code. */
 type State = Option<HashMap<LocalId, Status>>;
 
 fn join(a: &State, b: &State) -> State {
@@ -71,8 +73,10 @@ fn join(a: &State, b: &State) -> State {
     }
 }
 
-/// Joins the loop entry state with the state flowing back from the body,
-/// marking moves that arrive over the back edge.
+/**
+Joins the loop entry state with the state flowing back from the body,
+marking moves that arrive over the back edge.
+*/
 fn join_back_edge(entry: &State, back: &State) -> State {
     let marked = back.as_ref().map(|map| {
         map.iter()
@@ -90,7 +94,7 @@ fn join_back_edge(entry: &State, back: &State) -> State {
             .collect()
     });
     let joined = join(entry, &marked);
-    // Keep the original sites for moves that already existed on entry.
+    /* Keep the original sites for moves that already existed on entry. */
     match (joined, entry) {
         (Some(mut joined), Some(entry)) => {
             for (local, status) in entry {
@@ -118,16 +122,18 @@ enum Access {
     Update,
 }
 
-/// A view still in use, and the variables it borrows. Its borrow lasts
-/// through the last statement of its declaring block that uses it.
+/**
+A view still in use, and the variables it borrows. Its borrow lasts
+through the last statement of its declaring block that uses it.
+*/
 struct ActiveView {
     view: LocalId,
     owners: Vec<LocalId>,
     mutable: bool,
-    /// The declaring block's place in `Analyzer::positions`.
+    /** The declaring block's place in `Analyzer::positions`. */
     depth: usize,
     last: usize,
-    /// The statement of that last use, for messages.
+    /** The statement of that last use, for messages. */
     last_span: Span,
 }
 
@@ -138,21 +144,23 @@ enum Touch {
     Move,
 }
 
-/// The parameter a function's returned views borrow.
+/** The parameter a function's returned views borrow. */
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Returned {
     Nothing,
     Param(usize),
-    /// Already reported as a problem.
+    /** Already reported as a problem. */
     Invalid,
 }
 
-/// A local read in place by a statement that runs other code meanwhile: a
-/// loop over a collection, or a match that binds parts of its value.
+/**
+A local read in place by a statement that runs other code meanwhile: a
+loop over a collection, or a match that binds parts of its value.
+*/
 struct LoopBorrow {
     local: LocalId,
     span: Span,
-    /// "loop", "iterator" (a loop over an iterator), or "match".
+    /** "loop", "iterator" (a loop over an iterator), or "match". */
     by: &'static str,
 }
 
@@ -167,7 +175,7 @@ struct Analyzer<'p> {
     names: &'p HashMap<FuncId, String>,
     constant_names: &'p [String],
     locals: &'p mut Vec<Local>,
-    /// Parameter modes of the function being analyzed, by local.
+    /** Parameter modes of the function being analyzed, by local. */
     params: HashMap<LocalId, (ParamMode, bool)>,
     report: bool,
     diagnostics: Vec<Diagnostic>,
@@ -176,29 +184,35 @@ struct Analyzer<'p> {
     loop_borrows: Vec<LoopBorrow>,
     regions: Vec<HashSet<LocalId>>,
     reason: MoveReason,
-    /// Stand-ins for the function's generic parameters when deciding what
-    /// is Copy: a number for a parameter only numbers can fill.
+    /**
+    Stand-ins for the function's generic parameters when deciding what
+    is Copy: a number for a parameter only numbers can fill.
+    */
     stand_ins: Vec<Type>,
     types: &'p [TypeDef],
-    /// Module constants whose function values never change what they
-    /// captured, so calling them only reads them.
+    /**
+    Module constants whose function values never change what they
+    captured, so calling them only reads them.
+    */
     fixed_constants: &'p [bool],
-    /// The same for `constant` locals of the function.
+    /** The same for `constant` locals of the function. */
     fixed_locals: HashSet<LocalId>,
-    /// For each block being analyzed, the position of its current statement.
+    /** For each block being analyzed, the position of its current statement. */
     positions: Vec<usize>,
     views: Vec<ActiveView>,
-    /// The variables each view local borrows.
+    /** The variables each view local borrows. */
     view_owners: HashMap<LocalId, Vec<LocalId>>,
-    /// For functions analyzed so far that return views, the parameter
-    /// those views borrow.
+    /**
+    For functions analyzed so far that return views, the parameter
+    those views borrow.
+    */
     view_returns: &'p HashMap<FuncId, usize>,
-    /// The position of each parameter, by local.
+    /** The position of each parameter, by local. */
     param_positions: HashMap<LocalId, usize>,
     returned: Returned,
 }
 
-/// Whether a statement mentions a local anywhere, including nested blocks.
+/** Whether a statement mentions a local anywhere, including nested blocks. */
 fn stmt_mentions(stmt: &Stmt, local: LocalId) -> bool {
     let expr = |e: &Expr| expr_mentions(e, local);
     let block = |b: &Block| b.stmts.iter().any(|s| stmt_mentions(s, local));
@@ -259,22 +273,24 @@ fn place_mentions(place: &Place, local: LocalId) -> bool {
 }
 
 impl<'p> Analyzer<'p> {
-    /// The variables a view-typed expression borrows.
+    /** The variables a view-typed expression borrows. */
     fn view_source(&self, expr: &Expr) -> Vec<LocalId> {
         match &expr.kind {
             ExprKind::Builtin {
                 builtin: Builtin::View | Builtin::MutableView,
                 args,
             } => self.view_base(&args[0].expr),
-            // The part split off borrows what the view borrows, but not the
-            // view, which keeps only the rest.
+            /*
+            The part split off borrows what the view borrows, but not the
+            view, which keeps only the rest.
+            */
             ExprKind::Builtin {
                 builtin: Builtin::SplitView,
                 args,
             } => self.view_source(&args[0].expr),
             ExprKind::Local { local, .. } => match self.view_owners.get(local) {
                 Some(owners) => owners.clone(),
-                // A view parameter borrows from the caller.
+                /* A view parameter borrows from the caller. */
                 None if self.param_positions.contains_key(local) => vec![*local],
                 None => Vec::new(),
             },
@@ -283,7 +299,7 @@ impl<'p> Analyzer<'p> {
                     .get(position)
                     .map(|arg| self.view_base(&arg.expr))
                     .unwrap_or_default(),
-                // Not known yet (a recursive call): any array or view argument.
+                /* Not known yet (a recursive call): any array or view argument. */
                 None => args
                     .iter()
                     .filter(|arg| matches!(arg.expr.ty, Type::Array(_) | Type::View(..)))
@@ -295,8 +311,10 @@ impl<'p> Analyzer<'p> {
         }
     }
 
-    /// What a view made from `base` borrows: the variable that holds it,
-    /// and when it is a view, what that view borrows too.
+    /**
+    What a view made from `base` borrows: the variable that holds it,
+    and when it is a view, what that view borrows too.
+    */
     fn view_base(&self, base: &Expr) -> Vec<LocalId> {
         let mut owners = if matches!(base.ty, Type::View(..)) {
             self.view_source(base)
@@ -315,8 +333,10 @@ impl<'p> Analyzer<'p> {
         view.depth < self.positions.len() && self.positions[view.depth] <= view.last
     }
 
-    /// Reports touching a variable that a view still in use borrows: any
-    /// change or transfer, and any use at all for a mutable view.
+    /**
+    Reports touching a variable that a view still in use borrows: any
+    change or transfer, and any use at all for a mutable view.
+    */
     fn view_conflict(&mut self, local: LocalId, touch: Touch, span: Span) -> bool {
         let found = self
             .views
@@ -352,8 +372,10 @@ impl<'p> Analyzer<'p> {
         false
     }
 
-    /// Starts tracking a view local declared or assigned by the statement
-    /// at `index` of a block.
+    /**
+    Starts tracking a view local declared or assigned by the statement
+    at `index` of a block.
+    */
     fn activate(&mut self, view: LocalId, depth: usize, stmts: &[Stmt], index: usize) {
         self.views.retain(|active| active.view != view);
         let owners = self.view_owners.get(&view).cloned().unwrap_or_default();
@@ -384,11 +406,13 @@ impl<'p> Analyzer<'p> {
         });
     }
 
-    /// Records what a returned view borrows: it must be one parameter.
+    /** Records what a returned view borrows: it must be one parameter. */
     fn returned_view(&mut self, value: &Expr) {
         let mut owners = self.view_source(value);
-        // A view variable of the function owns no elements; what it borrows
-        // is what matters.
+        /*
+        A view variable of the function owns no elements; what it borrows
+        is what matters.
+        */
         owners.retain(|owner| {
             self.param_positions.contains_key(owner)
                 || !matches!(self.local(*owner).ty, Type::View(..))
@@ -459,9 +483,11 @@ impl<'p> Analyzer<'p> {
             .help("make a view that can change them with mutable_view(...)")
         });
     }
-    /// Whether values of the type are copied rather than moved.
-    /// Whether values of the type are bitwise copies, so that a parameter
-    /// receives its own copy.
+    /**
+    Whether values of the type are copied rather than moved.
+    Whether values of the type are bitwise copies, so that a parameter
+    receives its own copy.
+    */
     fn copy(&self, ty: &Type) -> bool {
         if self.stand_ins.is_empty() {
             ty.is_copy()
@@ -470,8 +496,10 @@ impl<'p> Analyzer<'p> {
         }
     }
 
-    /// Whether a value stays usable after it is assigned or passed on: a
-    /// Copy value, or a counted handle (`Shared`, `Weak`), which is retained.
+    /**
+    Whether a value stays usable after it is assigned or passed on: a
+    Copy value, or a counted handle (`Shared`, `Weak`), which is retained.
+    */
     fn dup(&self, ty: &Type) -> bool {
         if self.stand_ins.is_empty() {
             ty.is_duplicable()
@@ -500,7 +528,7 @@ impl<'p> Analyzer<'p> {
         }
     }
 
-    /// Upgrades an inferred parameter mode, or reports a violation of an explicit one.
+    /** Upgrades an inferred parameter mode, or reports a violation of an explicit one. */
     fn require_param_mode(&mut self, local: LocalId, needed: ParamMode, span: Span) -> bool {
         let Some((mode, explicit)) = self.params.get(&local).copied() else {
             return true;
@@ -667,7 +695,7 @@ impl<'p> Analyzer<'p> {
         }
     }
 
-    /// Classifies and checks one read of a local.
+    /** Classifies and checks one read of a local. */
     fn use_local(
         &mut self,
         local: LocalId,
@@ -678,7 +706,7 @@ impl<'p> Analyzer<'p> {
         state: &mut State,
     ) {
         let explicit_move = *usage == Usage::Move;
-        // `move` hands a counted handle over without retaining it.
+        /* `move` hands a counted handle over without retaining it. */
         let copy = copy && !(explicit_move && self.local(local).ty.is_retained());
         let decided = if copy && ctx != Ctx::Update {
             Usage::Copy
@@ -752,7 +780,7 @@ impl<'p> Analyzer<'p> {
                 }
                 self.mark_moved(local, span, state);
             }
-            // An `update` parameter receives a reference even to a Copy value.
+            /* An `update` parameter receives a reference even to a Copy value. */
             Usage::BorrowUpdate if copy => self.check_update_copy(local, span),
             Usage::BorrowUpdate => self.check_update(local, span),
             _ => {}
@@ -773,9 +801,11 @@ impl<'p> Analyzer<'p> {
         });
     }
 
-    /// The values a closure takes when it is made. A Copy value it only reads
-    /// is copied; anything else moves into its environment, and a Copy
-    /// variable it changes is taken over so that the change is not lost.
+    /**
+    The values a closure takes when it is made. A Copy value it only reads
+    is copied; anything else moves into its environment, and a Copy
+    variable it changes is taken over so that the change is not lost.
+    */
     fn captures(&mut self, captures: &mut [Capture], span: Span, state: &mut State) {
         let saved = std::mem::replace(&mut self.reason, MoveReason::Closure);
         for capture in captures {
@@ -800,8 +830,10 @@ impl<'p> Analyzer<'p> {
         self.reason = saved;
     }
 
-    /// Calling a function value borrows it for changes: a closure may update
-    /// what it captured.
+    /**
+    Calling a function value borrows it for changes: a closure may update
+    what it captured.
+    */
     fn call_value(&mut self, callee: &mut Expr, args: &mut [Arg], state: &mut State) {
         let root = Self::root(callee);
         let mut name = "the function value".to_string();
@@ -915,7 +947,7 @@ impl<'p> Analyzer<'p> {
         self.loop_conflict(local, span, "change");
     }
 
-    /// The local an expression accesses in place, if any.
+    /** The local an expression accesses in place, if any. */
     fn root(expr: &Expr) -> Option<LocalId> {
         match &expr.kind {
             ExprKind::Local { local, .. } => Some(*local),
@@ -929,8 +961,10 @@ impl<'p> Analyzer<'p> {
         }
     }
 
-    /// Whether the expression reads storage that outlives it (a variable,
-    /// constant, or part of one), rather than a temporary value.
+    /**
+    Whether the expression reads storage that outlives it (a variable,
+    constant, or part of one), rather than a temporary value.
+    */
     fn is_place(expr: &Expr) -> bool {
         match &expr.kind {
             ExprKind::Local { .. } | ExprKind::Constant(_) => true,
@@ -953,8 +987,10 @@ impl<'p> Analyzer<'p> {
                 let copy = self.dup(&self.local(local).ty);
                 self.use_local(local, usage, copy, ctx, span, state);
             }
-            // Using a narrowed value uses the local that holds it; taking
-            // the value leaves the whole local spent.
+            /*
+            Using a narrowed value uses the local that holds it; taking
+            the value leaves the whole local spent.
+            */
             ExprKind::Narrow(inner) | ExprKind::VariantPayload { value: inner, .. } => {
                 match &mut inner.kind {
                     ExprKind::Local { local, usage } => {
@@ -995,8 +1031,10 @@ impl<'p> Analyzer<'p> {
                 }
             }
             ExprKind::Call { function, args, .. } => {
-                // A returned view borrows one argument, which must outlive
-                // the statement, as for `view` itself.
+                /*
+                A returned view borrows one argument, which must outlive
+                the statement, as for `view` itself.
+                */
                 if matches!(ty, Type::View(..))
                     && let Some(&position) = self.view_returns.get(function)
                     && let Some(arg) = args.get(position)
@@ -1022,12 +1060,12 @@ impl<'p> Analyzer<'p> {
                 let name = builtin.name().to_string();
                 self.args(args, &name, state);
             }
-            // C borrows its arguments for the call.
+            /* C borrows its arguments for the call. */
             ExprKind::CallForeign { args, .. } => self.args(args, "the C function", state),
             ExprKind::NullPointer | ExprKind::SizeOf(_) => {}
             ExprKind::CallValue { callee, args } => self.call_value(callee, args, state),
             ExprKind::Closure { captures, .. } => self.captures(captures, span, state),
-            // A named function has no environment of its own.
+            /* A named function has no environment of its own. */
             ExprKind::FunctionRef { .. } => {}
             ExprKind::Binary { lhs, rhs, .. } => {
                 self.expr(lhs, Ctx::Read, state);
@@ -1064,7 +1102,7 @@ impl<'p> Analyzer<'p> {
                 self.reason = saved;
             }
             ExprKind::Field { value, name } => {
-                // A shared value cannot change, nor have its parts taken.
+                /* A shared value cannot change, nor have its parts taken. */
                 if matches!(value.ty, Type::Wrapper(Wrapper::Shared, _))
                     && (ctx == Ctx::Update || ctx == Ctx::Consume && !self.dup(&ty))
                 {
@@ -1089,7 +1127,7 @@ impl<'p> Analyzer<'p> {
                     return;
                 }
                 if ctx == Ctx::Consume && !self.dup(&ty) && self.destroyed_whole(&value.ty) {
-                    // Its finally function gets the whole structure.
+                    /* Its finally function gets the whole structure. */
                     let field_value = Analyzer::describe_value(&ty);
                     let structure = value.ty.to_string();
                     let name = name.clone();
@@ -1105,7 +1143,7 @@ impl<'p> Analyzer<'p> {
                     });
                     self.expr(value, Ctx::Read, state);
                 } else if ctx == Ctx::Consume && !self.dup(&ty) && Self::is_place(value) {
-                    // Taking one field would leave the structure incomplete.
+                    /* Taking one field would leave the structure incomplete. */
                     let field_value = Analyzer::describe_value(&ty);
                     let owner = Self::root(value)
                         .map(|local| format!("`{}`", self.local(local).name))
@@ -1123,7 +1161,7 @@ impl<'p> Analyzer<'p> {
                     });
                     self.expr(value, Ctx::Read, state);
                 } else {
-                    // A field of a temporary can be taken; the rest is destroyed.
+                    /* A field of a temporary can be taken; the rest is destroyed. */
                     let inner_ctx = match ctx {
                         Ctx::Consume if !Self::is_place(value) => Ctx::Consume,
                         Ctx::Update => Ctx::Update,
@@ -1132,7 +1170,7 @@ impl<'p> Analyzer<'p> {
                     self.expr(value, inner_ctx, state);
                 }
             }
-            // A character of a string is a new string.
+            /* A character of a string is a new string. */
             ExprKind::Index { target, index } if target.ty == Type::String => {
                 self.expr(index, Ctx::Read, state);
                 self.expr(target, Ctx::Read, state);
@@ -1226,8 +1264,10 @@ impl<'p> Analyzer<'p> {
                     accesses.push((root, access, arg.expr.span));
                 }
             } else if let Type::View(_, mutable) = arg.expr.ty {
-                // A view made for the call borrows its array until the call
-                // returns.
+                /*
+                A view made for the call borrows its array until the call
+                returns.
+                */
                 let access = if mutable {
                     Access::Update
                 } else {
@@ -1319,8 +1359,10 @@ impl<'p> Analyzer<'p> {
         });
     }
 
-    /// The place is changed in place (an element or field assignment, or a
-    /// compound update).
+    /**
+    The place is changed in place (an element or field assignment, or a
+    compound update).
+    */
     fn update_place(&mut self, place: &mut Place, state: &mut State, span: Span) {
         match place {
             Place::Local(local) => {
@@ -1332,8 +1374,10 @@ impl<'p> Analyzer<'p> {
                     return;
                 }
                 if self.copy(&self.local(local).ty) {
-                    // A Copy value (such as a structure of numbers) belongs to
-                    // this function even when it arrived as a parameter.
+                    /*
+                    A Copy value (such as a structure of numbers) belongs to
+                    this function even when it arrived as a parameter.
+                    */
                     self.check_update_copy(local, span);
                 } else {
                     self.check_update(local, span);
@@ -1540,9 +1584,11 @@ impl<'p> Analyzer<'p> {
                         self.locals[binding.0 as usize].borrowed = borrowed;
                     }
                 }
-                // A loop over a string reads it in place too; each character
-                // is a new string the loop variable owns.
-                // A loop over a view made for it reads the view's arrays.
+                /*
+                A loop over a string reads it in place too; each character
+                is a new string the loop variable owns.
+                A loop over a view made for it reads the view's arrays.
+                */
                 let borrows = if !collection && iterable_ty != Type::String {
                     Vec::new()
                 } else if let Some(local) = Self::root(iterable) {
@@ -1605,8 +1651,10 @@ impl<'p> Analyzer<'p> {
                 for region in &mut self.regions {
                     region.extend(moved_in_body.iter().copied());
                 }
-                // Any statement of the body may have failed, so moves made in
-                // the body are uncertain on entry to the handler.
+                /*
+                Any statement of the body may have failed, so moves made in
+                the body are uncertain on entry to the handler.
+                */
                 let failure_state = before.map(|mut map| {
                     for local in &moved_in_body {
                         if let Some(site) = body_state.as_ref().and_then(|m| match m.get(local) {
@@ -1652,14 +1700,18 @@ impl<'p> Analyzer<'p> {
         }
     }
 
-    /// Whether a value of the type is a structure that a `finally function`
-    /// destroys, which keeps its parts until then.
+    /**
+    Whether a value of the type is a structure that a `finally function`
+    destroys, which keeps its parts until then.
+    */
     fn destroyed_whole(&self, ty: &Type) -> bool {
         matches!(ty, Type::Named(named) if self.types[named.id.0 as usize].finally)
     }
 
-    /// The bindings of a pattern that stand for parts of a structure its
-    /// finally function destroys.
+    /**
+    The bindings of a pattern that stand for parts of a structure its
+    finally function destroys.
+    */
     fn kept_bindings(&self, pattern: &Pattern, inside: bool, out: &mut Vec<LocalId>) {
         match pattern {
             Pattern::Binding(local) if inside => out.push(*local),
@@ -1680,11 +1732,13 @@ impl<'p> Analyzer<'p> {
         }
     }
 
-    /// A match reads its value in place, binding parts by reference, unless
-    /// it owns the value (a temporary or `move(...)`): then the bindings of
-    /// arms without a guard own their parts. Copy values are matched on a
-    /// copy. While a guard runs, and while an arm with borrowing bindings
-    /// runs, the matched variable cannot change.
+    /**
+    A match reads its value in place, binding parts by reference, unless
+    it owns the value (a temporary or `move(...)`): then the bindings of
+    arms without a guard own their parts. Copy values are matched on a
+    copy. While a guard runs, and while an arm with borrowing bindings
+    runs, the matched variable cannot change.
+    */
     fn match_stmt(
         &mut self,
         scrutinee: &mut Expr,
@@ -1708,8 +1762,10 @@ impl<'p> Analyzer<'p> {
             let mut arm_state = state.clone();
             let mut bindings = Vec::new();
             arm.pattern.bindings(&mut bindings);
-            // The parts of a structure that its finally function destroys
-            // stay in it.
+            /*
+            The parts of a structure that its finally function destroys
+            stay in it.
+            */
             let mut kept = Vec::new();
             self.kept_bindings(&arm.pattern, false, &mut kept);
             let guarded = arm.guard.is_some();
@@ -1746,13 +1802,15 @@ impl<'p> Analyzer<'p> {
         *state = after;
     }
 
-    /// Runs a loop body to a fixed point. `body` analyses one iteration from
-    /// the loop head and returns the state on which the loop exits normally.
-    /// A loop over an iterator. The loop changes or reads the iterator with
-    /// its `next`, so a variable it iterates is borrowed until the loop
-    /// finishes; so is a variable an iterator made for the loop was given to
-    /// change, such as the file of `file.lines()`. Each value the iterator
-    /// produces belongs to the loop variable.
+    /**
+    Runs a loop body to a fixed point. `body` analyses one iteration from
+    the loop head and returns the state on which the loop exits normally.
+    A loop over an iterator. The loop changes or reads the iterator with
+    its `next`, so a variable it iterates is borrowed until the loop
+    finishes; so is a variable an iterator made for the loop was given to
+    change, such as the file of `file.lines()`. Each value the iterator
+    produces belongs to the loop variable.
+    */
     fn iterator_loop(
         &mut self,
         bindings: &[LocalId],
@@ -1868,9 +1926,11 @@ impl<'p> Analyzer<'p> {
     }
 }
 
-/// Whether the function values in an expression's value never change what
-/// they captured: named functions, and closures that only read their
-/// captures.
+/**
+Whether the function values in an expression's value never change what
+they captured: named functions, and closures that only read their
+captures.
+*/
 fn fixed(types: &[TypeDef], expr: &Expr) -> bool {
     match &expr.kind {
         ExprKind::FunctionRef { .. } => true,
@@ -1885,7 +1945,7 @@ fn fixed(types: &[TypeDef], expr: &Expr) -> bool {
     }
 }
 
-/// The module constant an expression reads in place, if any.
+/** The module constant an expression reads in place, if any. */
 fn constant_root(expr: &Expr) -> Option<ConstId> {
     match &expr.kind {
         ExprKind::Constant(id) => Some(*id),
@@ -1898,7 +1958,7 @@ fn constant_root(expr: &Expr) -> Option<ConstId> {
     }
 }
 
-/// Infers parameter modes and checks ownership for every function.
+/** Infers parameter modes and checks ownership for every function. */
 pub fn check_program(program: &mut Program, components: &[Vec<FuncId>]) -> Vec<Diagnostic> {
     let mut modes: HashMap<FuncId, Vec<ParamMode>> = HashMap::new();
     let names: HashMap<FuncId, String> = program
@@ -1923,7 +1983,7 @@ pub fn check_program(program: &mut Program, components: &[Vec<FuncId>]) -> Vec<D
     let mut view_returns: HashMap<FuncId, usize> = HashMap::new();
 
     for component in components {
-        // Infer modes to a fixed point without reporting.
+        /* Infer modes to a fixed point without reporting. */
         for _ in 0..8 {
             let mut changed = false;
             for id in component {
@@ -1974,8 +2034,10 @@ pub fn check_program(program: &mut Program, components: &[Vec<FuncId>]) -> Vec<D
         }
     }
 
-    // A closure's parameter modes come from its type, so its body is checked
-    // once, after every named function's modes are known.
+    /*
+    A closure's parameter modes come from its type, so its body is checked
+    once, after every named function's modes are known.
+    */
     for index in 0..program.functions.len() {
         if program.functions[index].closure {
             let id = FuncId(index as u32);
@@ -1993,7 +2055,7 @@ pub fn check_program(program: &mut Program, components: &[Vec<FuncId>]) -> Vec<D
         }
     }
 
-    // Constant initializers.
+    /* Constant initializers. */
     for index in 0..program.constants.len() {
         let mut locals = std::mem::take(&mut program.constants[index].locals);
         let mut analyzer = Analyzer {
@@ -2033,8 +2095,10 @@ pub fn check_program(program: &mut Program, components: &[Vec<FuncId>]) -> Vec<D
     diagnostics
 }
 
-/// A named function used as a value is called through its function type, so
-/// a parameter it takes over or changes must say so in its declaration.
+/**
+A named function used as a value is called through its function type, so
+a parameter it takes over or changes must say so in its declaration.
+*/
 fn function_value_modes(
     program: &mut Program,
     modes: &HashMap<FuncId, Vec<ParamMode>>,

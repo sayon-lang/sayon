@@ -1,35 +1,39 @@
-//! Windows for `standard/graphics`: a window on the desktop, the canvas of
-//! a web page, or the surface of an Android app, which shows a canvas the
-//! program drew (see `graphics`). Each platform's part only puts the pixels
-//! on the screen and turns what happens to the window into events, so the
-//! picture is the same everywhere: a canvas over black, its top left corner
-//! at the window's, a pixel of the canvas for a pixel of the screen.
-//!
-//! Sizes are in the screen's pixels; `scale` says how many of them a
-//! point of the system's own measure is, such as 2 on a screen of twice the
-//! usual density. Events cross to the library as strings: each event's name
-//! and then its fields.
+/*!
+Windows for `standard/graphics`: a window on the desktop, the canvas of
+a web page, or the surface of an Android app, which shows a canvas the
+program drew (see `graphics`). Each platform's part only puts the pixels
+on the screen and turns what happens to the window into events, so the
+picture is the same everywhere: a canvas over black, its top left corner
+at the window's, a pixel of the canvas for a pixel of the screen.
+
+Sizes are in the screen's pixels; `scale` says how many of them a
+point of the system's own measure is, such as 2 on a screen of twice the
+usual density. Events cross to the library as strings: each event's name
+and then its fields.
+*/
 
 use crate::graphics::Canvas;
 use crate::host::HostError;
 
-/// Something that happened to a window, since the program last asked.
+/** Something that happened to a window, since the program last asked. */
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
-    /// The user asked to close the window.
+    /** The user asked to close the window. */
     Closed,
-    /// The window's surface has a new size, in pixels.
+    /** The window's surface has a new size, in pixels. */
     Resized(i64, i64),
     KeyDown(&'static str),
     KeyUp(&'static str),
-    /// A button or a finger, at a point of the surface: 1 for the primary
-    /// button or a touch, 2 for the secondary, 3 for the middle.
+    /**
+    A button or a finger, at a point of the surface: 1 for the primary
+    button or a touch, 2 for the secondary, 3 for the middle.
+    */
     PointerDown(i64, i64, i64),
     PointerUp(i64, i64, i64),
     PointerMoved(i64, i64),
-    /// The window took or lost the keyboard.
+    /** The window took or lost the keyboard. */
     Focused(bool),
-    /// The app went to the background, or came back.
+    /** The app went to the background, or came back. */
     Paused,
     Resumed,
 }
@@ -63,7 +67,7 @@ impl Event {
     }
 }
 
-/// Events for the library: each one's name, then its fields.
+/** Events for the library: each one's name, then its fields. */
 fn encode(events: impl IntoIterator<Item = Event>) -> Vec<String> {
     let mut out = Vec::new();
     for event in events {
@@ -72,9 +76,11 @@ fn encode(events: impl IntoIterator<Item = Event>) -> Vec<String> {
     out
 }
 
-/// The canvas as the screen shows it, `width` by `height` pixels: opaque,
-/// over black, the rest of the surface black. `order` gives each pixel's
-/// bytes from the canvas's red, green, blue, and alpha.
+/**
+The canvas as the screen shows it, `width` by `height` pixels: opaque,
+over black, the rest of the surface black. `order` gives each pixel's
+bytes from the canvas's red, green, blue, and alpha.
+*/
 #[cfg_attr(
     not(any(
         windows,
@@ -108,29 +114,39 @@ fn no_screen(why: &str) -> HostError {
     ("GraphicsError", format!("no window can open: {why}"))
 }
 
-/// A window and its events. It belongs to the thread that opened it, as
-/// the systems' windows do.
+/**
+A window and its events. It belongs to the thread that opened it, as
+the systems' windows do.
+*/
 pub struct Window {
     platform: platform::Window,
     thread: std::thread::ThreadId,
-    /// The frames it has shown, and whether it has asked to close for
-    /// [`CLOSE_WINDOWS`].
+    /**
+    The frames it has shown, and whether it has asked to close for
+    [`CLOSE_WINDOWS`].
+    */
     presented: u64,
     asked: bool,
 }
 
-/// The host option that has each window ask to close, as its close button
-/// does, once it has shown [`CLOSING_FRAME`] frames: for checks of programs
-/// that run until their window closes, on any host, apps and pages too.
+/**
+The host option that has each window ask to close, as its close button
+does, once it has shown [`CLOSING_FRAME`] frames: for checks of programs
+that run until their window closes, on any host, apps and pages too.
+*/
 pub const CLOSE_WINDOWS: &str = "SAYON_CLOSE_WINDOWS";
 pub const CLOSING_FRAME: u64 = 120;
 
-// SAFETY: the window is used only from the thread that opened it, which
-// each use checks; the stream table merely holds it.
+/*
+SAFETY: the window is used only from the thread that opened it, which
+each use checks; the stream table merely holds it.
+*/
 unsafe impl Send for Window {}
 
-/// Opens a window, `width` by `height` points, titled `title`. On Android
-/// and in a web page, the window is the app's or the page's surface.
+/**
+Opens a window, `width` by `height` points, titled `title`. On Android
+and in a web page, the window is the app's or the page's surface.
+*/
 pub fn open(title: &str, width: i64, height: i64) -> Result<Window, HostError> {
     if !(1..=16384).contains(&width) || !(1..=16384).contains(&height) {
         return Err((
@@ -160,7 +176,7 @@ impl Window {
         }
     }
 
-    /// What happened to the window since the last call, for the library.
+    /** What happened to the window since the last call, for the library. */
     pub fn events(&mut self) -> Result<Vec<String>, HostError> {
         self.here()?;
         let mut events = self.platform.events();
@@ -186,7 +202,7 @@ impl Window {
     }
 }
 
-/// Where there is no screen: WASI, and systems not done yet.
+/** Where there is no screen: WASI, and systems not done yet. */
 #[cfg(not(any(
     windows,
     target_os = "linux",
@@ -219,8 +235,10 @@ mod platform {
     }
 }
 
-/// Windows: a window of its own class, drawn with GDI. The process is
-/// aware of each monitor's density, so sizes are the screen's pixels.
+/**
+Windows: a window of its own class, drawn with GDI. The process is
+aware of each monitor's density, so sizes are the screen's pixels.
+*/
 #[cfg(windows)]
 mod platform {
     use super::*;
@@ -405,14 +423,14 @@ mod platform {
     const WM_DPICHANGED: u32 = 0x02E0;
     const SIZE_MINIMIZED: usize = 1;
 
-    /// What the window procedure and the program share.
+    /** What the window procedure and the program share. */
     struct State {
         events: VecDeque<Event>,
         width: i64,
         height: i64,
         dpi: u32,
         minimized: bool,
-        /// The last frame shown, to paint again: blue, green, red, unused.
+        /** The last frame shown, to paint again: blue, green, red, unused. */
         frame: Vec<u8>,
         frame_width: usize,
         frame_height: usize,
@@ -431,13 +449,15 @@ mod platform {
         wide("SayonWindow")
     }
 
-    /// Registers the window class, and makes the process aware of each
-    /// monitor's density, once.
+    /**
+    Registers the window class, and makes the process aware of each
+    monitor's density, once.
+    */
     fn register() -> bool {
         static REGISTERED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *REGISTERED.get_or_init(|| {
             let name = class_name();
-            // SAFETY: plain system calls with valid arguments.
+            /* SAFETY: plain system calls with valid arguments. */
             unsafe {
                 SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2);
                 let class = Class {
@@ -459,7 +479,7 @@ mod platform {
         })
     }
 
-    /// The signed coordinates a mouse message carries.
+    /** The signed coordinates a mouse message carries. */
     fn point(lparam: isize) -> (i64, i64) {
         (
             (lparam & 0xFFFF) as i16 as i64,
@@ -508,11 +528,13 @@ mod platform {
         wparam: usize,
         lparam: isize,
     ) -> isize {
-        // SAFETY: the state is the window's, set when it is made, and only
-        // touched here and between messages.
+        /*
+        SAFETY: the state is the window's, set when it is made, and only
+        touched here and between messages.
+        */
         unsafe {
             if message == WM_NCCREATE {
-                // The state comes as the creation's parameter.
+                /* The state comes as the creation's parameter. */
                 let create = lparam as *const *mut c_void;
                 SetWindowLongPtrW(window, GWLP_USERDATA, *create as isize);
                 return DefWindowProcW(window, message, wparam, lparam);
@@ -590,8 +612,10 @@ mod platform {
                     ReleaseCapture();
                     state.events.push_back(Event::PointerUp(x, y, button));
                 }
-                // Keys such as Alt and F10 go on to the system, which they
-                // also mean something to.
+                /*
+                Keys such as Alt and F10 go on to the system, which they
+                also mean something to.
+                */
                 _ => return DefWindowProcW(window, message, wparam, lparam),
             }
             if matches!(message, WM_SYSKEYDOWN | WM_SYSKEYUP) {
@@ -601,7 +625,7 @@ mod platform {
         }
     }
 
-    /// Puts the last frame on the window's device context.
+    /** Puts the last frame on the window's device context. */
     unsafe fn show(dc: Handle, state: &State) {
         if state.frame.is_empty() {
             return;
@@ -609,7 +633,7 @@ mod platform {
         let info = BitmapInfo {
             size: 40,
             width: state.frame_width as i32,
-            // From the top down.
+            /* From the top down. */
             height: -(state.frame_height as i32),
             planes: 1,
             bits: 32,
@@ -622,7 +646,7 @@ mod platform {
             colors: [0],
         };
         let (width, height) = (state.frame_width as i32, state.frame_height as i32);
-        // SAFETY: the frame holds `width` by `height` pixels of 4 bytes.
+        /* SAFETY: the frame holds `width` by `height` pixels of 4 bytes. */
         unsafe {
             StretchDIBits(
                 dc,
@@ -659,7 +683,7 @@ mod platform {
             }));
             let class = class_name();
             let title = wide(title);
-            // SAFETY: the class is registered; the state outlives the window.
+            /* SAFETY: the class is registered; the state outlives the window. */
             unsafe {
                 let dpi = GetDpiForSystem().max(96);
                 let mut rect = Rect {
@@ -694,7 +718,7 @@ mod platform {
                 let mut client = Rect::default();
                 GetClientRect(handle, &mut client);
                 let (width, height) = (client.right as i64, client.bottom as i64);
-                // The size it opened with, even if no message told it yet.
+                /* The size it opened with, even if no message told it yet. */
                 (*state)
                     .events
                     .retain(|event| !matches!(event, Event::Resized(..)));
@@ -705,9 +729,9 @@ mod platform {
             }
         }
 
-        /// Handles the messages waiting for this thread's windows.
+        /** Handles the messages waiting for this thread's windows. */
         fn pump(&mut self) {
-            // SAFETY: a message structure for the system to fill.
+            /* SAFETY: a message structure for the system to fill. */
             unsafe {
                 let mut message: Message = std::mem::zeroed();
                 while PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
@@ -719,14 +743,16 @@ mod platform {
 
         pub fn events(&mut self) -> Vec<Event> {
             self.pump();
-            // SAFETY: no message is being handled now.
+            /* SAFETY: no message is being handled now. */
             unsafe { (*self.state).events.drain(..).collect() }
         }
 
         pub fn present(&mut self, canvas: &Canvas) -> Result<(), HostError> {
             self.pump();
-            // SAFETY: no message is being handled now; the device context is
-            // released after drawing.
+            /*
+            SAFETY: no message is being handled now; the device context is
+            released after drawing.
+            */
             unsafe {
                 let state = &mut *self.state;
                 let (width, height) = (state.width.max(1) as usize, state.height.max(1) as usize);
@@ -741,19 +767,19 @@ mod platform {
         }
 
         pub fn size(&self) -> (i64, i64) {
-            // SAFETY: no message is being handled now.
+            /* SAFETY: no message is being handled now. */
             unsafe { ((*self.state).width, (*self.state).height) }
         }
 
         pub fn scale(&self) -> f64 {
-            // SAFETY: no message is being handled now.
+            /* SAFETY: no message is being handled now. */
             unsafe { (*self.state).dpi as f64 / 96.0 }
         }
     }
 
     impl Drop for Window {
         fn drop(&mut self) {
-            // SAFETY: the window and its state, destroyed once.
+            /* SAFETY: the window and its state, destroyed once. */
             unsafe {
                 SetWindowLongPtrW(self.handle, GWLP_USERDATA, 0);
                 DestroyWindow(self.handle);
@@ -763,10 +789,12 @@ mod platform {
     }
 }
 
-/// Linux: a window of the X server (or XWayland), through Xlib, which is
-/// opened only when a program opens a window, so that a program that shows
-/// none does not need it. Frames go to the window as images of the
-/// runtime's own memory.
+/**
+Linux: a window of the X server (or XWayland), through Xlib, which is
+opened only when a program opens a window, so that a program that shows
+none does not need it. Frames go to the window as images of the
+runtime's own memory.
+*/
 #[cfg(target_os = "linux")]
 mod platform {
     use super::*;
@@ -776,7 +804,7 @@ mod platform {
     type Display = *mut c_void;
     type Xid = c_ulong;
 
-    /// Xlib's `XImage`, which `XInitImage` completes.
+    /** Xlib's `XImage`, which `XInitImage` completes. */
     #[repr(C)]
     struct Image {
         width: c_int,
@@ -798,7 +826,7 @@ mod platform {
         functions: [*mut c_void; 6],
     }
 
-    /// The functions of Xlib the window uses.
+    /** The functions of Xlib the window uses. */
     struct Xlib {
         open_display: unsafe extern "C" fn(*const c_char) -> Display,
         close_display: unsafe extern "C" fn(Display) -> c_int,
@@ -843,17 +871,17 @@ mod platform {
         ) -> c_int,
     }
 
-    // SAFETY: the table holds addresses of functions.
+    /* SAFETY: the table holds addresses of functions. */
     unsafe impl Send for Xlib {}
     unsafe impl Sync for Xlib {}
 
-    /// Xlib's `XEvent`, a union of 24 longs, read by offset.
+    /** Xlib's `XEvent`, a union of 24 longs, read by offset. */
     #[repr(C)]
     struct XEvent([c_long; 24]);
 
     impl XEvent {
         fn int(&self, offset: usize) -> i64 {
-            // SAFETY: within the event, at an int's place.
+            /* SAFETY: within the event, at an int's place. */
             unsafe { *((self.0.as_ptr() as *const u8).add(offset) as *const c_int) as i64 }
         }
 
@@ -875,8 +903,10 @@ mod platform {
     const MAP_NOTIFY: i64 = 19;
     const CONFIGURE_NOTIFY: i64 = 22;
     const CLIENT_MESSAGE: i64 = 33;
-    /// Key presses and releases, buttons, motion, exposure, structure, and
-    /// focus.
+    /**
+    Key presses and releases, buttons, motion, exposure, structure, and
+    focus.
+    */
     const EVENTS: c_long = 1 | 2 | 4 | 8 | 64 | 32768 | 131072 | 2097152;
     const Z_PIXMAP: c_int = 2;
 
@@ -885,13 +915,15 @@ mod platform {
         fn dlsym(handle: *mut c_void, name: *const c_char) -> *mut c_void;
     }
 
-    // Each symbol becomes the function type of the field it fills.
+    /* Each symbol becomes the function type of the field it fills. */
     #[allow(clippy::missing_transmute_annotations)]
     fn xlib() -> Result<&'static Xlib, HostError> {
         static XLIB: OnceLock<Option<Xlib>> = OnceLock::new();
         XLIB.get_or_init(|| {
-            // SAFETY: NUL-terminated names; each symbol, when found, has the
-            // type of Xlib's function of that name.
+            /*
+            SAFETY: NUL-terminated names; each symbol, when found, has the
+            type of Xlib's function of that name.
+            */
             unsafe {
                 let library = ["libX11.so.6", "libX11.so"].iter().find_map(|name| {
                     let name = CString::new(*name).ok()?;
@@ -982,9 +1014,9 @@ mod platform {
         height: i64,
         mapped: bool,
         unmapped: bool,
-        /// Whether the size it opened with has been told.
+        /** Whether the size it opened with has been told. */
         announced: bool,
-        /// The last frame shown, to draw again: blue, green, red, unused.
+        /** The last frame shown, to draw again: blue, green, red, unused. */
         frame: Vec<u8>,
         frame_size: (usize, usize),
     }
@@ -993,7 +1025,7 @@ mod platform {
         pub fn open(title: &str, width: i64, height: i64) -> Result<Window, HostError> {
             let xlib = xlib()?;
             let name = CString::new(title.replace('\0', " ")).expect("NUL bytes replaced");
-            // SAFETY: Xlib's functions with a display it opened.
+            /* SAFETY: Xlib's functions with a display it opened. */
             unsafe {
                 let display = (xlib.open_display)(std::ptr::null());
                 if display.is_null() {
@@ -1041,7 +1073,7 @@ mod platform {
             }
         }
 
-        /// Puts the last frame on the window.
+        /** Puts the last frame on the window. */
         fn show(&mut self) {
             if self.frame.is_empty() || !self.mapped {
                 return;
@@ -1066,8 +1098,10 @@ mod platform {
                 object_data: std::ptr::null_mut(),
                 functions: [std::ptr::null_mut(); 6],
             };
-            // SAFETY: the image describes the frame's memory, which lives
-            // through the call.
+            /*
+            SAFETY: the image describes the frame's memory, which lives
+            through the call.
+            */
             unsafe {
                 if (self.xlib.init_image)(&mut image) == 0 {
                     return;
@@ -1092,11 +1126,11 @@ mod platform {
         pub fn events(&mut self) -> Vec<Event> {
             let mut events = Vec::new();
             if !std::mem::replace(&mut self.announced, true) {
-                // The size it opened with comes first.
+                /* The size it opened with comes first. */
                 events.push(Event::Resized(self.width, self.height));
             }
             let mut expose = false;
-            // SAFETY: events of the window's own display.
+            /* SAFETY: events of the window's own display. */
             unsafe {
                 while (self.xlib.pending)(self.display) > 0 {
                     let mut event = XEvent([0; 24]);
@@ -1113,7 +1147,7 @@ mod platform {
                                 1 => 1,
                                 3 => 2,
                                 2 => 3,
-                                // The wheel, which is not a button here.
+                                /* The wheel, which is not a button here. */
                                 _ => continue,
                             };
                             let (x, y) = (event.int(64), event.int(68));
@@ -1181,7 +1215,7 @@ mod platform {
 
     impl Drop for Window {
         fn drop(&mut self) {
-            // SAFETY: the window and the display, closed once.
+            /* SAFETY: the window and the display, closed once. */
             unsafe {
                 (self.xlib.destroy_window)(self.display, self.window);
                 (self.xlib.close_display)(self.display);
@@ -1190,7 +1224,7 @@ mod platform {
     }
 }
 
-/// The name of a key, among those of [`Event`]; "Unidentified" for others.
+/** The name of a key, among those of [`Event`]; "Unidentified" for others. */
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 fn known_key(name: &str) -> &'static str {
     const KEYS: &[&str] = &[
@@ -1267,26 +1301,34 @@ fn known_key(name: &str) -> &'static str {
         .unwrap_or("Unidentified")
 }
 
-/// A web page: a canvas of the page, which the page's glue adds and
-/// whose events it gathers.
+/**
+A web page: a canvas of the page, which the page's glue adds and
+whose events it gathers.
+*/
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 mod platform {
     use super::*;
 
     #[link(wasm_import_module = "sayon")]
     unsafe extern "C" {
-        /// Adds a canvas to the page, `width` by `height` CSS pixels, and
-        /// gives its number; 0 where there is no page.
+        /**
+        Adds a canvas to the page, `width` by `height` CSS pixels, and
+        gives its number; 0 where there is no page.
+        */
         fn host_window_open(title: *const u8, title_length: usize, width: f64, height: f64) -> i32;
-        /// Takes the events since the last call: each field ended by a
-        /// line break. Gives the length of the text, which
-        /// `host_window_take` copies.
+        /**
+        Takes the events since the last call: each field ended by a
+        line break. Gives the length of the text, which
+        `host_window_take` copies.
+        */
         fn host_window_events(window: i32) -> usize;
         fn host_window_take(window: i32, into: *mut u8);
-        /// Draws `width` by `height` pixels, red, green, blue, and alpha.
+        /** Draws `width` by `height` pixels, red, green, blue, and alpha. */
         fn host_window_present(window: i32, pixels: *const u8, width: usize, height: usize);
-        /// The canvas's width (0) or height (1) in pixels, or the screen's
-        /// density (2).
+        /**
+        The canvas's width (0) or height (1) in pixels, or the screen's
+        density (2).
+        */
         fn host_window_size(window: i32, which: i32) -> f64;
         fn host_window_close(window: i32);
     }
@@ -1301,7 +1343,7 @@ mod platform {
 
     impl Window {
         pub fn open(title: &str, width: i64, height: i64) -> Result<Window, HostError> {
-            // SAFETY: the title is readable for its length.
+            /* SAFETY: the title is readable for its length. */
             let number = unsafe {
                 host_window_open(title.as_ptr(), title.len(), width as f64, height as f64)
             };
@@ -1312,7 +1354,7 @@ mod platform {
         }
 
         pub fn events(&mut self) -> Vec<Event> {
-            // SAFETY: a buffer of the length the glue gave.
+            /* SAFETY: a buffer of the length the glue gave. */
             let text = unsafe {
                 let mut bytes = vec![0u8; host_window_events(self.number)];
                 host_window_take(self.number, bytes.as_mut_ptr());
@@ -1346,13 +1388,13 @@ mod platform {
             let (width, height) = self.size();
             let (width, height) = (width.max(1) as usize, height.max(1) as usize);
             let pixels = frame(canvas, width, height, [0, 1, 2, 3]);
-            // SAFETY: the pixels are readable for their length.
+            /* SAFETY: the pixels are readable for their length. */
             unsafe { host_window_present(self.number, pixels.as_ptr(), width, height) };
             Ok(())
         }
 
         pub fn size(&self) -> (i64, i64) {
-            // SAFETY: the glue only looks the window up.
+            /* SAFETY: the glue only looks the window up. */
             unsafe {
                 (
                     host_window_size(self.number, 0) as i64,
@@ -1362,21 +1404,23 @@ mod platform {
         }
 
         pub fn scale(&self) -> f64 {
-            // SAFETY: the glue only looks the window up.
+            /* SAFETY: the glue only looks the window up. */
             unsafe { host_window_size(self.number, 2) }
         }
     }
 
     impl Drop for Window {
         fn drop(&mut self) {
-            // SAFETY: the window is not used again.
+            /* SAFETY: the window is not used again. */
             unsafe { host_window_close(self.number) }
         }
     }
 }
 
-/// Android: the app's own window, which its activity gives the runtime
-/// (see `android`): a program run from `adb shell` has none.
+/**
+Android: the app's own window, which its activity gives the runtime
+(see `android`): a program run from `adb shell` has none.
+*/
 #[cfg(target_os = "android")]
 mod platform {
     use super::*;

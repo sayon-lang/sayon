@@ -1,9 +1,11 @@
-//! Converts UTF-8 source text into tokens.
-//!
-//! The lexer does not produce indentation tokens. Instead every token records
-//! whether it starts a physical line and that line's indentation column, and the
-//! parser applies the layout rules. This keeps blocks inside delimiters (such as
-//! a function literal passed as an argument) straightforward to parse.
+/*!
+Converts UTF-8 source text into tokens.
+
+The lexer does not produce indentation tokens. Instead every token records
+whether it starts a physical line and that line's indentation column, and the
+parser applies the layout rules. This keeps blocks inside delimiters (such as
+a function literal passed as an argument) straightforward to parse.
+*/
 
 use crate::diagnostic::Diagnostic;
 use crate::source::{FileId, Span};
@@ -56,8 +58,10 @@ struct Lexer<'a> {
     comments: Vec<Comment>,
     diagnostics: Vec<Diagnostic>,
     indent_style: Option<(IndentChar, Span)>,
-    /// Line end of the last unterminated-string report, to avoid repeating it
-    /// for a string nested inside an interpolation.
+    /**
+    Line end of the last unterminated-string report, to avoid repeating it
+    for a string nested inside an interpolation.
+    */
     unterminated_line_end: Option<usize>,
 }
 
@@ -84,7 +88,7 @@ impl<'a> Lexer<'a> {
         self.src[self.pos..].chars().next()
     }
 
-    /// Byte offset of the line terminator at or after `from`, or the end of input.
+    /** Byte offset of the line terminator at or after `from`, or the end of input. */
     fn line_end(&self, from: usize) -> usize {
         self.src[from..]
             .find(['\n', '\r'])
@@ -147,7 +151,7 @@ impl<'a> Lexer<'a> {
             return;
         }
         if content.trim_end_matches([' ', '\t']) == "##" {
-            self.block_comment(line_begin, content_start, line_end);
+            self.block_comment(content_start, line_end);
             return;
         }
         if content.starts_with('#') {
@@ -243,7 +247,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn block_comment(&mut self, line_begin: usize, content_start: usize, line_end: usize) {
+    fn block_comment(&mut self, content_start: usize, line_end: usize) {
         let opening = self.span(content_start, content_start + 2);
         self.pos = line_end;
         self.consume_newline();
@@ -267,7 +271,6 @@ impl<'a> Lexer<'a> {
             self.pos = end;
             self.consume_newline();
         }
-        let _ = line_begin;
         self.diagnostics.push(
             Diagnostic::error(
                 "E_UNTERMINATED_COMMENT",
@@ -353,7 +356,7 @@ impl<'a> Lexer<'a> {
                         self.pos += 2;
                         Scan::Token(TokenKind::NotEqual, start)
                     } else {
-                        // Reported, then read as `not` so parsing continues.
+                        /* Reported, then read as `not` so parsing continues. */
                         self.replaced_operator(start, 1, "!", "not");
                         Scan::Token(TokenKind::Keyword(Keyword::Not), start)
                     }
@@ -468,7 +471,7 @@ impl<'a> Lexer<'a> {
         (start, self.pos)
     }
 
-    /// Checks underscore placement and returns the digits with separators removed.
+    /** Checks underscore placement and returns the digits with separators removed. */
     fn clean_digits(&mut self, start: usize, end: usize) -> Option<String> {
         let text = &self.src[start..end];
         if text.is_empty() {

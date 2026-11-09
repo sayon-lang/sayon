@@ -1,6 +1,8 @@
-# PNG images: one of each kind PNG has, read as the digests they were made
-# with say, images that are damaged, and a canvas written as a PNG image
-# and read again.
+##
+PNG images: one of each kind PNG has, read as the digests they were made
+with say, images that are damaged, and a canvas written as a PNG image
+and read again.
+##
 graphics = import("standard/graphics.sayon")
 data = import("modules/graphics_data.sayon")
 

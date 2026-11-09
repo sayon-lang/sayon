@@ -1,5 +1,7 @@
-// Word count: make up a long text from a small set of syllables, count how
-// often each word comes up, and list the most common.
+/*
+Word count: make up a long text from a small set of syllables, count how
+often each word comes up, and list the most common.
+*/
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>

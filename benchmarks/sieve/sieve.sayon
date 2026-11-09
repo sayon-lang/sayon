@@ -1,5 +1,7 @@
-# Sieve: count the primes below a limit with the sieve of Eratosthenes,
-# one byte for each number. A long walk through memory in simple steps.
+##
+Sieve: count the primes below a limit with the sieve of Eratosthenes,
+one byte for each number. A long walk through memory in simple steps.
+##
 
 os = import("standard/os.sayon")
 strings = import("standard/strings.sayon")

@@ -1,26 +1,28 @@
-//! Reading typed values from JSON and writing them as JSON.
-//!
-//! `json.from_json` and `json.to_json` lower to calls of generated functions,
-//! one reader and one writer per type, made when a type is first converted.
-//! A reader takes a `Json` value and the path of that value in the whole
-//! document, such as `$.points[2].x`, for its errors; it handles one level
-//! of the type and calls the readers of the parts, so recursive types work.
-//!
-//! The mapping: numbers, booleans, text, and `nothing` (null) are the JSON
-//! values of the same kind; an array is a list; a dictionary with string
-//! keys, and a structure, are objects; an enum variant without fields is the
-//! variant's name as text, and one with fields an object with one member,
-//! named after the variant, holding an object of its fields; a union is
-//! whichever member reads that kind of JSON value; `Json` itself is any
-//! value. A structure field missing from an object reads as `nothing` when
-//! its type allows it; an object's other members are ignored.
+/*!
+Reading typed values from JSON and writing them as JSON.
+
+`json.from_json` and `json.to_json` lower to calls of generated functions,
+one reader and one writer per type, made when a type is first converted.
+A reader takes a `Json` value and the path of that value in the whole
+document, such as `$.points[2].x`, for its errors; it handles one level
+of the type and calls the readers of the parts, so recursive types work.
+
+The mapping: numbers, booleans, text, and `nothing` (null) are the JSON
+values of the same kind; an array is a list; a dictionary with string
+keys, and a structure, are objects; an enum variant without fields is the
+variant's name as text, and one with fields an object with one member,
+named after the variant, holding an object of its fields; a union is
+whichever member reads that kind of JSON value; `Json` itself is any
+value. A structure field missing from an object reads as `nothing` when
+its type allows it; an object's other members are ignored.
+*/
 
 use super::*;
 use sayon_check::hir::JsonSupport;
 use sayon_check::types::{FloatType, VariantDef};
 use sayon_runtime::host::Host;
 
-/// The variants of `standard/json`'s `Json`, by position.
+/** The variants of `standard/json`'s `Json`, by position. */
 struct JsonVariants {
     null: u32,
     flag: u32,
@@ -66,7 +68,7 @@ impl<'p> Lowerer<'p> {
         }
     }
 
-    /// The function reading a `Json` value, and its path, into `ty`.
+    /** The function reading a `Json` value, and its path, into `ty`. */
     pub(super) fn decoder(&mut self, ty: &Type, span: Span) -> FunctionId {
         if let Some(id) = self.decoders.get(ty) {
             return *id;
@@ -80,7 +82,7 @@ impl<'p> Lowerer<'p> {
         id
     }
 
-    /// The function writing a value of `ty` as `Json`.
+    /** The function writing a value of `ty` as `Json`. */
     pub(super) fn encoder(&mut self, ty: &Type, span: Span) -> FunctionId {
         if let Some(id) = self.encoders.get(ty) {
             return *id;
@@ -95,7 +97,7 @@ impl<'p> Lowerer<'p> {
     }
 }
 
-/// The code the host's integer primitives use for an integer type.
+/** The code the host's integer primitives use for an integer type. */
 fn int_code(int: IntType) -> i128 {
     match int {
         IntType::I8 => 0,
@@ -124,7 +126,7 @@ fn integer(value: i128) -> Operand {
     Operand::Const(Constant::Int(value, IntType::I64))
 }
 
-/// How a type is described in an error: "expected integer".
+/** How a type is described in an error: "expected integer". */
 fn describe(ty: &Type) -> String {
     match ty {
         Type::Nothing => "null".to_string(),
@@ -144,7 +146,7 @@ fn describe(ty: &Type) -> String {
 }
 
 impl<'l, 'p> FnLower<'l, 'p> {
-    /// Moves or copies a value out of a temporary.
+    /** Moves or copies a value out of a temporary. */
     fn take(&self, slot: SlotId) -> Operand {
         let place = Place::slot(slot);
         if self.f.slots[slot.0 as usize].ty.is_copy() {
@@ -154,8 +156,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         }
     }
 
-    /// Calls a function of `standard/json`, or a generated reader or writer,
-    /// into a new temporary.
+    /**
+    Calls a function of `standard/json`, or a generated reader or writer,
+    into a new temporary.
+    */
     fn call_into(
         &mut self,
         function: FunctionId,
@@ -168,7 +172,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         result
     }
 
-    /// Calls a `standard/json` function that always fails.
+    /** Calls a `standard/json` function that always fails. */
     fn fail_with(&mut self, function: hir::FuncId, args: Vec<Operand>, span: Span) {
         let function = self.l.instance(function, Vec::new());
         self.call_into(function, args, Type::Nothing, span);
@@ -181,8 +185,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         slot
     }
 
-    /// Continues when `value` is the `Json` variant, and otherwise fails,
-    /// saying what was expected.
+    /**
+    Continues when `value` is the `Json` variant, and otherwise fails,
+    saying what was expected.
+    */
     fn expect_variant(&mut self, value: &Place, path: &Place, variant: u32, ty: &Type, span: Span) {
         let ok = self.new_slot(Type::Boolean, SlotKind::Value, None);
         self.assign(
@@ -214,8 +220,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         );
     }
 
-    /// Branches on a flag: `then` continues in a new block, which is
-    /// current afterwards; the other branch goes to the returned block.
+    /**
+    Branches on a flag: `then` continues in a new block, which is
+    current afterwards; the other branch goes to the returned block.
+    */
     fn branch_on(&mut self, value: Rvalue) -> BlockId {
         let flag = self.new_slot(Type::Boolean, SlotKind::Value, None);
         self.assign(Place::slot(flag), value);
@@ -230,8 +238,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         otherwise
     }
 
-    /// Runs `body` for each position from 0 below the length of `of`,
-    /// each time in a scope of its own.
+    /**
+    Runs `body` for each position from 0 below the length of `of`,
+    each time in a scope of its own.
+    */
     fn each_position(&mut self, of: Operand, ty: Type, mut body: impl FnMut(&mut Self, SlotId)) {
         let count = self.new_slot(Type::INTEGER, SlotKind::Value, None);
         let index = self.new_slot(Type::INTEGER, SlotKind::Value, None);
@@ -257,7 +267,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.switch_to(exit);
     }
 
-    // ----- reading -------------------------------------------------------------
+    /* ----- reading ------------------------------------------------------------- */
 
     fn lower_decoder(mut self, ty: &Type, span: Span) -> Function {
         let json = self.l.json_type();
@@ -288,7 +298,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.f
     }
 
-    /// Reads a part of a value with the part's own reader.
+    /** Reads a part of a value with the part's own reader. */
     fn decode_part(&mut self, ty: &Type, value: &Place, path: &Place, span: Span) -> SlotId {
         let function = self.l.decoder(ty, span);
         self.call_into(
@@ -299,7 +309,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         )
     }
 
-    /// Reads the `Json` value at `value` as `ty`, into a new temporary.
+    /** Reads the `Json` value at `value` as `ty`, into a new temporary. */
     fn decode(&mut self, ty: &Type, value: &Place, path: &Place, span: Span) -> SlotId {
         let variants = self.l.json_variants();
         let json_ty = self.l.json_type();
@@ -518,8 +528,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         result
     }
 
-    /// Reads the member `name` of the object `fields` as `ty`. A missing
-    /// member is `nothing` when `ty` allows it.
+    /**
+    Reads the member `name` of the object `fields` as `ty`. A missing
+    member is `nothing` when `ty` allows it.
+    */
     fn decode_field(
         &mut self,
         fields: &Place,
@@ -605,7 +617,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         let done = self.new_block();
         let type_text = self.text_temp(type_name);
 
-        // A variant without fields is its name.
+        /* A variant without fields is its name. */
         let not_text = self.branch_on(Rvalue::VariantIs {
             value: borrow(value),
             variant: variants.text,
@@ -641,7 +653,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
             span,
         );
 
-        // One with fields is an object with one member named after it.
+        /* One with fields is an object with one member named after it. */
         self.switch_to(not_text);
         let not_object = self.branch_on(Rvalue::VariantIs {
             value: borrow(value),
@@ -731,7 +743,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.switch_to(done);
     }
 
-    /// Reads a union as its member for the kind of JSON value it is.
+    /** Reads a union as its member for the kind of JSON value it is. */
     fn decode_union(
         &mut self,
         ty: &Type,
@@ -799,8 +811,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
                 variant,
             });
             match (&integer_member, &float_member) {
-                // A number reads as the integer member when it is written
-                // as an integer.
+                /*
+                A number reads as the integer member when it is written
+                as an integer.
+                */
                 (Some(int), Some(float)) if variant == variants.number => {
                     let digits = value.project(Projection::VariantField {
                         variant: variants.number,
@@ -836,7 +850,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.switch_to(done);
     }
 
-    // ----- writing -------------------------------------------------------------
+    /* ----- writing ------------------------------------------------------------- */
 
     fn lower_encoder(mut self, ty: &Type, span: Span) -> Function {
         let value = self.new_slot(
@@ -880,7 +894,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
         );
     }
 
-    /// An empty object, to fill with `DictSet`.
+    /** An empty object, to fill with `DictSet`. */
     fn empty_object(&mut self) -> SlotId {
         let json = self.l.json_type();
         let object = self.temp(Type::dict(Type::String, json.clone()));
@@ -895,8 +909,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
         object
     }
 
-    /// Writes the value at `value`, of type `ty`, as `Json` into a new
-    /// temporary.
+    /**
+    Writes the value at `value`, of type `ty`, as `Json` into a new
+    temporary.
+    */
     fn encode(&mut self, ty: &Type, value: &Place, span: Span) -> SlotId {
         let variants = self.l.json_variants();
         let json_ty = self.l.json_type();

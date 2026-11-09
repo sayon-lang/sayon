@@ -1,5 +1,7 @@
-# Drawing on canvases, which gives the same pixels everywhere: the
-# interpreter, compiled programs, WebAssembly, and Android.
+##
+Drawing on canvases, which gives the same pixels everywhere: the
+interpreter, compiled programs, WebAssembly, and Android.
+##
 graphics = import("standard/graphics.sayon")
 
 # A sum of the pixels that tells two pictures apart.
@@ -44,8 +46,10 @@ copy = graphics.image(canvas.width, canvas.height, canvas.bytes())
 canvas.draw(copy, 32, 24)
 print(canvas.pixel(61, 45), digest(canvas))
 
-# Smooth shapes: each pixel takes as much of the color as they cover of
-# it. A star crosses itself, and its middle is outside by the even-odd rule.
+##
+Smooth shapes: each pixel takes as much of the color as they cover of
+it. A star crosses itself, and its middle is outside by the even-odd rule.
+##
 smooth = graphics.canvas(48, 32)
 smooth.clear(graphics.BLACK)
 smooth.smooth = true

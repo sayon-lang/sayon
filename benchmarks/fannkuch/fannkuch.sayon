@@ -1,6 +1,8 @@
-# Fannkuch-redux: flip a stack of pancakes, numbered 1 to n, for every
-# order they can start in, and count the most flips any order needs.
-# Integer arrays and tight loops.
+##
+Fannkuch-redux: flip a stack of pancakes, numbered 1 to n, for every
+order they can start in, and count the most flips any order needs.
+Integer arrays and tight loops.
+##
 
 os = import("standard/os.sayon")
 strings = import("standard/strings.sayon")

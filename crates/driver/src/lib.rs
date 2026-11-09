@@ -1,12 +1,14 @@
-//! Loads a program's modules from disk and runs the compiler phases.
-//!
-//! Import paths are resolved against the root of the importing module's
-//! package: a project's directory, or the directory of the entry file for a
-//! standalone script. `standard/...` paths resolve inside the toolchain's
-//! standard library, and `dependencies/<alias>/...` inside the package the
-//! importing package's manifest names `alias`. Paths cannot leave their root,
-//! must name an existing `.sayon` file with exactly the same spelling (also
-//! on case-insensitive file systems), and imports cannot form a cycle.
+/*!
+Loads a program's modules from disk and runs the compiler phases.
+
+Import paths are resolved against the root of the importing module's
+package: a project's directory, or the directory of the entry file for a
+standalone script. `standard/...` paths resolve inside the toolchain's
+standard library, and `dependencies/<alias>/...` inside the package the
+importing package's manifest names `alias`. Paths cannot leave their root,
+must name an existing `.sayon` file with exactly the same spelling (also
+on case-insensitive file systems), and imports cannot form a cycle.
+*/
 
 pub mod archive;
 pub mod json;
@@ -14,7 +16,7 @@ pub mod manifest;
 pub mod packages;
 pub mod registry;
 pub mod semver;
-pub use sayon_runtime::sha256;
+use sayon_runtime::sha256;
 
 use sayon_check::ModuleSource;
 use sayon_syntax::ast::{self, ExprKind, StmtKind};
@@ -23,45 +25,55 @@ use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
 pub struct Options {
-    /// The standard library directory, if one was found.
+    /** The standard library directory, if one was found. */
     pub stdlib: Option<PathBuf>,
-    /// Also lower the entry module's test blocks.
+    /** Also lower the entry module's test blocks. */
     pub tests: bool,
-    /// The directory imports resolve from: a project's root. Defaults to
-    /// the entry file's directory.
+    /**
+    The directory imports resolve from: a project's root. Defaults to
+    the entry file's directory.
+    */
     pub root: Option<PathBuf>,
-    /// Add the lint warnings, and stop after checking.
+    /** Add the lint warnings, and stop after checking. */
     pub lint: bool,
-    /// The packages `dependencies/...` imports reach, from the lock.
+    /** The packages `dependencies/...` imports reach, from the lock. */
     pub packages: packages::Packages,
-    /// The target to check and lower the program for.
+    /** The target to check and lower the program for. */
     pub target: &'static sayon_target::Target,
-    /// Texts to read in place of files, by their canonical paths: what an
-    /// editor holds and has not saved.
+    /**
+    Texts to read in place of files, by their canonical paths: what an
+    editor holds and has not saved.
+    */
     pub overlays: HashMap<PathBuf, String>,
-    /// Also gather what the program's names refer to, for an editor: then
-    /// the program is checked even past syntax errors, whose follow-on
-    /// errors are left out.
+    /**
+    Also gather what the program's names refer to, for an editor: then
+    the program is checked even past syntax errors, whose follow-on
+    errors are left out.
+    */
     pub index: bool,
-    /// The program is a stranger's, for `sayon run --sandbox`: its own
-    /// files import only the standard library, so that the compiler reads
-    /// no other file for it.
+    /**
+    The program is a stranger's, for `sayon run --sandbox`: its own
+    files import only the standard library, so that the compiler reads
+    no other file for it.
+    */
     pub sandbox: bool,
 }
 
 pub struct Output {
     pub sources: SourceMap,
     pub diagnostics: Diagnostics,
-    /// The lowered program, when there were no errors.
+    /** The lowered program, when there were no errors. */
     pub module: Option<sayon_ir::Module>,
-    /// The capabilities the program needs, as [`sayon_check::usage::needs`]
-    /// finds them.
+    /**
+    The capabilities the program needs, as [`sayon_check::usage::needs`]
+    finds them.
+    */
     pub needs: Vec<sayon_target::Capability>,
-    /// What the program's names refer to, with [`Options::index`].
+    /** What the program's names refer to, with [`Options::index`]. */
     pub index: Option<sayon_check::index::Index>,
 }
 
-/// The entry file could not be read at all.
+/** The entry file could not be read at all. */
 pub struct EntryError(pub String);
 
 struct Loaded {
@@ -70,15 +82,17 @@ struct Loaded {
     name: String,
     root: PathBuf,
     standard: bool,
-    /// Part of a dependency rather than the project itself.
+    /** Part of a dependency rather than the project itself. */
     dependency: bool,
-    /// What names of modules imported from this one start with:
-    /// `dependencies/<alias>/` inside a dependency.
+    /**
+    What names of modules imported from this one start with:
+    `dependencies/<alias>/` inside a dependency.
+    */
     prefix: String,
     imports: Vec<(String, Span, usize)>,
 }
 
-/// Loads, checks, and lowers the program whose entry file is `entry`.
+/** Loads, checks, and lowers the program whose entry file is `entry`. */
 pub fn compile(entry: &Path, options: &Options) -> Result<Output, EntryError> {
     let mut sources = SourceMap::new();
     let mut diagnostics = Diagnostics::new();
@@ -160,8 +174,10 @@ pub fn compile(entry: &Path, options: &Options) -> Result<Output, EntryError> {
         sayon_check::check_program_indexed(&inputs, 0, span, options.target, options.index);
     let index = checked.index.take();
     if syntax_errors {
-        // Checked only for the index: what the syntax errors left behind
-        // would only be reported again.
+        /*
+        Checked only for the index: what the syntax errors left behind
+        would only be reported again.
+        */
         diagnostics.sort();
         return Ok(Output {
             sources,
@@ -192,7 +208,7 @@ pub fn compile(entry: &Path, options: &Options) -> Result<Output, EntryError> {
             }
         }
     }
-    // Warnings about a dependency's code are for its authors, not its users.
+    /* Warnings about a dependency's code are for its authors, not its users. */
     let outside: Vec<FileId> = modules
         .iter()
         .filter(|m| m.standard || m.dependency)
@@ -231,7 +247,7 @@ pub fn compile(entry: &Path, options: &Options) -> Result<Output, EntryError> {
     })
 }
 
-/// The error for an operation the target cannot do.
+/** The error for an operation the target cannot do. */
 fn missing_capability(target: &sayon_target::Target, need: sayon_check::usage::Need) -> Diagnostic {
     let capability = need.capability;
     let provided: Vec<&str> = target.capabilities.iter().map(|c| c.name()).collect();
@@ -254,7 +270,7 @@ fn missing_capability(target: &sayon_target::Target, need: sayon_check::usage::N
     ))
 }
 
-/// The nearest directory at or above `start` that holds a `sayon.toml`.
+/** The nearest directory at or above `start` that holds a `sayon.toml`. */
 pub fn find_project(start: &Path) -> Option<PathBuf> {
     let mut dir = Some(start);
     while let Some(current) = dir {
@@ -266,8 +282,10 @@ pub fn find_project(start: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Reads and checks a project's manifest. On failure the diagnostics refer
-/// to the manifest file in `sources`.
+/**
+Reads and checks a project's manifest. On failure the diagnostics refer
+to the manifest file in `sources`.
+*/
 pub fn read_manifest(
     root: &Path,
     sources: &mut SourceMap,
@@ -289,7 +307,7 @@ fn read_entry(path: &Path) -> Result<Vec<u8>, EntryError> {
     })
 }
 
-/// Adds a file to the source map, reporting invalid UTF-8.
+/** Adds a file to the source map, reporting invalid UTF-8. */
 fn decode(
     path: &Path,
     name: &str,
@@ -314,7 +332,7 @@ fn decode(
     }
 }
 
-/// The path that names a file however it is written, as overlays are keyed.
+/** The path that names a file however it is written, as overlays are keyed. */
 pub fn canonical(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
@@ -327,11 +345,11 @@ struct Loader<'s> {
     stdlib: Option<PathBuf>,
     packages: &'s packages::Packages,
     overlays: &'s HashMap<PathBuf, String>,
-    /// The program's own files import only the standard library.
+    /** The program's own files import only the standard library. */
     sandbox: bool,
 }
 
-/// Where a module comes from: its package's root and kind.
+/** Where a module comes from: its package's root and kind. */
 struct Origin {
     root: PathBuf,
     standard: bool,
@@ -339,7 +357,7 @@ struct Origin {
     prefix: String,
 }
 
-/// An `alias = import("path")` statement at the top of a module.
+/** An `alias = import("path")` statement at the top of a module. */
 struct ImportStatement {
     alias: String,
     alias_span: Span,
@@ -418,13 +436,15 @@ impl Loader<'_> {
         }
     }
 
-    /// Resolves and loads one import, returning the imported module's index.
+    /** Resolves and loads one import, returning the imported module's index. */
     fn resolve(&mut self, from: usize, statement: &ImportStatement) -> Option<usize> {
         let span = statement.path_span;
         let text = statement.path.as_str();
         let module = &self.modules[from];
-        // In the sandbox the program is a single file: nothing else is read
-        // for it, so that no error shows another file's lines.
+        /*
+        In the sandbox the program is a single file: nothing else is read
+        for it, so that no error shows another file's lines.
+        */
         if self.sandbox && !module.standard && !text.starts_with("standard/") {
             self.diagnostics.push(
                 Diagnostic::error(
@@ -489,8 +509,10 @@ impl Loader<'_> {
             return None;
         }
         let path = root.join(&relative);
-        // Spelling is checked first so the result is the same on
-        // case-sensitive and case-insensitive file systems.
+        /*
+        Spelling is checked first so the result is the same on
+        case-sensitive and case-insensitive file systems.
+        */
         if let Some(actual) = spelling_mismatch(&root, &relative) {
             self.diagnostics.push(
                 Diagnostic::error("E_IMPORT_CASE", format!("`{text}` does not match the file's spelling on disk"))
@@ -555,7 +577,7 @@ impl Loader<'_> {
         true
     }
 
-    /// Reports the first import cycle; returns false when there is one.
+    /** Reports the first import cycle; returns false when there is one. */
     fn check_cycles(&mut self) -> bool {
         #[derive(Clone, Copy, PartialEq)]
         enum Mark {
@@ -627,8 +649,10 @@ impl Loader<'_> {
     }
 }
 
-/// When a path exists but some component's spelling differs only in case,
-/// returns the spelling on disk.
+/**
+When a path exists but some component's spelling differs only in case,
+returns the spelling on disk.
+*/
 fn spelling_mismatch(root: &Path, relative: &str) -> Option<String> {
     let mut directory = root.to_path_buf();
     let mut actual = Vec::new();

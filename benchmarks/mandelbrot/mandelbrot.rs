@@ -1,5 +1,7 @@
-// Mandelbrot: count the points of a size by size grid over the plane that
-// stay in the Mandelbrot set for 50 steps.
+/*
+Mandelbrot: count the points of a size by size grid over the plane that
+stay in the Mandelbrot set for 50 steps.
+*/
 
 fn inside(cr: f64, ci: f64) -> bool {
     let (mut zr, mut zi) = (0.0f64, 0.0f64);

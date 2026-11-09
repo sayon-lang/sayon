@@ -1,10 +1,12 @@
-//! Native code generation.
-//!
-//! The IR is translated to LLVM IR text, which clang compiles and links with
-//! the Sayon runtime library into a standalone executable. Going through
-//! textual IR keeps the compiler independent of LLVM's C++ libraries; only a
-//! clang installation is needed at build time, and nothing is needed to run
-//! the produced program.
+/*!
+Native code generation.
+
+The IR is translated to LLVM IR text, which clang compiles and links with
+the Sayon runtime library into a standalone executable. Going through
+textual IR keeps the compiler independent of LLVM's C++ libraries; only a
+clang installation is needed at build time, and nothing is needed to run
+the produced program.
+*/
 
 pub mod android;
 mod coroutines;
@@ -16,52 +18,59 @@ pub mod web;
 pub mod windows;
 mod zip;
 
-pub use emit::Codegen;
-
+use emit::Codegen;
 use sayon_ir::Module;
 use sayon_syntax::SourceMap;
 use sayon_target::Target;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Produces the LLVM IR text for a program, in the dialect of the LLVM that
-/// compiles it.
+/**
+Produces the LLVM IR text for a program, in the dialect of the LLVM that
+compiles it.
+*/
 pub fn emit_llvm(module: &Module, sources: &SourceMap, dialect: Dialect) -> String {
     Codegen::new(module, sources, dialect).emit()
 }
 
-/// Whether the program's IR holds coroutines, whose form depends on the
-/// LLVM version (see [`Toolchain::dialect`]).
+/**
+Whether the program's IR holds coroutines, whose form depends on the
+LLVM version (see [`Toolchain::dialect`]).
+*/
 pub fn uses_coroutines(module: &Module) -> bool {
     coroutines::needed(module)
 }
 
-/// What differs in the IR that one LLVM version accepts and another does
-/// not.
+/**
+What differs in the IR that one LLVM version accepts and another does
+not.
+*/
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Dialect {
-    /// `llvm.coro.end` gives nothing, as in newer LLVM, rather than whether
-    /// it ended the coroutine's first part.
+    /**
+    `llvm.coro.end` gives nothing, as in newer LLVM, rather than whether
+    it ended the coroutine's first part.
+    */
     pub coroutine_end_void: bool,
 }
 
-/// What linking makes of a program.
+/** What linking makes of a program. */
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Product {
-    /// An executable, or for WebAssembly a module.
+    /** An executable, or for WebAssembly a module. */
     Executable,
-    /// The shared library an Android app's package holds (see `android`).
+    /** The shared library an Android app's package holds (see `android`). */
     AppLibrary,
 }
 
-/// External tools and libraries needed to link a program for a target.
+/** External tools and libraries needed to link a program for a target. */
 pub struct Toolchain {
     pub clang: PathBuf,
     pub runtime: PathBuf,
     pub target: &'static Target,
 }
 
-/// The file name of the runtime library for a target.
+/** The file name of the runtime library for a target. */
 fn runtime_file(target: &Target) -> &'static str {
     if target.platform == "windows" {
         "sayon_runtime.lib"
@@ -70,22 +79,26 @@ fn runtime_file(target: &Target) -> &'static str {
     }
 }
 
-/// The files of WASI's C library that a WASI program links with, kept next
-/// to the runtime built for WASI: the startup code of a program that runs
-/// once, and the library itself.
+/**
+The files of WASI's C library that a WASI program links with, kept next
+to the runtime built for WASI: the startup code of a program that runs
+once, and the library itself.
+*/
 pub const WASI_C_LIBRARY: &[&str] = &["crt1-command.o", "libc.a"];
 
 impl Toolchain {
-    /// Finds clang and the runtime library for `target`. `exe_dir` is the
-    /// directory of the running `sayon` executable. This computer's own
-    /// runtime is looked up next to it and in `../lib`, and another
-    /// target's in `../lib/<triple>`: an installation's `lib`, or for a
-    /// development build in `target/<profile>`, `target/lib`.
-    /// `SAYON_CLANG` and, for this computer's target, `SAYON_RUNTIME_LIB`
-    /// override the search. Android's programs are compiled by the NDK's
-    /// clang, which knows Android's C library; those for Linux or Windows of
-    /// another processor need that processor's C library where clang finds
-    /// it (see `linux` and `windows`).
+    /**
+    Finds clang and the runtime library for `target`. `exe_dir` is the
+    directory of the running `sayon` executable. This computer's own
+    runtime is looked up next to it and in `../lib`, and another
+    target's in `../lib/<triple>`: an installation's `lib`, or for a
+    development build in `target/<profile>`, `target/lib`.
+    `SAYON_CLANG` and, for this computer's target, `SAYON_RUNTIME_LIB`
+    override the search. Android's programs are compiled by the NDK's
+    clang, which knows Android's C library; those for Linux or Windows of
+    another processor need that processor's C library where clang finds
+    it (see `linux` and `windows`).
+    */
     pub fn locate(exe_dir: Option<&Path>, target: &'static Target) -> Result<Toolchain, String> {
         let clang = if target.platform == "android" {
             android::Sdk::locate(target)?.clang()?
@@ -160,14 +173,16 @@ impl Toolchain {
         })
     }
 
-    /// The dialect of this clang's LLVM.
+    /** The dialect of this clang's LLVM. */
     pub fn dialect(&self) -> Dialect {
         dialect(&self.clang)
     }
 }
 
-/// The clang to compile with: `SAYON_CLANG`, or the first on `PATH`, or on
-/// Windows the one in LLVM's default place.
+/**
+The clang to compile with: `SAYON_CLANG`, or the first on `PATH`, or on
+Windows the one in LLVM's default place.
+*/
 pub fn clang() -> Option<PathBuf> {
     match std::env::var_os("SAYON_CLANG") {
         Some(path) => Some(PathBuf::from(path)),
@@ -175,15 +190,19 @@ pub fn clang() -> Option<PathBuf> {
     }
 }
 
-/// The dialect of a clang's LLVM, found by having it read a small module,
-/// since the form of an intrinsic changed between versions. Older LLVM
-/// checks the form of `llvm.coro.end` only where it is called; newer LLVM
-/// rejects the older form already in its declaration.
+/**
+The dialect of a clang's LLVM, found by having it read a small module,
+since the form of an intrinsic changed between versions. Older LLVM
+checks the form of `llvm.coro.end` only where it is called; newer LLVM
+rejects the older form already in its declaration.
+*/
 pub fn dialect(clang: &Path) -> Dialect {
     use std::io::Write;
     use std::process::Stdio;
-    // Read and checked only: LLVM IR comes out, not machine code, which a
-    // coroutine's end outside a coroutine does not make.
+    /*
+    Read and checked only: LLVM IR comes out, not machine code, which a
+    coroutine's end outside a coroutine does not make.
+    */
     let accepts = |declaration: &str| {
         let child = Command::new(clang)
             .args(["-x", "ir", "-S", "-emit-llvm", "-o", "-", "-"])
@@ -228,28 +247,34 @@ fn find_clang() -> Option<PathBuf> {
     None
 }
 
-/// System libraries the runtime needs, per target. A WASI program's C
-/// library is linked by name, as the files of [`WASI_C_LIBRARY`].
+/**
+System libraries the runtime needs, per target. A WASI program's C
+library is linked by name, as the files of [`WASI_C_LIBRARY`].
+*/
 fn system_libraries(target: &Target) -> &'static [&'static str] {
     match target.platform {
-        // Windows of `standard/graphics` are `user32`'s, drawn with `gdi32`.
+        /* Windows of `standard/graphics` are `user32`'s, drawn with `gdi32`. */
         "windows" => &[
             "kernel32", "ntdll", "userenv", "ws2_32", "dbghelp", "advapi32", "bcrypt", "user32",
             "gdi32",
         ],
         "macos" => &["System"],
         "wasi" | "web" => &[],
-        // Android's C library holds threads itself; an app's activity and
-        // the log are Android's own libraries.
+        /*
+        Android's C library holds threads itself; an app's activity and
+        the log are Android's own libraries.
+        */
         "android" => &["log", "android", "dl", "m"],
         _ => &["pthread", "dl", "m"],
     }
 }
 
-/// The libraries of the C functions a program calls, as the linker knows
-/// them; a library none of whose functions are called, as in a platform
-/// branch for another system, is left out. The C runtime is linked already,
-/// but on Windows its `printf` and kin are in a library of their own.
+/**
+The libraries of the C functions a program calls, as the linker knows
+them; a library none of whose functions are called, as in a platform
+branch for another system, is left out. The C runtime is linked already,
+but on Windows its `printf` and kin are in a library of their own.
+*/
 pub fn foreign_libraries(module: &Module) -> Vec<String> {
     let mut libraries: Vec<String> = Vec::new();
     for id in module.called_foreign() {
@@ -269,8 +294,10 @@ pub fn foreign_libraries(module: &Module) -> Vec<String> {
     libraries
 }
 
-/// Compiles LLVM IR and links it with the runtime and `libraries` into
-/// `output`, as `product`.
+/**
+Compiles LLVM IR and links it with the runtime and `libraries` into
+`output`, as `product`.
+*/
 pub fn link(
     toolchain: &Toolchain,
     ir_path: &Path,
@@ -288,21 +315,25 @@ pub fn link(
     }
     command.arg(ir_path).arg(&toolchain.runtime);
     if target.platform == "wasi" {
-        // Clang's own WASI setup wants a WASI sysroot and its compiler-rt;
-        // the C library lies next to the runtime instead, and the runtime
-        // holds the compiler's helper functions.
+        /*
+        Clang's own WASI setup wants a WASI sysroot and its compiler-rt;
+        the C library lies next to the runtime instead, and the runtime
+        holds the compiler's helper functions.
+        */
         let directory = toolchain.runtime.parent().unwrap_or(Path::new("."));
         command.arg("-nostdlib");
         for name in WASI_C_LIBRARY {
             command.arg(directory.join(name));
         }
-        // The stack lies in the program's memory: 8 MiB, as on Linux.
+        /* The stack lies in the program's memory: 8 MiB, as on Linux. */
         command.arg("-Wl,-z,stack-size=8388608");
     }
     if target.platform == "web" {
-        // A page's module has no C library and no start of its own: its
-        // glue calls what it exports, and gives the host functions the
-        // runtime imports (see `web`).
+        /*
+        A page's module has no C library and no start of its own: its
+        glue calls what it exports, and gives the host functions the
+        runtime imports (see `web`).
+        */
         command.arg("-nostdlib").arg("-Wl,--no-entry");
         for export in web::EXPORTS {
             command.arg(format!("-Wl,--export={export}"));
@@ -310,12 +341,16 @@ pub fn link(
         command.arg("-Wl,-z,stack-size=8388608");
     }
     if target.platform == "android" {
-        // Segments fit pages of 16 KiB, which newer devices use, as well as
-        // those of 4 KiB.
+        /*
+        Segments fit pages of 16 KiB, which newer devices use, as well as
+        those of 4 KiB.
+        */
         command.arg("-Wl,-z,max-page-size=16384");
         if product == Product::AppLibrary {
-            // The activity starts the program through the runtime's
-            // entry, which nothing in the program calls.
+            /*
+            The activity starts the program through the runtime's
+            entry, which nothing in the program calls.
+            */
             command
                 .arg("-shared")
                 .arg("-Wl,-soname,libmain.so")
@@ -327,15 +362,19 @@ pub fn link(
         .arg(output)
         .arg(if optimize { "-O2" } else { "-O0" })
         .arg("-Wno-override-module")
-        // Should clang fail on the program's IR, a report that tried to
-        // preprocess each input, libraries too, would only take long.
+        /*
+        Should clang fail on the program's IR, a report that tried to
+        preprocess each input, libraries too, would only take long.
+        */
         .arg("-fno-crash-diagnostics");
     if target.platform == "windows" {
         command.arg("-fuse-ld=lld");
     }
-    // What nothing in the program reaches is left out, such as the
-    // runtime's primitives it never calls. LLVM's linker does so already
-    // for Windows and WebAssembly; the others are asked to.
+    /*
+    What nothing in the program reaches is left out, such as the
+    runtime's primitives it never calls. LLVM's linker does so already
+    for Windows and WebAssembly; the others are asked to.
+    */
     match target.platform {
         "linux" | "android" => {
             command.arg("-Wl,--gc-sections");

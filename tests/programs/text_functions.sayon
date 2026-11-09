@@ -1,5 +1,7 @@
-# Splitting, joining, and searching text, which compiled programs do with
-# functions of their own, and dictionary lookups after entries move.
+##
+Splitting, joining, and searching text, which compiled programs do with
+functions of their own, and dictionary lookups after entries move.
+##
 
 strings = import("standard/strings.sayon")
 
@@ -16,8 +18,10 @@ function main()
         strings.split(text, "")
     catch problem
         print(problem.code, problem.message)
-    # A dictionary remembers its last lookup; removing entries moves the
-    # later ones, and the answers must stay right.
+    ##
+    A dictionary remembers its last lookup; removing entries moves the
+    later ones, and the answers must stay right.
+    ##
     counts: Dict<string, integer> = []
     for word in ["a", "b", "c", "d"]
         counts[word] = length(word)

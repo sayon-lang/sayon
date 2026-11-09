@@ -1,4 +1,4 @@
-//! Diagnostics with stable codes and a plain-text renderer.
+/*! Diagnostics with stable codes and a plain-text renderer. */
 
 use crate::source::{SourceMap, Span};
 use std::fmt::Write as _;
@@ -98,7 +98,7 @@ impl Diagnostic {
     }
 }
 
-/// Collects diagnostics while a phase runs.
+/** Collects diagnostics while a phase runs. */
 #[derive(Default, Debug)]
 pub struct Diagnostics {
     items: Vec<Diagnostic>,
@@ -137,7 +137,7 @@ impl Diagnostics {
         self.items
     }
 
-    /// Orders diagnostics by file and position so output is deterministic.
+    /** Orders diagnostics by file and position so output is deterministic. */
     pub fn sort(&mut self) {
         self.items.sort_by_key(|d| {
             let span = d.primary_span();
@@ -184,7 +184,7 @@ impl Palette {
 
 const TAB_WIDTH: usize = 4;
 
-/// Renders a diagnostic in the familiar `error[CODE]: message` layout.
+/** Renders a diagnostic in the familiar `error[CODE]: message` layout. */
 pub fn render(diagnostic: &Diagnostic, sources: &SourceMap, color: bool) -> String {
     let palette = Palette { enabled: color };
     let mut out = String::new();
@@ -196,7 +196,7 @@ pub fn render(diagnostic: &Diagnostic, sources: &SourceMap, color: bool) -> Stri
         palette.bold(&format!(": {}", diagnostic.message))
     );
 
-    // Group labels by file, primary file first.
+    /* Group labels by file, primary file first. */
     let mut labels: Vec<&Label> = diagnostic.labels.iter().collect();
     labels.sort_by_key(|label| (!label.primary, label.span.file, label.span.start));
     let mut files = Vec::new();

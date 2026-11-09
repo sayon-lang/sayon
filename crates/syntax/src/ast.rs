@@ -1,7 +1,9 @@
-//! Abstract syntax tree.
-//!
-//! Every expression carries an [`ExprId`] that later phases use as a key for
-//! side tables (types, ownership decisions, resolved names).
+/*!
+Abstract syntax tree.
+
+Every expression carries an [`ExprId`] that later phases use as a key for
+side tables (types, ownership decisions, resolved names).
+*/
 
 use crate::source::{FileId, Span};
 
@@ -18,8 +20,6 @@ pub struct Ident {
 pub struct Module {
     pub file: FileId,
     pub stmts: Vec<Stmt>,
-    /// One past the largest expression id allocated in this module.
-    pub expr_count: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -36,7 +36,7 @@ pub struct Stmt {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Visibility {
-    /// No modifier: public for module-level items.
+    /** No modifier: public for module-level items. */
     Default,
     Public,
     Private,
@@ -44,11 +44,11 @@ pub enum Visibility {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeclKind {
-    /// `variable name = value`
+    /** `variable name = value` */
     Variable,
-    /// `constant NAME = value`
+    /** `constant NAME = value` */
     Constant,
-    /// `name: Type = value`
+    /** `name: Type = value` */
     Annotated,
 }
 
@@ -70,7 +70,7 @@ pub enum ParamMode {
 
 #[derive(Clone, Debug)]
 pub struct Param {
-    /// Explicit `update` or `own`; `None` means the default for the parameter.
+    /** Explicit `update` or `own`; `None` means the default for the parameter. */
     pub mode: Option<(ParamMode, Span)>,
     pub name: Ident,
     pub ty: Option<TypeExpr>,
@@ -81,30 +81,36 @@ pub struct Param {
 #[derive(Clone, Debug)]
 pub struct Function {
     pub visibility: Visibility,
-    /// `None` for function literals.
+    /** `None` for function literals. */
     pub name: Option<Ident>,
     pub generics: Vec<Ident>,
     pub params: Vec<Param>,
     pub ret: Option<TypeExpr>,
     pub body: Block,
-    /// Span of the header, from `function` to the end of the signature.
+    /** Span of the header, from `function` to the end of the signature. */
     pub header_span: Span,
-    /// `unsafe function`: its body is unsafe code, and it can only be called
-    /// from unsafe code.
+    /**
+    `unsafe function`: its body is unsafe code, and it can only be called
+    from unsafe code.
+    */
     pub is_unsafe: bool,
-    /// `finally function`: what runs when a value of its parameter's type
-    /// is destroyed.
+    /**
+    `finally function`: what runs when a value of its parameter's type
+    is destroyed.
+    */
     pub is_finally: bool,
 }
 
-/// A C function declared in a `foreign` block: a signature without a body.
+/** A C function declared in a `foreign` block: a signature without a body. */
 #[derive(Clone, Debug)]
 pub struct ForeignFunction {
     pub visibility: Visibility,
     pub name: Ident,
     pub params: Vec<Param>,
-    /// Written with `...` after the parameters: further arguments of any
-    /// C type follow them.
+    /**
+    Written with `...` after the parameters: further arguments of any
+    C type follow them.
+    */
     pub variadic: bool,
     pub ret: Option<TypeExpr>,
     pub span: Span,
@@ -151,26 +157,30 @@ pub struct Pattern {
 pub enum PatternKind {
     Wildcard,
     Literal(Expr),
-    /// A binding or a payload-free variant, decided during checking.
+    /** A binding or a payload-free variant, decided during checking. */
     Name(Ident),
-    /// A variant with a pattern for each field, or a structure with a
-    /// pattern for each field in declaration order. `qualifier` holds the
-    /// names before the last dot of `Shape.circle(r)` or
-    /// `geometry.Point(x, y)`; a qualified name without parentheses is a
-    /// variant without fields.
+    /**
+    A variant with a pattern for each field, or a structure with a
+    pattern for each field in declaration order. `qualifier` holds the
+    names before the last dot of `Shape.circle(r)` or
+    `geometry.Point(x, y)`; a qualified name without parentheses is a
+    variant without fields.
+    */
     Variant {
         qualifier: Vec<Ident>,
         name: Ident,
         args: Vec<Pattern>,
     },
-    /// A variant or structure with patterns for the named fields; the other
-    /// fields match anything.
+    /**
+    A variant or structure with patterns for the named fields; the other
+    fields match anything.
+    */
     Fields {
         qualifier: Vec<Ident>,
         name: Ident,
         fields: Vec<(Ident, Pattern)>,
     },
-    /// Matches when any of the alternatives does.
+    /** Matches when any of the alternatives does. */
     Or(Vec<Pattern>),
 }
 
@@ -210,8 +220,10 @@ pub enum StmtKind {
         catch: Option<CatchClause>,
         finally: Option<Block>,
     },
-    /// `type Name = [fields]`, or with `foreign` first, a structure laid
-    /// out as C lays it out, which C functions take and give.
+    /**
+    `type Name = [fields]`, or with `foreign` first, a structure laid
+    out as C lays it out, which C functions take and give.
+    */
     TypeDecl {
         visibility: Visibility,
         foreign: bool,
@@ -229,22 +241,24 @@ pub enum StmtKind {
         scrutinee: Expr,
         arms: Vec<MatchArm>,
     },
-    /// `test "description"` followed by a block, run by `sayon test`.
+    /** `test "description"` followed by a block, run by `sayon test`. */
     Test {
         name: String,
         name_span: Span,
         body: Block,
     },
-    /// `foreign "library"` followed by the C functions it declares.
+    /** `foreign "library"` followed by the C functions it declares. */
     Foreign {
         library: String,
         library_span: Span,
         functions: Vec<ForeignFunction>,
     },
-    /// `unsafe` followed by a block of unsafe code.
+    /** `unsafe` followed by a block of unsafe code. */
     Unsafe(Block),
-    /// Syntax recognised so it can be reported precisely, but not parsed further
-    /// (for example `foreign` blocks before the systems milestone).
+    /**
+    Syntax recognised so it can be reported precisely, but not parsed further
+    (for example `foreign` blocks before the systems milestone).
+    */
     Unavailable {
         feature: &'static str,
         milestone: &'static str,
@@ -330,18 +344,18 @@ pub enum ExprKind {
     Boolean(bool),
     Nothing,
     Name(Ident),
-    /// `[a, b]`, including the empty literal `[]`.
+    /** `[a, b]`, including the empty literal `[]`. */
     Array(Vec<Expr>),
-    /// `["key" = value, ...]`
+    /** `["key" = value, ...]` */
     Dict(Vec<(Expr, Expr)>),
-    /// `[field = value, ...]`
+    /** `[field = value, ...]` */
     Record(Vec<(Ident, Expr)>),
     Call {
         callee: Box<Expr>,
         generic_args: Vec<TypeExpr>,
         args: Vec<Expr>,
     },
-    /// `Point(x = 1.0, y = 2.0)`: a call whose arguments name fields.
+    /** `Point(x = 1.0, y = 2.0)`: a call whose arguments name fields. */
     Construct {
         callee: Box<Expr>,
         generic_args: Vec<TypeExpr>,
@@ -364,18 +378,18 @@ pub enum ExprKind {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
-    /// `value is error`
+    /** `value is error` */
     IsError(Box<Expr>),
-    /// `try expression`
+    /** `try expression` */
     TryExpr(Box<Expr>),
-    /// `unsafe expression`: unsafe code within one expression.
+    /** `unsafe expression`: unsafe code within one expression. */
     Unsafe(Box<Expr>),
     Function(Box<Function>),
     Import {
         path: String,
         path_span: Span,
     },
-    /// Placeholder produced after a syntax error.
+    /** Placeholder produced after a syntax error. */
     Error,
 }
 
@@ -388,13 +402,13 @@ pub struct TypeExpr {
 #[derive(Clone, Debug)]
 pub enum TypeExprKind {
     Named {
-        /// The import alias in `geometry.Point`.
+        /** The import alias in `geometry.Point`. */
         module: Option<Ident>,
         name: Ident,
         args: Vec<TypeExpr>,
     },
     Union(Vec<TypeExpr>),
-    /// `function(integer, own string) -> boolean`
+    /** `function(integer, own string) -> boolean` */
     Function {
         params: Vec<(Option<ParamMode>, TypeExpr)>,
         ret: Option<Box<TypeExpr>>,

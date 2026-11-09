@@ -1,14 +1,18 @@
-//! Linux and macOS integration, for the current user: Sayon lives in
-//! `~/.local/share/sayon` and a link in `~/.local/bin` puts `sayon` on the
-//! usual per-user `PATH`. Shell profiles are not edited; when that folder is
-//! not on `PATH`, the installer says how to add it.
+/*!
+Linux and macOS integration, for the current user: Sayon lives in
+`~/.local/share/sayon` and a link in `~/.local/bin` puts `sayon` on the
+usual per-user `PATH`. Shell profiles are not edited; when that folder is
+not on `PATH`, the installer says how to add it.
+*/
 
 use std::path::{Path, PathBuf};
 
 pub const EXECUTABLE_SUFFIX: &str = "";
 pub const UNINSTALLER: &str = "uninstall";
-/// Where the system lists installed programs, for removing them; here the
-/// uninstaller is the only way.
+/**
+Where the system lists installed programs, for removing them; here the
+uninstaller is the only way.
+*/
 pub const APP_SETTINGS: Option<&str> = None;
 
 fn home() -> Option<PathBuf> {
@@ -96,8 +100,10 @@ pub fn owns_console() -> bool {
     false
 }
 
-/// Programs in `bin` must be executable; archives made on Windows do not
-/// record permissions.
+/**
+Programs in `bin` must be executable; archives made on Windows do not
+record permissions.
+*/
 pub fn make_executable_if_needed(path: &Path, relative: &str) {
     use std::os::unix::fs::PermissionsExt;
     if relative.starts_with("bin/") || relative == UNINSTALLER {
@@ -105,13 +111,15 @@ pub fn make_executable_if_needed(path: &Path, relative: &str) {
     }
 }
 
-/// A running program can be deleted here, so nothing needs moving.
+/** A running program can be deleted here, so nothing needs moving. */
 pub fn move_running_uninstaller(_prefix: &Path) -> Option<PathBuf> {
     None
 }
 
-/// The running uninstaller goes at once, and then its folder, which held
-/// nothing else.
+/**
+The running uninstaller goes at once, and then its folder, which held
+nothing else.
+*/
 pub fn delete_after_exit(file: &Path, folder: Option<&Path>) {
     let _ = std::fs::remove_file(file);
     if let Some(folder) = folder {

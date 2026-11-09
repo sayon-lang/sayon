@@ -1,36 +1,40 @@
-# TCP connections and listeners, UDP datagrams, TLS, and an HTTP client.
-#
-#     network = import("standard/network.sayon")
-#
-#     response = network.get("https://example.com/")
-#     print(response.status, response.text())
-#
-#     connection = network.connect("localhost", 7000)
-#     connection.write_line("hello")
-#     print(connection.read_line())
-#     connection.close()
-#
-# Waiting for the network, to connect, for data that has not arrived, or
-# for the other side to take what was sent, lets other tasks run (see
-# standard/threads). Connections, listeners, and datagram sockets can each
-# have a timeout: an operation of theirs that waits longer fails with
-# TimeoutError. The network's failures are ConnectionError (refused,
-# closed by the other side, unreachable), AddressError (a host without an
-# address, an address in use), TimeoutError, and NetworkError for the
-# rest; TLS adds TlsError, and HTTP HttpError.
-#
-# TLS comes from the system, which decides which servers' certificates it
-# trusts: SChannel and the certificate store on Windows, OpenSSL on Linux,
-# and in an Android app the platform's own TLS. A connection from
-# `connect_secure`, or made secure with `connection.secure(name)`, reads
-# and writes as before, and its bytes travel encrypted.
+##
+TCP connections and listeners, UDP datagrams, TLS, and an HTTP client.
+
+    network = import("standard/network.sayon")
+
+    response = network.get("https://example.com/")
+    print(response.status, response.text())
+
+    connection = network.connect("localhost", 7000)
+    connection.write_line("hello")
+    print(connection.read_line())
+    connection.close()
+
+Waiting for the network, to connect, for data that has not arrived, or
+for the other side to take what was sent, lets other tasks run (see
+standard/threads). Connections, listeners, and datagram sockets can each
+have a timeout: an operation of theirs that waits longer fails with
+TimeoutError. The network's failures are ConnectionError (refused,
+closed by the other side, unreachable), AddressError (a host without an
+address, an address in use), TimeoutError, and NetworkError for the
+rest; TLS adds TlsError, and HTTP HttpError.
+
+TLS comes from the system, which decides which servers' certificates it
+trusts: SChannel and the certificate store on Windows, OpenSSL on Linux,
+and in an Android app the platform's own TLS. A connection from
+`connect_secure`, or made secure with `connection.secure(name)`, reads
+and writes as before, and its bytes travel encrypted.
+##
 
 io = import("standard/io.sayon")
 strings = import("standard/strings.sayon")
 time = import("standard/time.sayon")
 
-# A host and a port. The host is a name, or a numeric address such as
-# "127.0.0.1" or "::1".
+##
+A host and a port. The host is a name, or a numeric address such as
+"127.0.0.1" or "::1".
+##
 type Address = [host: string, port: integer]
 
 # The address as text, as in "127.0.0.1:80", or "[::1]:80".
@@ -39,34 +43,42 @@ function address_text(address: Address) -> string
         return "[{address.host}]:{address.port}"
     return "{address.host}:{address.port}"
 
-# The numeric addresses of a host, in the order the system prefers them.
-# Fails with AddressError for a host that has none. Finding them waits for
-# the system, without letting other tasks run.
+##
+The numeric addresses of a host, in the order the system prefers them.
+Fails with AddressError for a host that has none. Finding them waits for
+the system, without letting other tasks run.
+##
 function resolve(host: string) -> Array<string>
     return host_resolve(host)
 
 # ----- connections -----------------------------------------------------------------
 
-# A TCP connection, from `connect` or from a listener's `accept`. It is read
-# and written like a file of standard/io, in lines, text, and bytes, and
-# what it reads is what the other side has sent so far. `close()` waits
-# for what was written to go, and closes it; a connection that is not
-# closed is closed when it is no longer used. A connection has one owner,
-# so it cannot be cloned.
+##
+A TCP connection, from `connect` or from a listener's `accept`. It is read
+and written like a file of standard/io, in lines, text, and bytes, and
+what it reads is what the other side has sent so far. `close()` waits
+for what was written to go, and closes it; a connection that is not
+closed is closed when it is no longer used. A connection has one owner,
+so it cannot be cloned.
+##
 type Connection = [stream: HostStream, line_limit: integer]
 
-# Connects to a port of a host, on the first of its addresses that answers.
-# Fails with ConnectionError when nothing accepts the connection,
-# AddressError when the host has no address, and TimeoutError after
-# `timeout`.
+##
+Connects to a port of a host, on the first of its addresses that answers.
+Fails with ConnectionError when nothing accepts the connection,
+AddressError when the host has no address, and TimeoutError after
+`timeout`.
+##
 function connect(host: string, port: integer, timeout = time.seconds(30)) -> Connection
     stream = host_connect(host, port, timeout.nanoseconds)
     host_connect_finish(stream)
     return Connection(stream = stream, line_limit = io.LINE_LIMIT)
 
-# Connects as `connect` does, and starts TLS with the host, which must
-# show a certificate for its name that the system trusts. Fails as
-# `connect` does, and with TlsError when TLS fails.
+##
+Connects as `connect` does, and starts TLS with the host, which must
+show a certificate for its name that the system trusts. Fails as
+`connect` does, and with TlsError when TLS fails.
+##
 function connect_secure(host: string, port: integer, timeout = time.seconds(30)) -> Connection
     connection = connect(host, port, timeout)
     connection.set_timeout(timeout)
@@ -74,16 +86,20 @@ function connect_secure(host: string, port: integer, timeout = time.seconds(30))
     connection.set_timeout(time.seconds(0))
     return connection
 
-# Starts TLS on the connection, with the server named `server`: what is
-# read and written after it is encrypted. The system must trust the
-# server's certificate, which must be for that name; otherwise it fails
-# with TlsError. A protocol that starts in plain text and then turns to
-# TLS calls it when the other side agrees to.
+##
+Starts TLS on the connection, with the server named `server`: what is
+read and written after it is encrypted. The system must trust the
+server's certificate, which must be for that name; otherwise it fails
+with TlsError. A protocol that starts in plain text and then turns to
+TLS calls it when the other side agrees to.
+##
 function connection_secure(update connection: Connection, server: string)
     host_secure(connection.stream, server)
 
-# The next line without its line ending (LF or CRLF), or nothing once the
-# other side has finished sending.
+##
+The next line without its line ending (LF or CRLF), or nothing once the
+other side has finished sending.
+##
 function connection_read_line(update connection: Connection) -> string or nothing
     return host_stream_read_line(connection.stream, connection.line_limit)
 
@@ -95,13 +111,17 @@ function connection_lines(update connection: Connection) -> io.Lines
 function connection_read(update connection: Connection) -> string
     return host_stream_read(connection.stream)
 
-# Up to `count` bytes: as many as have arrived, waiting for one when none
-# has. None once the other side has finished sending.
+##
+Up to `count` bytes: as many as have arrived, waiting for one when none
+has. None once the other side has finished sending.
+##
 function connection_read_bytes(update connection: Connection, count: integer) -> Array<byte>
     return host_stream_read_bytes(connection.stream, count)
 
-# `count` bytes, waiting until they have all arrived, however the other
-# side sent them; fewer only when it finishes sending first.
+##
+`count` bytes, waiting until they have all arrived, however the other
+side sent them; fewer only when it finishes sending first.
+##
 function connection_read_exactly(update connection: Connection, count: integer) -> Array<byte>
     return host_stream_read_exactly(connection.stream, count)
 
@@ -121,13 +141,17 @@ function connection_write_bytes(update connection: Connection, bytes: Array<byte
 function connection_flush(update connection: Connection)
     host_stream_flush(connection.stream)
 
-# Finishes sending: the other side reads to the end of what was written,
-# and this side can still read.
+##
+Finishes sending: the other side reads to the end of what was written,
+and this side can still read.
+##
 function connection_finish_sending(update connection: Connection)
     host_finish_sending(connection.stream)
 
-# How long each read or write may wait; zero for no limit, which is how a
-# connection starts.
+##
+How long each read or write may wait; zero for no limit, which is how a
+connection starts.
+##
 function connection_set_timeout(update connection: Connection, timeout: time.Duration)
     host_socket_timeout(connection.stream, timeout.nanoseconds)
 
@@ -148,9 +172,11 @@ function connection_close(own connection: Connection)
 # A listener for connections to a port of this computer, from `listen`.
 type Listener = [stream: HostStream]
 
-# Listens on a port: 0 picks a free one, which `address()` tells. A host of
-# "127.0.0.1" or "localhost" accepts connections only from this computer,
-# and "0.0.0.0" from any. Fails with AddressError when the port is in use.
+##
+Listens on a port: 0 picks a free one, which `address()` tells. A host of
+"127.0.0.1" or "localhost" accepts connections only from this computer,
+and "0.0.0.0" from any. Fails with AddressError when the port is in use.
+##
 function listen(host: string, port: integer) -> Listener
     return Listener(stream = host_listen(host, port))
 
@@ -162,8 +188,10 @@ function listener_accept(update listener: Listener) -> Connection
 function listener_address(listener: Listener) -> Address
     return parse_address(host_local_address(listener.stream))
 
-# How long `accept` may wait; zero for no limit, which is how a listener
-# starts.
+##
+How long `accept` may wait; zero for no limit, which is how a listener
+starts.
+##
 function listener_set_timeout(update listener: Listener, timeout: time.Duration)
     host_socket_timeout(listener.stream, timeout.nanoseconds)
 
@@ -173,8 +201,10 @@ function listener_close(own listener: Listener)
 
 # ----- datagrams -------------------------------------------------------------------
 
-# A UDP socket, from `bind`, which sends and receives datagrams: messages of
-# bytes, each delivered whole or not at all, in no promised order.
+##
+A UDP socket, from `bind`, which sends and receives datagrams: messages of
+bytes, each delivered whole or not at all, in no promised order.
+##
 type DatagramSocket = [stream: HostStream]
 
 # A datagram received, and where it came from.
@@ -197,8 +227,10 @@ function datagram_socket_receive(update socket: DatagramSocket, size = 65536) ->
 function datagram_socket_address(socket: DatagramSocket) -> Address
     return parse_address(host_local_address(socket.stream))
 
-# How long `receive` and `send` may wait; zero for no limit, which is how a
-# socket starts.
+##
+How long `receive` and `send` may wait; zero for no limit, which is how a
+socket starts.
+##
 function datagram_socket_set_timeout(update socket: DatagramSocket, timeout: time.Duration)
     host_socket_timeout(socket.stream, timeout.nanoseconds)
 
@@ -246,17 +278,21 @@ private function hexadecimal(text: string) -> integer or nothing
 
 # ----- HTTP ------------------------------------------------------------------------
 
-# The answer to an HTTP request: its status (such as 200 or 404) and the
-# text that comes with it, its headers by lowercase name, its body, and the
-# URL that gave it, after any redirects.
+##
+The answer to an HTTP request: its status (such as 200 or 404) and the
+text that comes with it, its headers by lowercase name, its body, and the
+URL that gave it, after any redirects.
+##
 type Response = [status: integer, reason: string, headers: Dict<string, string>, body: Array<byte>, url: string]
 
 # The body as text. Fails with EncodingError when it is not UTF-8.
 function response_text(response: Response) -> string
     return strings.from_bytes(response.body)
 
-# A header's value, by its name in any letter case, or nothing when the
-# response has none of that name.
+##
+A header's value, by its name in any letter case, or nothing when the
+response has none of that name.
+##
 function response_header(response: Response, name: string) -> string or nothing
     key = strings.lower(name)
     if haskey(response.headers, key)
@@ -276,22 +312,24 @@ function post(url: string, body: string, content_type = "text/plain; charset=utf
     headers: Dict<string, string> = ["content-type" = clone(content_type)]
     return request("POST", url, headers, strings.bytes(body))
 
-# Sends an HTTP/1.1 request and gives the response, following up to
-# `redirects` redirects. Each step of connecting, sending, and receiving
-# may wait for `timeout`; a body longer than `limit` bytes fails with
-# HttpError, as do a response that is not HTTP and a URL that is neither
-# `http://` nor `https://`, which goes through TLS. A status that reports a failure, such as 404, is a response
-# like any other; `response.succeeded()` tells it apart.
-#
-# In a web page the browser makes the request, with its `fetch`, and the
-# other tasks run meanwhile. The browser follows redirects itself, up to
-# its own limit, so `redirects` there only tells whether to follow any;
-# `timeout` is how long the wait for the response, and then for each part
-# of its body, may last; and a URL can be relative to the page. The
-# browser keeps a page from reading another site's responses unless that
-# site allows it (CORS), and from setting some headers, such as
-# `user-agent`. A request it could not make fails with NetworkError, with
-# only as much of why as the browser tells.
+##
+Sends an HTTP/1.1 request and gives the response, following up to
+`redirects` redirects. Each step of connecting, sending, and receiving
+may wait for `timeout`; a body longer than `limit` bytes fails with
+HttpError, as do a response that is not HTTP and a URL that is neither
+`http://` nor `https://`, which goes through TLS. A status that reports a failure, such as 404, is a response
+like any other; `response.succeeded()` tells it apart.
+
+In a web page the browser makes the request, with its `fetch`, and the
+other tasks run meanwhile. The browser follows redirects itself, up to
+its own limit, so `redirects` there only tells whether to follow any;
+`timeout` is how long the wait for the response, and then for each part
+of its body, may last; and a URL can be relative to the page. The
+browser keeps a page from reading another site's responses unless that
+site allows it (CORS), and from setting some headers, such as
+`user-agent`. A request it could not make fails with NetworkError, with
+only as much of why as the browser tells.
+##
 function request(method: string, url: string, headers: Dict<string, string> = [], body: Array<byte> = [], timeout = time.seconds(30), redirects = 10, limit = 16_777_216) -> Response
     if platform == "web"
         return fetch(strings.upper(method), url, headers, body, timeout, redirects, limit)
@@ -321,8 +359,10 @@ private function fetch(method: string, url: string, headers: Dict<string, string
         index += 2
     return Response(status = status, reason = clone(head[1]), headers = received, body = host_fetch_body(fetched), url = clone(head[2]))
 
-# A request over a connection of its own, and the ones its redirects lead
-# to.
+##
+A request over a connection of its own, and the ones its redirects lead
+to.
+##
 private function follow(method: string, url: string, headers: Dict<string, string>, body: Array<byte>, timeout: time.Duration, redirects: integer, limit: integer) -> Response
     verb = clone(method)
     current = clone(url)

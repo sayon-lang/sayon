@@ -1,12 +1,14 @@
-# Writes docs/api.md: every export of the standard library, from its own
-# declarations, with the comment above each. Run it from the repository's
-# top folder:
-#
-#     sayon run scripts/api_inventory.sayon
-#     sayon run scripts/api_inventory.sayon -- --check
-#
-# With `--check` it writes nothing, and fails when docs/api.md is not what it
-# would write; `cargo test` runs it so, to keep the page current.
+##
+Writes docs/api.md: every export of the standard library, from its own
+declarations, with the comment above each. Run it from the repository's
+top folder:
+
+    sayon run scripts/api_inventory.sayon
+    sayon run scripts/api_inventory.sayon -- --check
+
+With `--check` it writes nothing, and fails when docs/api.md is not what it
+would write; `cargo test` runs it so, to keep the page current.
+##
 
 filesystem = import("standard/filesystem.sayon")
 io = import("standard/io.sayon")
@@ -16,9 +18,11 @@ strings = import("standard/strings.sayon")
 constant LIBRARY = "stdlib"
 constant PAGE = "docs/api.md"
 
-# An export: its name, what kind of declaration it is, the declaration as
-# written, the first paragraph of the comment above it, and for a method the
-# type it is called on.
+##
+An export: its name, what kind of declaration it is, the declaration as
+written, the first paragraph of the comment above it, and for a method the
+type it is called on.
+##
 type Export = [name: string, kind: string, declaration: string, description: string, owner: string]
 
 type Module = [path: string, summary: string, exports: Array<Export>]
@@ -66,32 +70,87 @@ function snake(name: string) -> string
         first = false
     return strings.join(out, "")
 
-# The names of the types a module declares, its own private ones too, for
-# telling methods.
-function type_names(lines: Array<string>) -> Array<string>
-    out: Array<string> = []
+##
+Whether each line is part of a block comment, its `##` lines among them,
+so that a comment's line starting with a word such as `function` is not
+taken for a declaration.
+##
+function in_blocks(lines: Array<string>) -> Array<boolean>
+    out: Array<boolean> = []
+    inside = false
     for line in lines
-        for prefix in ["type ", "private type ", "foreign type ", "enum ", "private enum "]
-            if strings.starts_with(line, prefix)
-                push(out, identifier(line, length(prefix)))
+        fence = strings.trim(line) == "##"
+        push(out, inside or fence)
+        if fence
+            inside = not inside
     return out
 
-# The comment just above line `position`. Constants written one under
-# another share the comment above the first of them.
-function comment_above(lines: Array<string>, position: integer) -> string
+##
+The names of the types a module declares, its own private ones too, for
+telling methods.
+##
+function type_names(lines: Array<string>, commented: Array<boolean>) -> Array<string>
+    out: Array<string> = []
+    for line_number in range(length(lines))
+        if commented[line_number]
+            continue
+        for prefix in ["type ", "private type ", "foreign type ", "enum ", "private enum "]
+            if strings.starts_with(lines[line_number], prefix)
+                push(out, identifier(lines[line_number], length(prefix)))
+    return out
+
+##
+The text of the comment that ends just above line `end`, line by line: a
+block between `##` lines, or a run of `#` lines without their `#`.
+##
+function comment_lines(lines: Array<string>, end: integer) -> Array<string>
     found: Array<string> = []
+    above = end - 1
+    if above >= 0 and strings.trim(lines[above]) == "##"
+        opening = above - 1
+        while opening >= 0 and strings.trim(lines[opening]) != "##"
+            opening -= 1
+        for line_number in range(opening + 1, above)
+            push(found, clone(lines[line_number]))
+        return found
+    while above >= 0 and strings.starts_with(lines[above], "#")
+        above -= 1
+    for line_number in range(above + 1, end)
+        push(found, comment_text(lines[line_number]))
+    return found
+
+##
+The comment just above line `position`. Constants written one under
+another share the comment above the first of them.
+##
+function comment_above(lines: Array<string>, position: integer) -> string
     top = position
     while top > 0 and strings.starts_with(lines[position], "constant ") and strings.starts_with(lines[top - 1], "constant ")
         top -= 1
-    above = top - 1
-    while above >= 0 and strings.starts_with(lines[above], "#")
-        above -= 1
-    for line_number in range(above + 1, top)
-        push(found, comment_text(lines[line_number]))
-    return paragraph(found)
+    return paragraph(comment_lines(lines, top))
 
-# A declaration as one line: a structure's fields after its name, and an
-# enum's variants.
+##
+The comment a file starts with, line by line: a block between `##` lines,
+or a run of `#` lines without their `#`.
+##
+function heading_lines(lines: Array<string>) -> Array<string>
+    found: Array<string> = []
+    if length(lines) > 0 and strings.trim(lines[0]) == "##"
+        position = 1
+        while position < length(lines) and strings.trim(lines[position]) != "##"
+            push(found, clone(lines[position]))
+            position += 1
+        return found
+    position = 0
+    while position < length(lines) and strings.starts_with(lines[position], "#")
+        push(found, comment_text(lines[position]))
+        position += 1
+    return found
+
+##
+A declaration as one line: a structure's fields after its name, and an
+enum's variants.
+##
 function declaration(lines: Array<string>, position: integer, kind: string) -> string
     header = strings.trim(lines[position])
     if kind == "type" and strings.ends_with(header, "[")
@@ -115,14 +174,13 @@ function declaration(lines: Array<string>, position: integer, kind: string) -> s
 
 function read_module(file: string) -> Module
     lines = strings.lines(io.read_file(filesystem.join(LIBRARY, file)))
-    heading: Array<string> = []
-    position = 0
-    while position < length(lines) and strings.starts_with(lines[position], "#")
-        push(heading, comment_text(lines[position]))
-        position += 1
-    types = type_names(lines)
+    heading = heading_lines(lines)
+    commented = in_blocks(lines)
+    types = type_names(lines, commented)
     exports: Array<Export> = []
     for line_number in range(length(lines))
+        if commented[line_number]
+            continue
         rest = clone(lines[line_number])
         for prefix in ["unsafe ", "foreign "]
             if strings.starts_with(rest, prefix)
@@ -134,8 +192,10 @@ function read_module(file: string) -> Module
         if kind == ""
             continue
         name = identifier(rest, length(kind) + 1)
-        # A method's type is the one its name starts with, the longest such:
-        # `datagram_socket_close` is DatagramSocket's, not Datagram's.
+        ##
+        A method's type is the one its name starts with, the longest such:
+        `datagram_socket_close` is DatagramSocket's, not Datagram's.
+        ##
         owner = ""
         if kind == "function"
             for type_name in types

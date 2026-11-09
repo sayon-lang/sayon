@@ -1,18 +1,20 @@
-//! `sayon explain`: the entries of the error-code reference, `docs/errors.md`,
-//! which is built into the command so explanations work offline.
+/*!
+`sayon explain`: the entries of the error-code reference, `docs/errors.md`,
+which is built into the command so explanations work offline.
+*/
 
 use crate::status;
 
 const REFERENCE: &str = include_str!("../../../docs/errors.md");
 
-/// Every code with an entry, in the order of the reference.
+/** Every code with an entry, in the order of the reference. */
 fn codes() -> impl Iterator<Item = &'static str> {
     REFERENCE
         .lines()
         .filter_map(|line| line.strip_prefix("### "))
 }
 
-/// The text of a code's entry.
+/** The text of a code's entry. */
 fn entry(code: &str) -> Option<&'static str> {
     let heading = format!("\n### {code}\n");
     let start = REFERENCE.find(&heading)? + heading.len();
@@ -25,7 +27,7 @@ fn entry(code: &str) -> Option<&'static str> {
     Some(rest[..end].trim())
 }
 
-/// The entry as terminal text: code blocks are indented instead of fenced.
+/** The entry as terminal text: code blocks are indented instead of fenced. */
 fn render(text: &str) -> String {
     let mut out = String::new();
     let mut in_code = false;
@@ -43,7 +45,7 @@ fn render(text: &str) -> String {
     out
 }
 
-/// Finds a code written in any letter case.
+/** Finds a code written in any letter case. */
 fn lookup(written: &str) -> Option<&'static str> {
     codes().find(|code| code.eq_ignore_ascii_case(written))
 }
@@ -90,8 +92,10 @@ mod tests {
     use std::collections::BTreeSet;
     use std::path::Path;
 
-    /// Diagnostic codes (`E_...`, `W_...`) and runtime error codes
-    /// (`...Error`) written as string literals in the compiler and runtime.
+    /**
+    Diagnostic codes (`E_...`, `W_...`) and runtime error codes
+    (`...Error`) written as string literals in the compiler and runtime.
+    */
     fn codes_in_sources() -> BTreeSet<String> {
         let mut found = BTreeSet::new();
         let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -105,7 +109,7 @@ mod tests {
                     && !path.ends_with("explain.rs")
                 {
                     let text = std::fs::read_to_string(&path).expect("source");
-                    // Each quote followed by a word and another quote.
+                    /* Each quote followed by a word and another quote. */
                     for (start, _) in text.match_indices('"') {
                         let rest = &text[start + 1..];
                         let length = rest

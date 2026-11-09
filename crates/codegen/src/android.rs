@@ -1,36 +1,40 @@
-//! Android apps. A program for Android is a shared library, `libmain.so`,
-//! which the package holds for its processor's ABI, and which Android's own
-//! `NativeActivity` loads, so the package has no Java code at all; the
-//! runtime starts the program when the activity is made (see the runtime's
-//! `android`). Building one takes the official SDK's tools: the NDK's clang
-//! compiles and links the library against Android's C library, `aapt2`
-//! makes the package's manifest from the one written here, the library goes
-//! in stored and aligned to 16 KiB pages, and `apksigner` signs the package
-//! with the debug key Android's tools share.
+/*!
+Android apps. A program for Android is a shared library, `libmain.so`,
+which the package holds for its processor's ABI, and which Android's own
+`NativeActivity` loads, so the package has no Java code at all; the
+runtime starts the program when the activity is made (see the runtime's
+`android`). Building one takes the official SDK's tools: the NDK's clang
+compiles and links the library against Android's C library, `aapt2`
+makes the package's manifest from the one written here, the library goes
+in stored and aligned to 16 KiB pages, and `apksigner` signs the package
+with the debug key Android's tools share.
+*/
 
 use crate::zip;
 use sayon_target::Target;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// The oldest Android a package runs on: 8.0.
+/** The oldest Android a package runs on: 8.0. */
 pub const MIN_API: u32 = 26;
 
-/// The Android a package is made for, whose platform it is built against.
+/** The Android a package is made for, whose platform it is built against. */
 pub const TARGET_API: u32 = 36;
 
-/// The versions of the SDK's packages the tests are checked with, used
-/// when present; otherwise the newest installed.
+/**
+The versions of the SDK's packages the tests are checked with, used
+when present; otherwise the newest installed.
+*/
 pub const NDK_VERSION: &str = "30.0.16248370";
 pub const BUILD_TOOLS_VERSION: &str = "37.0.0";
 
-/// The SDK's packages a build uses.
+/** The SDK's packages a build uses. */
 pub struct Sdk {
     pub root: PathBuf,
     pub ndk: PathBuf,
 }
 
-/// The tools that make and sign a package, besides the NDK.
+/** The tools that make and sign a package, besides the NDK. */
 pub struct Packaging {
     pub aapt2: PathBuf,
     pub apksigner: PathBuf,
@@ -39,7 +43,7 @@ pub struct Packaging {
     pub keytool: PathBuf,
 }
 
-/// Where Android's tools keep the SDK when nothing says otherwise.
+/** Where Android's tools keep the SDK when nothing says otherwise. */
 fn default_root() -> Option<PathBuf> {
     let home = |name: &str| std::env::var_os(name).map(PathBuf::from);
     if cfg!(windows) {
@@ -51,8 +55,10 @@ fn default_root() -> Option<PathBuf> {
     }
 }
 
-/// The SDK: `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or where Android Studio puts
-/// it.
+/**
+The SDK: `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or where Android Studio puts
+it.
+*/
 pub fn sdk_root() -> Option<PathBuf> {
     ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
         .iter()
@@ -61,7 +67,7 @@ pub fn sdk_root() -> Option<PathBuf> {
         .filter(|root| root.is_dir())
 }
 
-/// A directory's subdirectory of `wanted`, or else of the highest version.
+/** A directory's subdirectory of `wanted`, or else of the highest version. */
 fn version_in(directory: &Path, prefix: &str, wanted: &str) -> Option<PathBuf> {
     let exact = directory.join(format!("{prefix}{wanted}"));
     if exact.is_dir() {
@@ -84,7 +90,7 @@ fn version_in(directory: &Path, prefix: &str, wanted: &str) -> Option<PathBuf> {
         .map(|(_, path)| path)
 }
 
-/// The suffix of the host's programs, and of its batch-free tools.
+/** The suffix of the host's programs, and of its batch-free tools. */
 fn exe(name: &str) -> String {
     if cfg!(windows) {
         format!("{name}.exe")
@@ -98,8 +104,10 @@ fn setup_help(target: &Target) -> String {
 }
 
 impl Sdk {
-    /// Finds the SDK and its NDK: `ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT`,
-    /// or the NDK the SDK holds.
+    /**
+    Finds the SDK and its NDK: `ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT`,
+    or the NDK the SDK holds.
+    */
     pub fn locate(target: &Target) -> Result<Sdk, String> {
         let root = sdk_root().ok_or_else(|| {
             format!(
@@ -123,7 +131,7 @@ impl Sdk {
         Ok(Sdk { root, ndk })
     }
 
-    /// The NDK's clang, which knows Android's C library.
+    /** The NDK's clang, which knows Android's C library. */
     pub fn clang(&self) -> Result<PathBuf, String> {
         let host = if cfg!(windows) {
             "windows-x86_64"
@@ -150,9 +158,11 @@ impl Sdk {
         }
     }
 
-    /// The tools that make and sign packages: the SDK's build tools and
-    /// platform, and Java, which `apksigner` runs on (`JAVA_HOME`, or on
-    /// `PATH`).
+    /**
+    The tools that make and sign packages: the SDK's build tools and
+    platform, and Java, which `apksigner` runs on (`JAVA_HOME`, or on
+    `PATH`).
+    */
     pub fn packaging(&self, target: &Target) -> Result<Packaging, String> {
         let missing = |what: &str, place: &Path| {
             format!(
@@ -194,13 +204,15 @@ impl Sdk {
     }
 }
 
-/// The clang target of an Android target, with the oldest Android it runs
-/// on.
+/**
+The clang target of an Android target, with the oldest Android it runs
+on.
+*/
 pub fn clang_target(target: &Target) -> String {
     format!("{}{MIN_API}", target.triple)
 }
 
-/// The directory of a package that holds the library for a target.
+/** The directory of a package that holds the library for a target. */
 pub fn abi(target: &Target) -> &'static str {
     match target.processor {
         "arm64" => "arm64-v8a",
@@ -208,8 +220,10 @@ pub fn abi(target: &Target) -> &'static str {
     }
 }
 
-/// The package name of a program: `sayon.app.` and its name, made of what a
-/// package name may hold.
+/**
+The package name of a program: `sayon.app.` and its name, made of what a
+package name may hold.
+*/
 pub fn package_name(program: &str) -> String {
     let mut name: String = program
         .chars()
@@ -236,9 +250,11 @@ fn escape(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// The manifest of a program's package: an app of Android's
-/// `NativeActivity`, with the internet permission when the program uses
-/// the network.
+/**
+The manifest of a program's package: an app of Android's
+`NativeActivity`, with the internet permission when the program uses
+the network.
+*/
 pub fn manifest(package: &str, label: &str, internet: bool) -> String {
     let permissions = if internet {
         "<uses-permission android:name=\"android.permission.INTERNET\" />"
@@ -251,7 +267,7 @@ pub fn manifest(package: &str, label: &str, internet: bool) -> String {
         .replace("__PERMISSIONS__", permissions)
 }
 
-/// Runs a tool, failing with what it said.
+/** Runs a tool, failing with what it said. */
 fn run(command: &mut Command, what: &str) -> Result<(), String> {
     let output = command
         .output()
@@ -268,8 +284,10 @@ fn run(command: &mut Command, what: &str) -> Result<(), String> {
     }
 }
 
-/// The debug key Android's tools share, in `.android` in the home
-/// directory, made the first time as they make it.
+/**
+The debug key Android's tools share, in `.android` in the home
+directory, made the first time as they make it.
+*/
 fn debug_key(tools: &Packaging) -> Result<PathBuf, String> {
     let home = std::env::var_os("ANDROID_USER_HOME")
         .map(PathBuf::from)
@@ -300,8 +318,10 @@ fn debug_key(tools: &Packaging) -> Result<PathBuf, String> {
     Ok(keystore)
 }
 
-/// Makes the package `output` holding `library`, the program built for
-/// `target`, named `name`. A debuggable package lets `adb` look inside.
+/**
+Makes the package `output` holding `library`, the program built for
+`target`, named `name`. A debuggable package lets `adb` look inside.
+*/
 pub fn package(
     tools: &Packaging,
     library: &Path,

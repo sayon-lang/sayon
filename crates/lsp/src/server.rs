@@ -1,5 +1,7 @@
-//! The server: messages read from the editor and answered, each open
-//! document checked as the entry of a program.
+/*!
+The server: messages read from the editor and answered, each open
+document checked as the entry of a program.
+*/
 
 use crate::json::Json;
 use crate::text::{offset, path_of, position, uri_of};
@@ -10,31 +12,35 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
-/// The driver's options for checking the program whose entry is the path,
-/// as `sayon check` would have them, or why there are none.
+/**
+The driver's options for checking the program whose entry is the path,
+as `sayon check` would have them, or why there are none.
+*/
 pub type Configure = dyn Fn(&Path) -> Result<sayon_driver::Options, String>;
 
-/// JSON-RPC's error codes.
+/** JSON-RPC's error codes. */
 const METHOD_NOT_FOUND: i32 = -32601;
 const INVALID_PARAMS: i32 = -32602;
 const REQUEST_FAILED: i32 = -32803;
 
-/// An open document: where it is, and what the editor holds of it.
+/** An open document: where it is, and what the editor holds of it. */
 struct Document {
     path: PathBuf,
     text: String,
     version: i64,
 }
 
-/// What checking a document gave: its program's sources, among them the
-/// document as it was, what the names in them refer to, and where its
-/// program's modules are found.
+/**
+What checking a document gave: its program's sources, among them the
+document as it was, what the names in them refer to, and where its
+program's modules are found.
+*/
 pub(crate) struct Analysis {
     pub(crate) sources: SourceMap,
     pub(crate) index: Index,
     pub(crate) file: FileId,
     pub(crate) stdlib: Option<PathBuf>,
-    /// The program's root: its project's, or its entry's directory.
+    /** The program's root: its project's, or its entry's directory. */
     pub(crate) root: Option<PathBuf>,
 }
 
@@ -43,13 +49,15 @@ struct Server<'c, W: Write> {
     configure: &'c Configure,
     documents: HashMap<String, Document>,
     analyses: HashMap<String, Analysis>,
-    /// Documents changed since they were last checked.
+    /** Documents changed since they were last checked. */
     dirty: Vec<String>,
     shut_down: bool,
 }
 
-/// Serves an editor over `input` and `output` until it says to exit, and
-/// gives the process's exit status: 0 after a shutdown, 1 otherwise.
+/**
+Serves an editor over `input` and `output` until it says to exit, and
+gives the process's exit status: 0 after a shutdown, 1 otherwise.
+*/
 pub fn serve(input: impl Read + Send + 'static, output: impl Write, configure: &Configure) -> i32 {
     let (sender, messages) = mpsc::channel();
     std::thread::spawn(move || {
@@ -75,8 +83,10 @@ pub fn serve(input: impl Read + Send + 'static, output: impl Write, configure: &
         if let Some(status) = server.handle(message) {
             return status;
         }
-        // What came meanwhile, such as each keystroke's change, before
-        // checking again.
+        /*
+        What came meanwhile, such as each keystroke's change, before
+        checking again.
+        */
         while let Ok(message) = messages.try_recv() {
             if let Some(status) = server.handle(message) {
                 return status;
@@ -86,7 +96,7 @@ pub fn serve(input: impl Read + Send + 'static, output: impl Write, configure: &
     }
 }
 
-/// One message: headers, the length among them, a blank line, and JSON.
+/** One message: headers, the length among them, a blank line, and JSON. */
 fn read_message(reader: &mut impl BufRead) -> Option<Json> {
     loop {
         let mut length = None;
@@ -108,7 +118,7 @@ fn read_message(reader: &mut impl BufRead) -> Option<Json> {
         let length = length?;
         let mut body = vec![0; length];
         reader.read_exact(&mut body).ok()?;
-        // A message that is not JSON is passed over.
+        /* A message that is not JSON is passed over. */
         if let Some(message) = String::from_utf8(body)
             .ok()
             .and_then(|text| Json::parse(&text).ok())
@@ -143,7 +153,7 @@ impl<W: Write> Server<'_, W> {
         );
     }
 
-    /// Handles a message, and gives the exit status once it is time to exit.
+    /** Handles a message, and gives the exit status once it is time to exit. */
     fn handle(&mut self, message: Json) -> Option<i32> {
         let method = message.get("method").as_str()?.to_string();
         let params = message.get("params").clone();
@@ -173,8 +183,10 @@ impl<W: Write> Server<'_, W> {
         match method {
             "exit" => return Some(if self.shut_down { 0 } else { 1 }),
             "textDocument/didOpen" => {
-                // A document that is no file, such as an unsaved one, is
-                // not checked.
+                /*
+                A document that is no file, such as an unsaved one, is
+                not checked.
+                */
                 let path = path_of(&uri)?;
                 self.documents.insert(
                     uri.clone(),
@@ -223,8 +235,10 @@ impl<W: Write> Server<'_, W> {
         None
     }
 
-    /// Every open document is checked again: a change to one can change
-    /// what another that imports it means.
+    /**
+    Every open document is checked again: a change to one can change
+    what another that imports it means.
+    */
     fn mark_all_dirty(&mut self) {
         let mut uris: Vec<String> = self.documents.keys().cloned().collect();
         uris.sort();
@@ -237,7 +251,7 @@ impl<W: Write> Server<'_, W> {
         }
     }
 
-    /// The analysis of a document, checked first if it changed.
+    /** The analysis of a document, checked first if it changed. */
     fn fresh(&mut self, uri: &str) -> Option<&Analysis> {
         if self.dirty.iter().any(|d| d == uri) || !self.analyses.contains_key(uri) {
             self.dirty.retain(|d| d != uri);
@@ -246,8 +260,10 @@ impl<W: Write> Server<'_, W> {
         self.analyses.get(uri)
     }
 
-    /// Checks a document as the entry of a program, and publishes its
-    /// diagnostics.
+    /**
+    Checks a document as the entry of a program, and publishes its
+    diagnostics.
+    */
     fn check(&mut self, uri: &str) {
         let Some(document) = self.documents.get(uri) else {
             return;
@@ -335,8 +351,10 @@ impl<W: Write> Server<'_, W> {
         self.notify("textDocument/publishDiagnostics", Json::object(params));
     }
 
-    /// The URI of a file: an open document's own, as the editor wrote it,
-    /// or else one made from its path.
+    /**
+    The URI of a file: an open document's own, as the editor wrote it,
+    or else one made from its path.
+    */
     fn uri_for(&self, path: &Path) -> String {
         let canonical = sayon_driver::canonical(path);
         self.documents
@@ -420,7 +438,7 @@ impl<W: Write> Server<'_, W> {
         }
     }
 
-    /// The document and byte offset a request's position names.
+    /** The document and byte offset a request's position names. */
     fn at(&self, params: &Json) -> Option<(String, usize)> {
         let uri = params.get("textDocument").get("uri").as_str()?.to_string();
         let document = self.documents.get(&uri)?;
@@ -428,8 +446,10 @@ impl<W: Write> Server<'_, W> {
         Some((uri, range_offset(&document.text, place)))
     }
 
-    /// The symbol whose name is at a request's position, and the name as
-    /// written there.
+    /**
+    The symbol whose name is at a request's position, and the name as
+    written there.
+    */
     fn symbol_at(&mut self, params: &Json) -> Option<(String, usize, Span)> {
         let (uri, offset) = self.at(params)?;
         let analysis = self.fresh(&uri)?;
@@ -488,8 +508,10 @@ impl<W: Write> Server<'_, W> {
         Some(Json::Array(locations))
     }
 
-    /// Whether the symbol at a request's position can be renamed, and the
-    /// name as written there.
+    /**
+    Whether the symbol at a request's position can be renamed, and the
+    name as written there.
+    */
     fn renameable(&mut self, params: &Json) -> Result<(String, usize, Span), (i32, String)> {
         let failed = |message: &str| (REQUEST_FAILED, message.to_string());
         let (uri, symbol, span) = self
@@ -540,8 +562,10 @@ impl<W: Write> Server<'_, W> {
         for span in analysis.index.references_to(symbol) {
             let file = analysis.sources.get(span.file);
             let written = file.slice(span);
-            // A method is written without its type's prefix, as `canvas.fill`
-            // calls `canvas_fill`; the new name keeps that form.
+            /*
+            A method is written without its type's prefix, as `canvas.fill`
+            calls `canvas_fill`; the new name keeps that form.
+            */
             let replacement = if written == old_name {
                 new_name.clone()
             } else if let Some(prefix) = old_name.strip_suffix(written)
@@ -606,7 +630,7 @@ impl<W: Write> Server<'_, W> {
         let Some(document) = self.documents.get(uri) else {
             return Json::Null;
         };
-        // A document with syntax errors is left as it is.
+        /* A document with syntax errors is left as it is. */
         let Ok(formatted) = sayon_syntax::format::format_source(FileId(0), &document.text) else {
             return Json::Null;
         };
@@ -628,7 +652,7 @@ fn version(document: &Json) -> i64 {
     }
 }
 
-/// The byte offset of a `{ line, character }` position.
+/** The byte offset of a `{ line, character }` position. */
 fn range_offset(text: &str, place: &Json) -> usize {
     offset(
         text,
@@ -648,7 +672,7 @@ fn range_json(text: &str, span: Span) -> Json {
     Json::object(vec![("start", point(span.start)), ("end", point(span.end))])
 }
 
-/// What the server can do, as `initialize` answers.
+/** What the server can do, as `initialize` answers. */
 fn capabilities() -> Json {
     Json::object(vec![
         (
@@ -659,7 +683,7 @@ fn capabilities() -> Json {
                     "textDocumentSync",
                     Json::object(vec![
                         ("openClose", Json::Bool(true)),
-                        // The whole text with each change.
+                        /* The whole text with each change. */
                         ("change", Json::number(1)),
                     ]),
                 ),
@@ -704,8 +728,10 @@ fn capabilities() -> Json {
     ])
 }
 
-/// Whether `text` can name something: letters, digits, and `_`, not
-/// starting with a digit, and no keyword.
+/**
+Whether `text` can name something: letters, digits, and `_`, not
+starting with a digit, and no keyword.
+*/
 fn is_name(text: &str) -> bool {
     let mut chars = text.chars();
     chars.next().is_some_and(|c| c.is_alphabetic() || c == '_')

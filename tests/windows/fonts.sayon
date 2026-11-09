@@ -1,6 +1,8 @@
-# The system's fonts, on a desktop, in an Android app, and in a web page,
-# where they are the browser's: one of each kind, text in each, and one the
-# system lacks.
+##
+The system's fonts, on a desktop, in an Android app, and in a web page,
+where they are the browser's: one of each kind, text in each, and one the
+system lacks.
+##
 graphics = import("standard/graphics.sayon")
 
 # How many pixels are not white.

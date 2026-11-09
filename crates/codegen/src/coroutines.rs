@@ -1,33 +1,35 @@
-//! Tasks without fibers: functions that can wait become LLVM coroutines.
-//!
-//! WebAssembly has one stack, so a task cannot keep its own while another
-//! runs. When a program for it waits anywhere (a join, `yield`, `sleep`, or
-//! a channel's send, receive, or select), each function that can reach a
-//! wait, and each function used as a value, since a call through a value
-//! may reach one, is lowered to a switched-resume coroutine
-//! (`presplitcoroutine`), which LLVM splits into a ramp and a resume
-//! function whose frame holds what lives across a suspension.
-//!
-//! A call keeps the usual convention, `i32 @sayon.fn.N(ptr %ret, ptr %err,
-//! i64 %argc, params...)`, with one more status: 2 when the callee stopped
-//! to wait, leaving the frame to resume in `@sayon_frame`. The caller then
-//! suspends too, and on each resume calls `@sayon_coroutine_resume` with
-//! that frame, until the callee gives its final status. A waiting operation
-//! of the runtime stops the same way, leaving a null frame; resuming it
-//! calls the operation again (`sayon_task_retry`). The runtime's scheduler
-//! resumes a task's first function, and so its chain of callers down to the
-//! operation, once the task can go on.
-//!
-//! A frame frees itself when its function finishes, after leaving its
-//! status in `@sayon_status` and setting `@sayon_done`, so a call that
-//! never stopped leaves nothing behind. Programs that never wait, and every
-//! program for a target with fibers, have no coroutines at all.
+/*!
+Tasks without fibers: functions that can wait become LLVM coroutines.
+
+WebAssembly has one stack, so a task cannot keep its own while another
+runs. When a program for it waits anywhere (a join, `yield`, `sleep`, or
+a channel's send, receive, or select), each function that can reach a
+wait, and each function used as a value, since a call through a value
+may reach one, is lowered to a switched-resume coroutine
+(`presplitcoroutine`), which LLVM splits into a ramp and a resume
+function whose frame holds what lives across a suspension.
+
+A call keeps the usual convention, `i32 @sayon.fn.N(ptr %ret, ptr %err,
+i64 %argc, params...)`, with one more status: 2 when the callee stopped
+to wait, leaving the frame to resume in `@sayon_frame`. The caller then
+suspends too, and on each resume calls `@sayon_coroutine_resume` with
+that frame, until the callee gives its final status. A waiting operation
+of the runtime stops the same way, leaving a null frame; resuming it
+calls the operation again (`sayon_task_retry`). The runtime's scheduler
+resumes a task's first function, and so its chain of callers down to the
+operation, once the task can go on.
+
+A frame frees itself when its function finishes, after leaving its
+status in `@sayon_status` and setting `@sayon_done`, so a call that
+never stopped leaves nothing behind. Programs that never wait, and every
+program for a target with fibers, have no coroutines at all.
+*/
 
 use crate::Dialect;
 use sayon_ir::{FunctionId, Inst, Module, Op, Rvalue, Terminator};
 use std::collections::HashSet;
 
-/// Whether an operation can wait for another task, or for the host.
+/** Whether an operation can wait for another task, or for the host. */
 pub fn waits(op: &Op) -> bool {
     match op {
         Op::Host { function, .. } => function.suspends(),
@@ -43,11 +45,13 @@ pub fn waits(op: &Op) -> bool {
     }
 }
 
-/// Whether the program can have tasks for `sayon_tasks_finish` to finish
-/// as it ends: it starts some, or waits in a way that has the scheduler
-/// wait with it. A program that does neither never makes the scheduler,
-/// and leaving the call out leaves the scheduler, and its sockets, out of
-/// the executable.
+/**
+Whether the program can have tasks for `sayon_tasks_finish` to finish
+as it ends: it starts some, or waits in a way that has the scheduler
+wait with it. A program that does neither never makes the scheduler,
+and leaving the call out leaves the scheduler, and its sockets, out of
+the executable.
+*/
 pub fn uses_tasks(module: &Module) -> bool {
     module
         .functions
@@ -63,8 +67,10 @@ pub fn uses_tasks(module: &Module) -> bool {
         })
 }
 
-/// Whether the program's tasks need coroutines: on a target without
-/// fibers, when the program waits anywhere.
+/**
+Whether the program's tasks need coroutines: on a target without
+fibers, when the program waits anywhere.
+*/
 pub fn needed(module: &Module) -> bool {
     module.target.processor == "wasm32"
         && module
@@ -74,9 +80,11 @@ pub fn needed(module: &Module) -> bool {
             .any(|block| matches!(&block.term, Terminator::Op { op, .. } if waits(op)))
 }
 
-/// The functions to lower to coroutines: those that wait or call through a
-/// function value, the ones used as values, and, until none is left, the
-/// ones that call any of those.
+/**
+The functions to lower to coroutines: those that wait or call through a
+function value, the ones used as values, and, until none is left, the
+ones that call any of those.
+*/
 pub fn functions(module: &Module) -> HashSet<FunctionId> {
     let mut lowered = HashSet::new();
     if !needed(module) {
@@ -117,7 +125,7 @@ pub fn functions(module: &Module) -> HashSet<FunctionId> {
     }
 }
 
-/// `text` in the dialect: `llvm.coro.end` gives nothing in newer LLVM.
+/** `text` in the dialect: `llvm.coro.end` gives nothing in newer LLVM. */
 pub fn in_dialect(text: &str, dialect: Dialect) -> String {
     if dialect.coroutine_end_void {
         text.replace("i1 @llvm.coro.end", "void @llvm.coro.end")
@@ -126,8 +134,10 @@ pub fn in_dialect(text: &str, dialect: Dialect) -> String {
     }
 }
 
-/// What every program for a target without fibers carries, whether or not
-/// it waits, since the runtime's scheduler calls `sayon_coroutine_resume`.
+/**
+What every program for a target without fibers carries, whether or not
+it waits, since the runtime's scheduler calls `sayon_coroutine_resume`.
+*/
 pub const GLUE: &str = "\
 @sayon_frame = external global ptr
 @sayon_done = internal global i1 false
@@ -167,11 +177,13 @@ waiting:
 
 ";
 
-/// What a web page's glue calls to run the program: `sayon_run` starts
-/// `@sayon.main`, or resumes it once the browser has waited, and gives the
-/// exit status, or -1 while every task sleeps or waits for a response the
-/// browser fetches, when the glue is to wait `sayon_wait_milliseconds` (or
-/// for a response) and call it again. A page is never blocked.
+/**
+What a web page's glue calls to run the program: `sayon_run` starts
+`@sayon.main`, or resumes it once the browser has waited, and gives the
+exit status, or -1 while every task sleeps or waits for a response the
+browser fetches, when the glue is to wait `sayon_wait_milliseconds` (or
+for a response) and call it again. A page is never blocked.
+*/
 pub const WEB_ENTRY: &str = "\
 @sayon.exit = internal global i32 0
 @sayon.main.frame = internal global ptr null
@@ -206,12 +218,16 @@ done:
 }
 ";
 
-/// The declaration of the end of a coroutine, whose form depends on the
-/// LLVM version; only a program with coroutines has it.
+/**
+The declaration of the end of a coroutine, whose form depends on the
+LLVM version; only a program with coroutines has it.
+*/
 pub const END: &str = "declare i1 @llvm.coro.end(ptr, i1, token)\n";
 
-/// The start of a coroutine's body, after its allocas: its frame, from the
-/// runtime's allocator when LLVM keeps it.
+/**
+The start of a coroutine's body, after its allocas: its frame, from the
+runtime's allocator when LLVM keeps it.
+*/
 pub const PROLOGUE: &str = "\
   %coro.result = alloca i32
   %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)
@@ -226,10 +242,12 @@ coro.begin:
   %coro.frame = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.place)
 ";
 
-/// The end of a coroutine's body. `coro.final` leaves the status the body
-/// put in `%coro.result` and frees the frame; `coro.suspended` is where
-/// each suspension leaves. Both return through `coro.return`, since LLVM
-/// takes only one end of a coroutine that does not unwind.
+/**
+The end of a coroutine's body. `coro.final` leaves the status the body
+put in `%coro.result` and frees the frame; `coro.suspended` is where
+each suspension leaves. Both return through `coro.return`, since LLVM
+takes only one end of a coroutine that does not unwind.
+*/
 pub const EPILOGUE: &str = "\
 coro.final:
   %coro.status = load i32, ptr %coro.result

@@ -1,20 +1,24 @@
-//! IR definitions.
-//!
-//! Functions are monomorphic control-flow graphs over typed slots. Ownership
-//! is explicit: operands copy, move, or borrow a place; `Drop` destroys
-//! whatever a place still holds (a moved-from place is empty, so dropping it
-//! does nothing). Operations that can fail are block terminators with a normal
-//! and an error successor; on failure the error is stored in the function's
-//! error slot.
+/*!
+IR definitions.
+
+Functions are monomorphic control-flow graphs over typed slots. Ownership
+is explicit: operands copy, move, or borrow a place; `Drop` destroys
+whatever a place still holds (a moved-from place is empty, so dropping it
+does nothing). Operations that can fail are block terminators with a normal
+and an error successor; on failure the error is stored in the function's
+error slot.
+*/
 
 use sayon_check::types::{FloatType, IntType, Type, TypeDef, TypeId, Wrapper};
 use sayon_syntax::Span;
 use sayon_syntax::ast::ParamMode;
 use std::collections::HashMap;
 
-/// Whether a parameter receives a reference to the caller's value: update
-/// parameters always do, so changes reach the caller; read parameters do
-/// for values that are not Copy.
+/**
+Whether a parameter receives a reference to the caller's value: update
+parameters always do, so changes reach the caller; read parameters do
+for values that are not Copy.
+*/
 pub fn by_reference(mode: ParamMode, ty: &Type) -> bool {
     match mode {
         ParamMode::Own => false,
@@ -39,36 +43,43 @@ pub struct GlobalId(pub u32);
 pub struct Module {
     pub functions: Vec<Function>,
     pub globals: Vec<Global>,
-    /// Global initializers, run in order before the entry function.
+    /** Global initializers, run in order before the entry function. */
     pub initializers: Vec<(GlobalId, FunctionId)>,
     pub entry: FunctionId,
-    /// Member types of every union in the program. A union value's tag is the
-    /// member type's position here plus one, the same in every union, so a
-    /// value of `A or B or C` is already a valid `A or B` when it holds an `A`
-    /// or a `B`. Tag zero marks an empty place.
+    /**
+    Member types of every union in the program. A union value's tag is the
+    member type's position here plus one, the same in every union, so a
+    value of `A or B or C` is already a valid `A or B` when it holds an `A`
+    or a `B`. Tag zero marks an empty place.
+    */
     pub union_members: Vec<Type>,
-    /// Test functions, when the program was lowered for testing.
+    /** Test functions, when the program was lowered for testing. */
     pub tests: Vec<(String, FunctionId)>,
-    /// Declared structures and enums, indexed by `TypeId`, followed by the
-    /// environment structures of closures.
+    /**
+    Declared structures and enums, indexed by `TypeId`, followed by the
+    environment structures of closures.
+    */
     pub types: Vec<TypeDef>,
-    /// The C functions of `foreign` blocks, indexed by `ForeignId`.
+    /** The C functions of `foreign` blocks, indexed by `ForeignId`. */
     pub foreign: Vec<ForeignFunction>,
-    /// The function that destroys each structure with a `finally function`.
+    /** The function that destroys each structure with a `finally function`. */
     pub finally: HashMap<TypeId, FunctionId>,
-    /// The target the program was checked and lowered for.
+    /** The target the program was checked and lowered for. */
     pub target: &'static sayon_target::Target,
 }
 
-pub use sayon_check::hir::{ForeignFunction, ForeignId};
+pub use sayon_check::hir::ForeignFunction;
+pub(crate) use sayon_check::hir::ForeignId;
 
 impl Module {
     pub fn function(&self, id: FunctionId) -> &Function {
         &self.functions[id.0 as usize]
     }
 
-    /// The C functions some function calls, in the order of their
-    /// declarations. A platform branch that was not selected calls none.
+    /**
+    The C functions some function calls, in the order of their
+    declarations. A platform branch that was not selected calls none.
+    */
     pub fn called_foreign(&self) -> Vec<ForeignId> {
         let mut called = vec![false; self.foreign.len()];
         for function in &self.functions {
@@ -88,7 +99,7 @@ impl Module {
             .collect()
     }
 
-    /// The finally function of a structure, if it has one.
+    /** The finally function of a structure, if it has one. */
     pub fn finally_of(&self, ty: &Type) -> Option<FunctionId> {
         match ty {
             Type::Named(named) => self.finally.get(&named.id).copied(),
@@ -100,7 +111,7 @@ impl Module {
         self.union_members.get(tag.checked_sub(1)? as usize)
     }
 
-    /// The type stored at `projection` inside a value of type `ty`.
+    /** The type stored at `projection` inside a value of type `ty`. */
     pub fn project_type(&self, ty: &Type, projection: &Projection) -> Type {
         use sayon_check::types::{structure_fields, variant_fields};
         match (projection, ty) {
@@ -132,9 +143,9 @@ pub struct Global {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlotKind {
-    /// Holds a value the function owns (or a Copy value).
+    /** Holds a value the function owns (or a Copy value). */
     Value,
-    /// Holds a reference to a place owned elsewhere.
+    /** Holds a reference to a place owned elsewhere. */
     Ref { mutable: bool },
 }
 
@@ -149,17 +160,21 @@ pub struct Slot {
 pub struct Function {
     pub name: String,
     pub span: Span,
-    /// The first `params.len()` slots are the parameters, in order. Code
-    /// reached through a function value takes a reference to its
-    /// environment first.
+    /**
+    The first `params.len()` slots are the parameters, in order. Code
+    reached through a function value takes a reference to its
+    environment first.
+    */
     pub params: Vec<SlotId>,
-    /// Parameters a caller must supply; the rest have defaults computed in
-    /// the prologue when the caller passes fewer arguments.
+    /**
+    Parameters a caller must supply; the rest have defaults computed in
+    the prologue when the caller passes fewer arguments.
+    */
     pub required_params: usize,
     pub ret: Type,
     pub ret_slot: SlotId,
     pub error_slot: SlotId,
-    /// Holds the number of arguments the caller supplied.
+    /** Holds the number of arguments the caller supplied. */
     pub argc_slot: SlotId,
     pub slots: Vec<Slot>,
     pub blocks: Vec<Block>,
@@ -200,19 +215,19 @@ pub struct Block {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Projection {
-    /// Array element at the (already bounds-checked) index stored in the slot.
+    /** Array element at the (already bounds-checked) index stored in the slot. */
     Index(SlotId),
-    /// Dictionary entry value at the position stored in the slot.
+    /** Dictionary entry value at the position stored in the slot. */
     DictValue(SlotId),
-    /// Dictionary entry key at the position stored in the slot.
+    /** Dictionary entry key at the position stored in the slot. */
     DictKey(SlotId),
-    /// Payload of a union known to hold the member with this tag.
+    /** Payload of a union known to hold the member with this tag. */
     Payload(u32),
-    /// A field of a structure, by position.
+    /** A field of a structure, by position. */
     Field(u32),
-    /// A field of an enum value known to be the given variant.
+    /** A field of an enum value known to be the given variant. */
     VariantField { variant: u32, field: u32 },
-    /// The value a `Shared` handle refers to.
+    /** The value a `Shared` handle refers to. */
     Deref,
 }
 
@@ -222,8 +237,10 @@ pub enum Base {
     Global(GlobalId),
 }
 
-/// A storage location. A place rooted at a reference slot denotes the
-/// referenced location.
+/**
+A storage location. A place rooted at a reference slot denotes the
+referenced location.
+*/
 #[derive(Debug, Clone, PartialEq)]
 pub struct Place {
     pub base: Base,
@@ -258,19 +275,19 @@ pub enum Constant {
     Float(f64, FloatType),
     Bool(bool),
     Nothing,
-    /// Static string data; values made from it are not heap allocations.
+    /** Static string data; values made from it are not heap allocations. */
     Str(String),
-    /// `null_pointer`.
+    /** `null_pointer`. */
     NullPointer,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
-    /// Duplicates a Copy value.
+    /** Duplicates a Copy value. */
     Copy(Place),
-    /// Takes the value, leaving the place empty.
+    /** Takes the value, leaving the place empty. */
     Move(Place),
-    /// A reference to the place, for a reference parameter.
+    /** A reference to the place, for a reference parameter. */
     Borrow {
         place: Place,
         mutable: bool,
@@ -300,7 +317,7 @@ pub enum CompareOp {
 #[derive(Debug, Clone)]
 pub enum FormatPart {
     Text(String),
-    /// A value displayed with `tostring` rules.
+    /** A value displayed with `tostring` rules. */
     Value(Operand, Type),
 }
 
@@ -316,59 +333,65 @@ pub enum Rvalue {
         lhs: Operand,
         rhs: Operand,
     },
-    /// Builds a string from text and displayed values.
+    /** Builds a string from text and displayed values. */
     Format(Vec<FormatPart>),
     Concat(Operand, Operand),
     MakeArray {
         element: Type,
         items: Vec<Operand>,
     },
-    /// A dictionary with keys of type `key` and values of type `value`;
-    /// each key is copied in.
+    /**
+    A dictionary with keys of type `key` and values of type `value`;
+    each key is copied in.
+    */
     MakeDict {
         key: Type,
         value: Type,
         entries: Vec<(Operand, Operand)>,
     },
-    /// Wraps a value as the union member with `tag`.
+    /** Wraps a value as the union member with `tag`. */
     MakeUnion {
         tag: u32,
         value: Operand,
     },
-    /// A structure value of type `ty`, with its fields in declaration order.
+    /** A structure value of type `ty`, with its fields in declaration order. */
     MakeRecord {
         ty: Type,
         fields: Vec<Operand>,
     },
-    /// A value of the enum `ty`: one variant and its fields.
+    /** A value of the enum `ty`: one variant and its fields. */
     MakeVariant {
         ty: Type,
         variant: u32,
         fields: Vec<Operand>,
     },
-    /// True when the enum value is the given variant.
+    /** True when the enum value is the given variant. */
     VariantIs {
         value: Operand,
         variant: u32,
     },
-    /// True when the union holds the member with `tag`.
+    /** True when the union holds the member with `tag`. */
     TagIs {
         value: Operand,
         tag: u32,
     },
-    /// Name of the member type a union currently holds.
+    /** Name of the member type a union currently holds. */
     UnionTypeName(Operand),
     Length {
         value: Operand,
         ty: Type,
     },
     ByteLength(Operand),
-    /// The places for a dictionary's entries, those of removed entries
-    /// among them: where a loop over its entries ends.
+    /**
+    The places for a dictionary's entries, those of removed entries
+    among them: where a loop over its entries ends.
+    */
     DictSlots(Operand),
-    /// The first place of a dictionary at or after `index` that holds an
-    /// entry, or `DictSlots` when none does. A loop over the entries steps
-    /// over removed ones with it.
+    /**
+    The first place of a dictionary at or after `index` that holds an
+    entry, or `DictSlots` when none does. A loop over the entries steps
+    over removed ones with it.
+    */
     DictNext {
         dict: Operand,
         index: Operand,
@@ -383,59 +406,69 @@ pub enum Rvalue {
     },
     ErrorMessage(Operand),
     ErrorCode(Operand),
-    /// Number of values a range yields.
+    /** Number of values a range yields. */
     RangeLength(Operand),
-    /// The k-th value of a range (k < length).
+    /** The k-th value of a range (k < length). */
     RangeAt {
         range: Operand,
         index: Operand,
     },
-    /// Removes the last element of an array, producing `T or nothing`. An
-    /// element that is not already a union is wrapped with `element_tag`; an
-    /// empty array produces `nothing`, wrapped with `nothing_tag`.
+    /**
+    Removes the last element of an array, producing `T or nothing`. An
+    element that is not already a union is wrapped with `element_tag`; an
+    empty array produces `nothing`, wrapped with `nothing_tag`.
+    */
     Pop {
         array: Place,
         element_tag: Option<u32>,
         nothing_tag: Option<u32>,
     },
-    /// Integer addition that cannot overflow (loop counters below a length).
+    /** Integer addition that cannot overflow (loop counters below a length). */
     Increment(Operand),
-    /// Removes a dictionary's entry for a key, producing its value, or
-    /// `nothing` when there is none; wrapped as `Pop` wraps an element.
+    /**
+    Removes a dictionary's entry for a key, producing its value, or
+    `nothing` when there is none; wrapped as `Pop` wraps an element.
+    */
     RemoveKey {
         dict: Place,
         key: Operand,
         value_tag: Option<u32>,
         nothing_tag: Option<u32>,
     },
-    /// The character starting at byte `offset` of a string, as a new
-    /// string; advances `offset` past it.
+    /**
+    The character starting at byte `offset` of a string, as a new
+    string; advances `offset` past it.
+    */
     NextChar {
         text: Operand,
         offset: Place,
     },
-    /// A new shared value holding `value`, of type `ty`, with one handle.
+    /** A new shared value holding `value`, of type `ty`, with one handle. */
     MakeShared {
         value: Operand,
         ty: Type,
     },
-    /// A new mutex holding `value`, of type `ty`, with one handle.
+    /** A new mutex holding `value`, of type `ty`, with one handle. */
     MakeMutex {
         value: Operand,
         ty: Type,
     },
-    /// A `Weak` handle of the shared value a `Shared` handle refers to.
+    /** A `Weak` handle of the shared value a `Shared` handle refers to. */
     Downgrade(Operand),
-    /// A new `Shared` handle from a `Weak` one, as the union member with
-    /// `shared_tag`, or `nothing` (with `nothing_tag`) when no `Shared`
-    /// handle is left.
+    /**
+    A new `Shared` handle from a `Weak` one, as the union member with
+    `shared_tag`, or `nothing` (with `nothing_tag`) when no `Shared`
+    handle is left.
+    */
     Upgrade {
         weak: Operand,
         shared_tag: u32,
         nothing_tag: u32,
     },
-    /// A function value calling `function`. A closure also gets a new
-    /// environment: a structure of type `env` holding the captured values.
+    /**
+    A function value calling `function`. A closure also gets a new
+    environment: a structure of type `env` holding the captured values.
+    */
     MakeClosure {
         function: FunctionId,
         env: Option<Type>,
@@ -445,38 +478,42 @@ pub enum Rvalue {
 
 #[derive(Debug, Clone)]
 pub enum Inst {
-    /// Initializes `dest` (which must be empty).
+    /** Initializes `dest` (which must be empty). */
     Assign {
         dest: Place,
         value: Rvalue,
     },
-    /// Makes a reference slot refer to a place.
+    /** Makes a reference slot refer to a place. */
     Bind {
         slot: SlotId,
         place: Place,
         mutable: bool,
     },
-    /// Destroys the value at a place if it holds one, leaving it empty.
+    /** Destroys the value at a place if it holds one, leaving it empty. */
     Drop(Place),
     Push {
         array: Place,
         value: Operand,
     },
-    /// Adds a string's text to the end of the string at `string`, in its
-    /// own buffer where there is room: `text = text + more`, or
-    /// `text += more`.
+    /**
+    Adds a string's text to the end of the string at `string`, in its
+    own buffer where there is room: `text = text + more`, or
+    `text += more`.
+    */
     Append {
         string: Place,
         value: Operand,
     },
-    /// Inserts or replaces a dictionary entry.
+    /** Inserts or replaces a dictionary entry. */
     DictSet {
         dict: Place,
         key: Operand,
         value: Operand,
     },
-    /// Moves a value back into the mutex `MutexTake` took it from, and
-    /// releases its lock.
+    /**
+    Moves a value back into the mutex `MutexTake` took it from, and
+    releases its lock.
+    */
     MutexPut {
         mutex: Operand,
         value: Operand,
@@ -503,8 +540,10 @@ pub enum Op {
         function: FunctionId,
         args: Vec<Operand>,
     },
-    /// Calls the function value at `callee`, passing a reference to its
-    /// environment before the arguments.
+    /**
+    Calls the function value at `callee`, passing a reference to its
+    environment before the arguments.
+    */
     CallValue {
         callee: Place,
         args: Vec<Operand>,
@@ -524,115 +563,137 @@ pub enum Op {
         to: Type,
         value: Operand,
     },
-    /// Fails unless `index` is a valid position in `array`; stores it in dest.
+    /** Fails unless `index` is a valid position in `array`; stores it in dest. */
     CheckIndex {
         array: Operand,
         index: Operand,
     },
-    /// A view of the elements from `start` up to `end` of the array or view
-    /// at `base` (all of them when the bounds are left out); fails when the
-    /// bounds are outside it.
+    /**
+    A view of the elements from `start` up to `end` of the array or view
+    at `base` (all of them when the bounds are left out); fails when the
+    bounds are outside it.
+    */
     MakeView {
         base: Place,
         start: Option<Operand>,
         end: Option<Operand>,
     },
-    /// Splits the first `count` elements off the view at `view` into a view
-    /// of their own, leaving the rest at `view`; fails, changing nothing,
-    /// when the view has fewer elements.
+    /**
+    Splits the first `count` elements off the view at `view` into a view
+    of their own, leaving the rest at `view`; fails, changing nothing,
+    when the view has fewer elements.
+    */
     SplitView {
         view: Place,
         count: Operand,
     },
-    /// A new task running the function value `body`, whose result has the
-    /// type `result`.
+    /**
+    A new task running the function value `body`, whose result has the
+    type `result`.
+    */
     Spawn {
         body: Operand,
         result: Type,
     },
-    /// A new task on a thread of its own running `body`.
+    /** A new task on a thread of its own running `body`. */
     SpawnParallel {
         body: Operand,
         result: Type,
     },
-    /// Takes the lock of a mutex, waiting for it, and moves its value out
-    /// until `MutexPut`. Fails when the running task holds the lock
-    /// already.
+    /**
+    Takes the lock of a mutex, waiting for it, and moves its value out
+    until `MutexPut`. Fails when the running task holds the lock
+    already.
+    */
     MutexTake {
         mutex: Operand,
     },
-    /// The result of the task at `task`, once it has finished; its error
-    /// when it failed.
+    /**
+    The result of the task at `task`, once it has finished; its error
+    when it failed.
+    */
     Join {
         task: Place,
     },
-    /// Lets the task at `task` run without a handle.
+    /** Lets the task at `task` run without a handle. */
     Detach {
         task: Place,
     },
-    /// Lets other tasks run before continuing.
+    /** Lets other tasks run before continuing. */
     Yield,
-    /// Waits `nanoseconds` while other tasks run.
+    /** Waits `nanoseconds` while other tasks run. */
     Sleep {
         nanoseconds: Operand,
     },
-    /// A new channel of `element` values holding up to `capacity`.
+    /** A new channel of `element` values holding up to `capacity`. */
     ChannelNew {
         capacity: Operand,
         element: Type,
     },
-    /// Moves the message at `message` into the channel, once it has room.
-    /// When the channel is closed, the message is destroyed, or with `keep`
-    /// left where it is.
+    /**
+    Moves the message at `message` into the channel, once it has room.
+    When the channel is closed, the message is destroyed, or with `keep`
+    left where it is.
+    */
     Send {
         channel: Operand,
         message: Place,
         keep: bool,
     },
-    /// The next message of the channel, once it has one; fails when it is
-    /// closed and empty.
+    /**
+    The next message of the channel, once it has one; fails when it is
+    closed and empty.
+    */
     Receive {
         channel: Operand,
     },
     Close {
         channel: Operand,
     },
-    /// Receives from the first channel of the array, round from the one
-    /// after the last chosen, that has a message, once one has, and stores
-    /// its position at `position`. Fails when the channel it chose is
-    /// closed and empty.
+    /**
+    Receives from the first channel of the array, round from the one
+    after the last chosen, that has a message, once one has, and stores
+    its position at `position`. Fails when the channel it chose is
+    closed and empty.
+    */
     Select {
         channels: Operand,
         position: Place,
     },
-    /// Exchanges two elements of an array; fails outside the array.
+    /** Exchanges two elements of an array; fails outside the array. */
     Swap {
         array: Place,
         first: Operand,
         second: Operand,
     },
-    /// Exchanges an element of one array with an element of another; fails
-    /// outside either. The arrays are two: the checker lets no array be
-    /// borrowed twice for changes in one call.
+    /**
+    Exchanges an element of one array with an element of another; fails
+    outside either. The arrays are two: the checker lets no array be
+    borrowed twice for changes in one call.
+    */
     Exchange {
         first_array: Place,
         first: Operand,
         second_array: Place,
         second: Operand,
     },
-    /// Removes and produces the element at a position of an array, moving
-    /// the later elements down; fails outside the array.
+    /**
+    Removes and produces the element at a position of an array, moving
+    the later elements down; fails outside the array.
+    */
     RemoveAt {
         array: Place,
         index: Operand,
     },
-    /// The character at a position of a string, as a new string; fails
-    /// outside the string.
+    /**
+    The character at a position of a string, as a new string; fails
+    outside the string.
+    */
     CharAt {
         text: Operand,
         index: Operand,
     },
-    /// Finds `key`; stores the entry position in dest or fails.
+    /** Finds `key`; stores the entry position in dest or fails. */
     DictFind {
         dict: Operand,
         key: Operand,
@@ -647,7 +708,7 @@ pub enum Op {
         end: Operand,
         step: Option<Operand>,
     },
-    /// Parses text to `integer or float`.
+    /** Parses text to `integer or float`. */
     ToNumber {
         text: Operand,
         integer_tag: u32,
@@ -658,35 +719,43 @@ pub enum Op {
         path: Operand,
         content: Operand,
     },
-    /// Always fails with a UserError carrying the message.
+    /** Always fails with a UserError carrying the message. */
     Fail(Operand),
-    /// Always fails with the given Error value.
+    /** Always fails with the given Error value. */
     Raise(Operand),
-    /// Calls a C function with arguments of the given types, which past its
-    /// parameters are the variadic arguments. A C string is passed as its
-    /// text's address. Fails only when the interpreter cannot find the
-    /// function.
+    /**
+    Calls a C function with arguments of the given types, which past its
+    parameters are the variadic arguments. A C string is passed as its
+    text's address. Fails only when the interpreter cannot find the
+    function.
+    */
     CallForeign {
         function: ForeignId,
         args: Vec<(Operand, Type)>,
     },
-    /// The number or pointer of type `ty` stored `offset` bytes after
-    /// `address`; fails for `null_pointer`.
+    /**
+    The number or pointer of type `ty` stored `offset` bytes after
+    `address`; fails for `null_pointer`.
+    */
     RawRead {
         address: Operand,
         offset: Operand,
         ty: Type,
     },
-    /// Stores `value`, of type `ty`, `offset` bytes after `address`; fails
-    /// for `null_pointer`.
+    /**
+    Stores `value`, of type `ty`, `offset` bytes after `address`; fails
+    for `null_pointer`.
+    */
     RawWrite {
         address: Operand,
         offset: Operand,
         value: Operand,
         ty: Type,
     },
-    /// Calls a host primitive. For a `string or nothing` result, `tags` holds
-    /// the program-wide tags of `string` and `nothing`.
+    /**
+    Calls a host primitive. For a `string or nothing` result, `tags` holds
+    the program-wide tags of `string` and `nothing`.
+    */
     Host {
         function: sayon_runtime::host::Host,
         args: Vec<Operand>,
@@ -702,9 +771,9 @@ pub enum Terminator {
         then_block: BlockId,
         else_block: BlockId,
     },
-    /// Returns the value in the return slot.
+    /** Returns the value in the return slot. */
     Return,
-    /// Propagates the error in the error slot to the caller.
+    /** Propagates the error in the error slot to the caller. */
     ReturnError,
     Op {
         op: Op,
@@ -714,19 +783,4 @@ pub enum Terminator {
         span: Span,
     },
     Unreachable,
-}
-
-impl Terminator {
-    pub fn successors(&self) -> Vec<BlockId> {
-        match self {
-            Terminator::Goto(target) => vec![*target],
-            Terminator::Branch {
-                then_block,
-                else_block,
-                ..
-            } => vec![*then_block, *else_block],
-            Terminator::Op { normal, error, .. } => vec![*normal, *error],
-            Terminator::Return | Terminator::ReturnError | Terminator::Unreachable => Vec::new(),
-        }
-    }
 }

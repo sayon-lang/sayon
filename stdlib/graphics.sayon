@@ -1,53 +1,55 @@
-# Drawing, and windows to show it in.
-#
-#     graphics = import("standard/graphics.sayon")
-#
-#     window = graphics.open("Hello", 320, 200)
-#     canvas = graphics.canvas(window.width(), window.height())
-#     while window.is_open()
-#         for event in window.events()
-#             match event
-#                 case resized(width, height)
-#                     canvas = graphics.canvas(width, height)
-#                 case _
-#                     continue
-#         canvas.clear(graphics.BLACK)
-#         canvas.fill_circle(100, 100, 40, graphics.rgb(255, 160, 0))
-#         canvas.text("Hello", 20, 20, 16, graphics.WHITE)
-#         window.present(canvas)
-#
-# A canvas is pixels to draw on, which the runtime holds; drawing gives the
-# same pixels on every system, in the interpreter and in compiled programs
-# alike, with no window needed. A window shows a canvas: on a desktop, a
-# window of its own; in a web page, a canvas element of the page; in an
-# Android app, the app's screen. Its sizes are the screen's pixels, so a
-# canvas of the window's size fills it a pixel for a pixel. `present`
-# shows a canvas and waits for the next frame, about a sixtieth of a second
-# after the last, letting other tasks run meanwhile.
-#
-# Shapes cover the pixels whose centers they hold. Coordinates count
-# pixels from the top left corner, rightward and downward; a polygon's
-# points are pixel corners, and a line runs between pixel centers. On a
-# canvas whose `smooth` is true, circles, polygons, and lines are drawn
-# smooth instead: each pixel takes as much of the color as the shape
-# covers of its area, so that edges are anti-aliased.
-#
-#     canvas.smooth = true
-#     canvas.fill_circle(100, 100, 40, graphics.WHITE)
-#
-# `text` draws in a built-in font of 8 by 8 pixels, scaled: each character
-# takes a square cell of `size` pixels. It covers ASCII, the Latin-1
-# supplement, Greek, box drawing, and block elements, and shows a box for
-# any other character. `write` draws in a font: a TrueType font from a
-# file or bytes, which the runtime draws the same everywhere, or one of
-# the system's (in a web page, the browser's).
-#
-#     font = graphics.system_font()
-#     canvas.write(font, "Hello", 20, 20, 24, graphics.WHITE)
-#
-# PNG and JPEG images load into canvases, a canvas draws another scaled to
-# any size, and canvases save as PNG images. Opening a window where there
-# is no screen fails with GraphicsError.
+##
+Drawing, and windows to show it in.
+
+    graphics = import("standard/graphics.sayon")
+
+    window = graphics.open("Hello", 320, 200)
+    canvas = graphics.canvas(window.width(), window.height())
+    while window.is_open()
+        for event in window.events()
+            match event
+                case resized(width, height)
+                    canvas = graphics.canvas(width, height)
+                case _
+                    continue
+        canvas.clear(graphics.BLACK)
+        canvas.fill_circle(100, 100, 40, graphics.rgb(255, 160, 0))
+        canvas.text("Hello", 20, 20, 16, graphics.WHITE)
+        window.present(canvas)
+
+A canvas is pixels to draw on, which the runtime holds; drawing gives the
+same pixels on every system, in the interpreter and in compiled programs
+alike, with no window needed. A window shows a canvas: on a desktop, a
+window of its own; in a web page, a canvas element of the page; in an
+Android app, the app's screen. Its sizes are the screen's pixels, so a
+canvas of the window's size fills it a pixel for a pixel. `present`
+shows a canvas and waits for the next frame, about a sixtieth of a second
+after the last, letting other tasks run meanwhile.
+
+Shapes cover the pixels whose centers they hold. Coordinates count
+pixels from the top left corner, rightward and downward; a polygon's
+points are pixel corners, and a line runs between pixel centers. On a
+canvas whose `smooth` is true, circles, polygons, and lines are drawn
+smooth instead: each pixel takes as much of the color as the shape
+covers of its area, so that edges are anti-aliased.
+
+    canvas.smooth = true
+    canvas.fill_circle(100, 100, 40, graphics.WHITE)
+
+`text` draws in a built-in font of 8 by 8 pixels, scaled: each character
+takes a square cell of `size` pixels. It covers ASCII, the Latin-1
+supplement, Greek, box drawing, and block elements, and shows a box for
+any other character. `write` draws in a font: a TrueType font from a
+file or bytes, which the runtime draws the same everywhere, or one of
+the system's (in a web page, the browser's).
+
+    font = graphics.system_font()
+    canvas.write(font, "Hello", 20, 20, 24, graphics.WHITE)
+
+PNG and JPEG images load into canvases, a canvas draws another scaled to
+any size, and canvases save as PNG images. Opening a window where there
+is no screen fails with GraphicsError.
+##
 
 time = import("standard/time.sayon")
 
@@ -84,27 +86,35 @@ private function unpacked(value: integer) -> Color
 
 # ----- canvases ----------------------------------------------------------------
 
-# Pixels to draw on, `width` by `height`; circles, polygons, and lines on
-# it are smooth where `smooth` is true.
+##
+Pixels to draw on, `width` by `height`; circles, polygons, and lines on
+it are smooth where `smooth` is true.
+##
 type Canvas = [pixels: HostStream, width: integer, height: integer, smooth: boolean]
 
 # A point, in pixels from the top left corner.
 type Point = [x: integer, y: integer]
 
-# A canvas of transparent pixels. Each side is 1 to 16384 pixels, and
-# 67108864 pixels at most in all; other sizes fail with ValueError.
+##
+A canvas of transparent pixels. Each side is 1 to 16384 pixels, and
+67108864 pixels at most in all; other sizes fail with ValueError.
+##
 function canvas(width: integer, height: integer) -> Canvas
     return Canvas(pixels = host_canvas_new(width, height), width = width, height = height, smooth = false)
 
-# A canvas of given pixels: red, green, blue, and alpha bytes for each,
-# row by row from the top, as from `canvas.bytes()`.
+##
+A canvas of given pixels: red, green, blue, and alpha bytes for each,
+row by row from the top, as from `canvas.bytes()`.
+##
 function image(width: integer, height: integer, bytes: Array<byte>) -> Canvas
     return Canvas(pixels = host_canvas_from_bytes(width, height, bytes), width = width, height = height, smooth = false)
 
-# A canvas of the pixels of an image: a PNG image, of any of PNG's kinds of
-# color, interlaced or not, its colors of 16 bits cut to 8; or a JPEG
-# image, baseline or progressive, turned as a photo's EXIF orientation
-# says. What is neither, or is damaged, fails with ImageError.
+##
+A canvas of the pixels of an image: a PNG image, of any of PNG's kinds of
+color, interlaced or not, its colors of 16 bits cut to 8; or a JPEG
+image, baseline or progressive, turned as a photo's EXIF orientation
+says. What is neither, or is damaged, fails with ImageError.
+##
 function decode_image(bytes: Array<byte>) -> Canvas
     pixels = host_image_decode(bytes)
     width = host_canvas_size(pixels, 0)
@@ -118,10 +128,12 @@ function load_image(path: string) -> Canvas
 # How wide and high an image is, in pixels.
 type ImageSize = [width: integer, height: integer]
 
-# The size of a PNG or JPEG image as `decode_image` gives it, turned as a
-# photo's orientation says, read from the image's header alone, so that a
-# program can refuse an image too large before decoding it. What is
-# neither fails with ImageError.
+##
+The size of a PNG or JPEG image as `decode_image` gives it, turned as a
+photo's orientation says, read from the image's header alone, so that a
+program can refuse an image too large before decoding it. What is
+neither fails with ImageError.
+##
 function image_size(bytes: Array<byte>) -> ImageSize
     return ImageSize(width = host_image_size(bytes, 0), height = host_image_size(bytes, 1))
 
@@ -157,38 +169,50 @@ function canvas_fill_polygon(update canvas: Canvas, points: Array<Point>, color:
         push(coordinates, point.y)
     host_canvas_polygon(canvas.pixels, coordinates, packed(color), canvas.smooth)
 
-# A line from the center of one pixel to the center of another,
-# `thickness` pixels wide, its ends cut square at the centers when smooth.
+##
+A line from the center of one pixel to the center of another,
+`thickness` pixels wide, its ends cut square at the centers when smooth.
+##
 function canvas_line(update canvas: Canvas, x1: integer, y1: integer, x2: integer, y2: integer, color: Color, thickness = 1)
     host_canvas_line(canvas.pixels, x1, y1, x2, y2, thickness, packed(color), canvas.smooth)
 
-# Draws another canvas, such as an image, with its top left corner at `x`,
-# `y`, over what is there.
+##
+Draws another canvas, such as an image, with its top left corner at `x`,
+`y`, over what is there.
+##
 function canvas_draw(update canvas: Canvas, image: Canvas, x: integer, y: integer)
     host_canvas_draw(canvas.pixels, image.pixels, x, y)
 
-# Draws another canvas scaled to fill the rectangle `width` by `height`
-# pixels with its top left corner at `x`, `y`, over what is there. Made
-# smaller, each pixel is the average of the pixels it covers, by how much
-# of each; made larger, a blend of the nearest ones, by distance. Colors
-# count as much as they are opaque.
+##
+Draws another canvas scaled to fill the rectangle `width` by `height`
+pixels with its top left corner at `x`, `y`, over what is there. Made
+smaller, each pixel is the average of the pixels it covers, by how much
+of each; made larger, a blend of the nearest ones, by distance. Colors
+count as much as they are opaque.
+##
 function canvas_draw_scaled(update canvas: Canvas, image: Canvas, x: integer, y: integer, width: integer, height: integer)
     host_canvas_draw_scaled(canvas.pixels, image.pixels, [0, 0, image.width, image.height, x, y, width, height])
 
-# Draws a part of another canvas, `part_width` by `part_height` pixels from
-# `part_x`, `part_y`, scaled to fill a rectangle as `draw_scaled` does, such
-# as the middle square of a photo made small. A part reaching outside the
-# image is cut to it.
+##
+Draws a part of another canvas, `part_width` by `part_height` pixels from
+`part_x`, `part_y`, scaled to fill a rectangle as `draw_scaled` does, such
+as the middle square of a photo made small. A part reaching outside the
+image is cut to it.
+##
 function canvas_draw_part(update canvas: Canvas, image: Canvas, part_x: integer, part_y: integer, part_width: integer, part_height: integer, x: integer, y: integer, width: integer, height: integer)
     host_canvas_draw_scaled(canvas.pixels, image.pixels, [part_x, part_y, part_width, part_height, x, y, width, height])
 
-# Draws text in the built-in font, its top left corner at `x`, `y`, each
-# character in a cell of `size` pixels; a line break starts a line below.
+##
+Draws text in the built-in font, its top left corner at `x`, `y`, each
+character in a cell of `size` pixels; a line break starts a line below.
+##
 function canvas_text(update canvas: Canvas, text: string, x: integer, y: integer, size: integer, color: Color)
     host_canvas_text(canvas.pixels, text, x, y, size, packed(color))
 
-# How wide text is in the built-in font: its longest line's characters
-# times `size`.
+##
+How wide text is in the built-in font: its longest line's characters
+times `size`.
+##
 function text_width(text: string, size: integer) -> integer
     return host_text_width(text, size)
 
@@ -214,16 +238,20 @@ function canvas_save_png(canvas: Canvas, path: string)
 
 # ----- fonts -------------------------------------------------------------------
 
-# A font to write text in, and its name, such as "Arial Bold". Sizes are in
-# pixels per em, as a web page's are: a font of size 16 is drawn as text of
-# 16 pixels is in a browser. The runtime draws a TrueType font itself, its
-# outlines smooth, without hinting or kerning, so that text in it is the
-# same everywhere.
+##
+A font to write text in, and its name, such as "Arial Bold". Sizes are in
+pixels per em, as a web page's are: a font of size 16 is drawn as text of
+16 pixels is in a browser. The runtime draws a TrueType font itself, its
+outlines smooth, without hinting or kerning, so that text in it is the
+same everywhere.
+##
 type Font = [handle: HostStream, name: string]
 
-# The TrueType font in bytes, such as a `.ttf` file's, or the first of a
-# collection (`.ttc`). Fonts of PostScript outlines (most `.otf` files),
-# and what is not a font, fail with FontError.
+##
+The TrueType font in bytes, such as a `.ttf` file's, or the first of a
+collection (`.ttc`). Fonts of PostScript outlines (most `.otf` files),
+and what is not a font, fail with FontError.
+##
 function decode_font(bytes: Array<byte>) -> Font
     handle = host_font_bytes(bytes)
     name = host_font_name(handle)
@@ -233,11 +261,13 @@ function decode_font(bytes: Array<byte>) -> Font
 function load_font(path: string) -> Font
     return decode_font(host_read_file_bytes(path))
 
-# One of the system's fonts, by its family's name, such as "Arial", or its
-# full name, such as "Arial Bold"; "sans-serif", "serif", and "monospace"
-# name the system's usual font of each kind. In a web page it is the
-# browser's, which the browser draws. A font the system lacks fails with
-# FontError.
+##
+One of the system's fonts, by its family's name, such as "Arial", or its
+full name, such as "Arial Bold"; "sans-serif", "serif", and "monospace"
+name the system's usual font of each kind. In a web page it is the
+browser's, which the browser draws. A font the system lacks fails with
+FontError.
+##
 function system_font(name = "sans-serif") -> Font
     handle = host_font_system(name)
     name = host_font_name(handle)
@@ -263,21 +293,25 @@ function font_width(font: Font, text: string, size: integer) -> integer
 function font_height(font: Font, text: string, size: integer) -> integer
     return host_font_height(font.handle, text, size)
 
-# Draws text in a font at `size`, the top left corner of its first line at
-# `x`, `y`; a line break starts a line below. A character the font lacks
-# shows as the font's glyph for those.
+##
+Draws text in a font at `size`, the top left corner of its first line at
+`x`, `y`; a line break starts a line below. A character the font lacks
+shows as the font's glyph for those.
+##
 function canvas_write(update canvas: Canvas, font: Font, text: string, x: integer, y: integer, size: integer, color: Color)
     host_canvas_write(canvas.pixels, font.handle, text, x, y, size, packed(color))
 
 # ----- windows -----------------------------------------------------------------
 
-# What happened to a window since the program last asked. A pointer is a
-# mouse or a finger; its button is 1 for the primary one or a touch, 2 for
-# the secondary, and 3 for the middle. Keys are named as web pages name
-# them: "a" to "z", "0" to "9", " ", "Enter", "Escape", "Backspace", "Tab",
-# "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Shift", "Control",
-# "Alt", "Home", "End", "PageUp", "PageDown", "Insert", "Delete", "F1" to
-# "F12", and "Unidentified" for the rest.
+##
+What happened to a window since the program last asked. A pointer is a
+mouse or a finger; its button is 1 for the primary one or a touch, 2 for
+the secondary, and 3 for the middle. Keys are named as web pages name
+them: "a" to "z", "0" to "9", " ", "Enter", "Escape", "Backspace", "Tab",
+"ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Shift", "Control",
+"Alt", "Home", "End", "PageUp", "PageDown", "Insert", "Delete", "F1" to
+"F12", and "Unidentified" for the rest.
+##
 enum Event
     closed
     resized(width: integer, height: integer)
@@ -296,17 +330,21 @@ type Window = [handle: HostStream, open: boolean, next_frame: integer]
 # The nanoseconds between frames: sixty a second.
 constant FRAME = 16_666_667
 
-# Opens a window `width` by `height` points (the system's measure, which
-# `window.scale()` turns into pixels), titled `title`. In a web page it is a
-# canvas added to the page; in an Android app it is the app's screen,
-# whatever its size. Its first event tells its size in pixels. Fails with
-# GraphicsError where there is no screen, such as under WASI, in Node, or
-# from `adb shell`.
+##
+Opens a window `width` by `height` points (the system's measure, which
+`window.scale()` turns into pixels), titled `title`. In a web page it is a
+canvas added to the page; in an Android app it is the app's screen,
+whatever its size. Its first event tells its size in pixels. Fails with
+GraphicsError where there is no screen, such as under WASI, in Node, or
+from `adb shell`.
+##
 function open(title: string, width: integer, height: integer) -> Window
     return Window(handle = host_window_open(title, width, height), open = true, next_frame = 0)
 
-# The events since the last call, in order. After `closed`, the window is
-# no longer open; the program decides when to close it.
+##
+The events since the last call, in order. After `closed`, the window is
+no longer open; the program decides when to close it.
+##
 function window_events(update window: Window) -> Array<Event>
     fields = host_window_events(window.handle)
     events: Array<Event> = []
@@ -358,11 +396,13 @@ private function number(text: string) -> integer
         return -value
     return value
 
-# Shows a canvas in the window, its top left corner at the window's, over
-# black, then waits until the next frame is due, letting other tasks run.
-# A program whose frames take longer goes on at once, but in a web page it
-# always waits a little: the page shows the frame, and takes the user's
-# input, only while the program waits.
+##
+Shows a canvas in the window, its top left corner at the window's, over
+black, then waits until the next frame is due, letting other tasks run.
+A program whose frames take longer goes on at once, but in a web page it
+always waits a little: the page shows the frame, and takes the user's
+input, only while the program waits.
+##
 function window_present(update window: Window, canvas: Canvas)
     host_window_present(window.handle, canvas.pixels)
     now = time.start().nanoseconds
@@ -383,8 +423,10 @@ function window_width(window: Window) -> integer
 function window_height(window: Window) -> integer
     return host_window_height(window.handle)
 
-# The screen's pixels for a point of the system's measure, such as 1.5 or 2
-# on screens of higher density.
+##
+The screen's pixels for a point of the system's measure, such as 1.5 or 2
+on screens of higher density.
+##
 function window_scale(window: Window) -> float
     return host_window_scale(window.handle)
 

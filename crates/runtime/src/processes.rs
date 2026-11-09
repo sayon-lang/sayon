@@ -1,14 +1,16 @@
-//! Programs a program starts, with pipes to their standard input, output,
-//! and error, for `standard/os`.
-//!
-//! Reading or writing a pipe can block, so each pipe has a thread of its
-//! own: one reads what the program writes into a buffer, and one writes
-//! what is queued for the program's input. Another thread waits for the
-//! program to exit. An operation that must wait for one of them returns
-//! `Blocked`, as a socket's does, and the threads wake the scheduler when
-//! they have done something a task may wait for. So a program can read
-//! another's output while its other tasks run, and reading both outputs
-//! of a program never stops it for want of a reader.
+/*!
+Programs a program starts, with pipes to their standard input, output,
+and error, for `standard/os`.
+
+Reading or writing a pipe can block, so each pipe has a thread of its
+own: one reads what the program writes into a buffer, and one writes
+what is queued for the program's input. Another thread waits for the
+program to exit. An operation that must wait for one of them returns
+`Blocked`, as a socket's does, and the threads wake the scheduler when
+they have done something a task may wait for. So a program can read
+another's output while its other tasks run, and reading both outputs
+of a program never stops it for want of a reader.
+*/
 
 use crate::host::{HostError, io_error};
 use crate::network::{Background, IoWait, blocked, prepare_waking, wake};
@@ -18,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
-/// What a pipe buffers before its thread waits for some of it to be taken.
+/** What a pipe buffers before its thread waits for some of it to be taken. */
 const LIMIT: usize = 1 << 20;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -29,26 +31,28 @@ fn utf8(bytes: Vec<u8>, name: &str) -> Result<String, HostError> {
     String::from_utf8(bytes).map_err(|_| ("EncodingError", format!("{name} is not valid UTF-8")))
 }
 
-// ----- what a program writes ---------------------------------------------------------------
+/* ----- what a program writes --------------------------------------------------------------- */
 
 #[derive(Default)]
 struct Received {
     data: Vec<u8>,
     ended: bool,
     error: Option<String>,
-    /// Everything is wanted at once, so the thread reads on without a limit.
+    /** Everything is wanted at once, so the thread reads on without a limit. */
     unlimited: bool,
 }
 
-/// The reading end of a program's output or error output.
+/** The reading end of a program's output or error output. */
 pub struct PipeInput {
     received: Mutex<Received>,
     room: Condvar,
-    /// Set when all of either output of the program is wanted at once:
-    /// then neither pipe waits to be read, so that the program, which may
-    /// write both, never waits on the one not being read.
+    /**
+    Set when all of either output of the program is wanted at once:
+    then neither pipe waits to be read, so that the program, which may
+    write both, never waits on the one not being read.
+    */
     collecting: Arc<AtomicBool>,
-    /// The pipe, for messages: `the output of "git"`.
+    /** The pipe, for messages: `the output of "git"`. */
     pub(crate) name: String,
 }
 
@@ -99,8 +103,10 @@ impl PipeInput {
                         && !received.unlimited
                         && !shared.collecting.load(Ordering::Relaxed)
                     {
-                        // The other pipe can start collecting without
-                        // telling this one, so look again now and then.
+                        /*
+                        The other pipe can start collecting without
+                        telling this one, so look again now and then.
+                        */
                         let wait = shared
                             .room
                             .wait_timeout(received, Duration::from_millis(50));
@@ -127,7 +133,7 @@ impl PipeInput {
         }
     }
 
-    /// Takes the first `count` bytes, letting the thread read on.
+    /** Takes the first `count` bytes, letting the thread read on. */
     fn take(&self, received: &mut Received, count: usize) -> Vec<u8> {
         let taken = received.data.drain(..count).collect();
         self.room.notify_one();
@@ -172,7 +178,7 @@ impl PipeInput {
         Err(self.wait())
     }
 
-    /// Up to `count` bytes, as many as have arrived; none at the end.
+    /** Up to `count` bytes, as many as have arrived; none at the end. */
     pub fn read_bytes(self: &Arc<Self>, count: usize) -> Result<Vec<u8>, HostError> {
         let mut received = lock(&self.received);
         if count == 0 {
@@ -190,8 +196,10 @@ impl PipeInput {
         Err(self.wait())
     }
 
-    /// Up to `count` bytes of text, as much as has arrived, ending with a
-    /// whole character; "" at the end.
+    /**
+    Up to `count` bytes of text, as much as has arrived, ending with a
+    whole character; "" at the end.
+    */
     pub fn read_text(self: &Arc<Self>, count: usize) -> Result<String, HostError> {
         let mut received = lock(&self.received);
         if count == 0 {
@@ -214,7 +222,7 @@ impl PipeInput {
         Err(self.wait())
     }
 
-    /// Everything until the program closes the pipe, as text.
+    /** Everything until the program closes the pipe, as text. */
     pub fn read_rest(self: &Arc<Self>) -> Result<String, HostError> {
         let mut received = lock(&self.received);
         if !received.ended {
@@ -241,21 +249,21 @@ impl PipeInput {
     }
 }
 
-// ----- what a program reads ---------------------------------------------------------------
+/* ----- what a program reads --------------------------------------------------------------- */
 
 #[derive(Default)]
 struct Queued {
     data: Vec<u8>,
-    /// The thread has taken data and is writing it.
+    /** The thread has taken data and is writing it. */
     writing: bool,
-    /// No more is to come: the thread finishes once the queue is written.
+    /** No more is to come: the thread finishes once the queue is written. */
     closing: bool,
-    /// The thread has finished and closed the pipe.
+    /** The thread has finished and closed the pipe. */
     finished: bool,
     error: Option<String>,
 }
 
-/// The writing end of a program's standard input.
+/** The writing end of a program's standard input. */
 pub struct PipeOutput {
     queued: Mutex<Queued>,
     work: Condvar,
@@ -264,11 +272,11 @@ pub struct PipeOutput {
 
 #[derive(Clone, Copy)]
 enum Until {
-    /// Room in the queue for more.
+    /** Room in the queue for more. */
     Room,
-    /// Everything queued has been written.
+    /** Everything queued has been written. */
     Written,
-    /// The pipe is closed.
+    /** The pipe is closed. */
     Finished,
 }
 
@@ -312,8 +320,10 @@ impl PipeOutput {
                     let mut queued = lock(&shared.queued);
                     queued.writing = false;
                     let failed = match result {
-                        // A program that stopped reading takes no more; what
-                        // was left for it goes nowhere.
+                        /*
+                        A program that stopped reading takes no more; what
+                        was left for it goes nowhere.
+                        */
                         Err(e) if e.kind() == ErrorKind::BrokenPipe => true,
                         Err(e) => {
                             queued.error = Some(e.to_string());
@@ -369,7 +379,7 @@ impl PipeOutput {
         Ok(())
     }
 
-    /// Waits until what was written has gone to the program.
+    /** Waits until what was written has gone to the program. */
     pub fn flush(self: &Arc<Self>) -> Result<(), HostError> {
         let queued = lock(&self.queued);
         self.failure(&queued)?;
@@ -380,7 +390,7 @@ impl PipeOutput {
         Err(self.wait(Until::Written))
     }
 
-    /// Ends the program's input once what was written has gone to it.
+    /** Ends the program's input once what was written has gone to it. */
     pub fn close(self: &Arc<Self>) -> Result<(), HostError> {
         let mut queued = lock(&self.queued);
         queued.closing = true;
@@ -392,19 +402,23 @@ impl PipeOutput {
         Err(self.wait(Until::Finished))
     }
 
-    /// Lets the thread finish once it has written what is queued, when
-    /// nothing refers to the pipe any more.
+    /**
+    Lets the thread finish once it has written what is queued, when
+    nothing refers to the pipe any more.
+    */
     pub(crate) fn release(&self) {
         lock(&self.queued).closing = true;
         self.work.notify_one();
     }
 }
 
-// ----- the program -------------------------------------------------------------------------
+/* ----- the program ------------------------------------------------------------------------- */
 
-/// What a finished program used: the most memory it held at once, in bytes,
-/// and the processor time it took, in nanoseconds, its own and the system's
-/// on its behalf. Zero where the system does not say.
+/**
+What a finished program used: the most memory it held at once, in bytes,
+and the processor time it took, in nanoseconds, its own and the system's
+on its behalf. Zero where the system does not say.
+*/
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Usage {
     pub peak_memory: i64,
@@ -412,13 +426,17 @@ pub struct Usage {
 }
 
 pub struct Process {
-    /// The exit status once the program has finished: its code, or -1 when
-    /// it was stopped without one.
+    /**
+    The exit status once the program has finished: its code, or -1 when
+    it was stopped without one.
+    */
     status: Mutex<Option<i64>>,
-    /// Set before the status is.
+    /** Set before the status is. */
     usage: Mutex<Usage>,
-    /// Kept once the program has finished, so that its handle stays valid
-    /// while the process value lives.
+    /**
+    Kept once the program has finished, so that its handle stays valid
+    while the process value lives.
+    */
     child: Mutex<Option<Child>>,
     id: u32,
     #[cfg(windows)]
@@ -441,9 +459,11 @@ impl Background for Process {
 }
 
 impl Process {
-    /// Starts a program with pipes to its standard input, output, and
-    /// error. `environment` holds names and values to set; without
-    /// `inherit`, they are the program's whole environment.
+    /**
+    Starts a program with pipes to its standard input, output, and
+    error. `environment` holds names and values to set; without
+    `inherit`, they are the program's whole environment.
+    */
     pub fn start(
         program: &str,
         arguments: &[&str],
@@ -469,7 +489,7 @@ impl Process {
             }
         }
         prepare_waking();
-        // What the program printed comes before what the started one does.
+        /* What the program printed comes before what the started one does. */
         let _ = crate::console::stdout().flush();
         let mut child = command.spawn().map_err(|e| io_error("run", program, &e))?;
         let name = format!("\"{program}\"");
@@ -534,7 +554,7 @@ impl Process {
         i64::from(self.id)
     }
 
-    /// The exit status, waiting for the program to finish.
+    /** The exit status, waiting for the program to finish. */
     pub fn wait(self: &Arc<Self>) -> Result<i64, HostError> {
         match *lock(&self.status) {
             Some(status) => Ok(status),
@@ -542,7 +562,7 @@ impl Process {
         }
     }
 
-    /// What the program used, once it has finished.
+    /** What the program used, once it has finished. */
     pub fn usage(&self) -> Result<Usage, HostError> {
         if lock(&self.status).is_none() {
             return Err((
@@ -556,14 +576,16 @@ impl Process {
         Ok(*lock(&self.usage))
     }
 
-    /// Stops the program, unless it has finished.
+    /** Stops the program, unless it has finished. */
     pub fn kill(&self) -> Result<(), HostError> {
         let status = lock(&self.status);
         if status.is_some() {
             return Ok(());
         }
-        // The thread waiting for the program holds it, so its handle is
-        // valid until the status is set, which the lock holds off.
+        /*
+        The thread waiting for the program holds it, so its handle is
+        valid until the status is set, which the lock holds off.
+        */
         let stopped = platform::stop(self);
         drop(status);
         if stopped {
@@ -574,7 +596,7 @@ impl Process {
     }
 }
 
-/// The exit status of a program the system ended without one.
+/** The exit status of a program the system ended without one. */
 fn status(code: Option<i32>) -> i64 {
     code.map_or(-1, i64::from)
 }
@@ -584,7 +606,7 @@ mod platform {
     use super::Usage;
     use std::process::Child;
 
-    /// What `K32GetProcessMemoryInfo` fills in.
+    /** What `K32GetProcessMemoryInfo` fills in. */
     #[repr(C)]
     #[derive(Default)]
     struct MemoryCounters {
@@ -615,12 +637,14 @@ mod platform {
     }
 
     pub fn stop(process: &super::Process) -> bool {
-        // SAFETY: the handle is the running program's.
+        /* SAFETY: the handle is the running program's. */
         unsafe { TerminateProcess(process.handle, 1) != 0 }
     }
 
-    /// Waits for the program, then asks the system what it used, through
-    /// its handle, which stays open as long as `child` does.
+    /**
+    Waits for the program, then asks the system what it used, through
+    its handle, which stays open as long as `child` does.
+    */
     pub fn wait(child: &mut Child) -> (i64, Usage) {
         use std::os::windows::io::AsRawHandle;
         let status = super::status(child.wait().ok().and_then(|s| s.code()));
@@ -630,13 +654,15 @@ mod platform {
             size: std::mem::size_of::<MemoryCounters>() as u32,
             ..MemoryCounters::default()
         };
-        // SAFETY: the handle is the finished program's, and the counters
-        // are as big as they say.
+        /*
+        SAFETY: the handle is the finished program's, and the counters
+        are as big as they say.
+        */
         if unsafe { K32GetProcessMemoryInfo(handle, &mut counters, counters.size) } != 0 {
             usage.peak_memory = counters.peak_working_set as i64;
         }
         let (mut creation, mut exit, mut kernel, mut user) = (0, 0, 0, 0);
-        // SAFETY: as above; the times are counts of 100 nanoseconds.
+        /* SAFETY: as above; the times are counts of 100 nanoseconds. */
         if unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) } != 0
         {
             usage.processor_time = ((kernel + user) as i64).saturating_mul(100);
@@ -650,46 +676,54 @@ mod platform {
     use super::Usage;
     use std::process::Child;
 
-    // `wait4` fills in a `struct rusage` read as 64-bit words.
+    /* `wait4` fills in a `struct rusage` read as 64-bit words. */
     const _: () = assert!(std::mem::size_of::<std::ffi::c_long>() == 8);
 
     unsafe extern "C" {
         fn kill(process: i32, signal: i32) -> i32;
-        /// The `usage` is a `struct rusage`: two `timeval`s, the user and
-        /// system time, then 14 `long`s, the first the most memory held.
+        /**
+        The `usage` is a `struct rusage`: two `timeval`s, the user and
+        system time, then 14 `long`s, the first the most memory held.
+        */
         fn wait4(process: i32, status: *mut i32, options: i32, usage: *mut [i64; 18]) -> i32;
     }
 
     pub fn stop(process: &super::Process) -> bool {
         const KILL: i32 = 9;
-        // SAFETY: the program has not been waited for, so its number is
-        // still its own.
+        /*
+        SAFETY: the program has not been waited for, so its number is
+        still its own.
+        */
         unsafe { kill(process.id as i32, KILL) == 0 }
     }
 
-    /// Waits for the program with `wait4`, which tells what it used as it
-    /// collects the exit status.
+    /**
+    Waits for the program with `wait4`, which tells what it used as it
+    collects the exit status.
+    */
     pub fn wait(child: &mut Child) -> (i64, Usage) {
         let mut raw = 0;
         let mut usage = [0i64; 18];
         loop {
-            // SAFETY: the program is this one's child and not yet waited
-            // for; `usage` is as big as a `struct rusage` on 64-bit systems.
+            /*
+            SAFETY: the program is this one's child and not yet waited
+            for; `usage` is as big as a `struct rusage` on 64-bit systems.
+            */
             let waited = unsafe { wait4(child.id() as i32, &mut raw, 0, &mut usage) };
             if waited > 0 {
                 break;
             }
             if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
-                // Not this one's to wait for after all: ask the usual way.
+                /* Not this one's to wait for after all: ask the usual way. */
                 let status = super::status(child.wait().ok().and_then(|s| s.code()));
                 return (status, Usage::default());
             }
         }
-        // Exited on its own, rather than stopped by a signal.
+        /* Exited on its own, rather than stopped by a signal. */
         let code = (raw & 0x7f == 0).then_some((raw >> 8) & 0xff);
         let microseconds = |seconds: i64, micro: i64| seconds * 1_000_000 + micro;
         let time = microseconds(usage[0], usage[1]) + microseconds(usage[2], usage[3]);
-        // Bytes on macOS, kilobytes elsewhere.
+        /* Bytes on macOS, kilobytes elsewhere. */
         let unit = if cfg!(target_os = "macos") { 1 } else { 1024 };
         (
             super::status(code),
@@ -701,7 +735,7 @@ mod platform {
     }
 }
 
-/// Systems that start no programs, such as WASI, never have one to stop.
+/** Systems that start no programs, such as WASI, never have one to stop. */
 #[cfg(not(any(windows, unix)))]
 mod platform {
     use super::Usage;

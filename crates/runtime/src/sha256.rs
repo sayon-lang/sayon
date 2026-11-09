@@ -1,6 +1,8 @@
-//! SHA-256 (FIPS 180-4): package digests for the compiler, and
-//! `standard/crypto`'s `sha256` for programs, with HMAC (RFC 2104) and
-//! PBKDF2 (RFC 8018) over it, for signing messages and keeping passwords.
+/*!
+SHA-256 (FIPS 180-4): package digests for the compiler, and
+`standard/crypto`'s `sha256` for programs, with HMAC (RFC 2104) and
+PBKDF2 (RFC 8018) over it, for signing messages and keeping passwords.
+*/
 
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -13,8 +15,10 @@ const K: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
-/// A hash in progress. Its partial block is kept in place, so that a copy
-/// costs no allocation: HMAC copies one for every message.
+/**
+A hash in progress. Its partial block is kept in place, so that a copy
+costs no allocation: HMAC copies one for every message.
+*/
 #[derive(Clone)]
 pub struct Sha256 {
     state: [u32; 8],
@@ -62,8 +66,10 @@ impl Sha256 {
 
     pub fn finish(mut self) -> [u8; 32] {
         let bits = self.length.wrapping_mul(8);
-        // A 1 bit, zeros up to 8 bytes before the end of a block, and the
-        // length in bits: 72 bytes at most.
+        /*
+        A 1 bit, zeros up to 8 bytes before the end of a block, and the
+        length in bits: 72 bytes at most.
+        */
         let mut padding = [0u8; 72];
         padding[0] = 0x80;
         let zeros = if self.buffered < 56 {
@@ -127,9 +133,11 @@ pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// HMAC-SHA256 (RFC 2104) under one key: the inner and outer hashes with
-/// their padded keys taken in already, so that each message costs only its
-/// own blocks.
+/**
+HMAC-SHA256 (RFC 2104) under one key: the inner and outer hashes with
+their padded keys taken in already, so that each message costs only its
+own blocks.
+*/
 #[derive(Clone)]
 pub struct Hmac {
     inner: Sha256,
@@ -138,7 +146,7 @@ pub struct Hmac {
 
 impl Hmac {
     pub fn new(key: &[u8]) -> Hmac {
-        // A key longer than a block is its digest.
+        /* A key longer than a block is its digest. */
         let mut block = [0u8; 64];
         if key.len() > 64 {
             let mut hasher = Sha256::default();
@@ -154,7 +162,7 @@ impl Hmac {
         Hmac { inner, outer }
     }
 
-    /// The message's authentication code: 32 bytes.
+    /** The message's authentication code: 32 bytes. */
     pub fn sign(&self, message: &[u8]) -> [u8; 32] {
         let mut inner = self.inner.clone();
         inner.update(message);
@@ -164,9 +172,11 @@ impl Hmac {
     }
 }
 
-/// PBKDF2 (RFC 8018) with HMAC-SHA256: `length` bytes derived from a
-/// password and a salt by `iterations` rounds, each block of 32 bytes the
-/// sum (by XOR) of its rounds.
+/**
+PBKDF2 (RFC 8018) with HMAC-SHA256: `length` bytes derived from a
+password and a salt by `iterations` rounds, each block of 32 bytes the
+sum (by XOR) of its rounds.
+*/
 pub fn pbkdf2(password: &[u8], salt: &[u8], iterations: u32, length: usize) -> Vec<u8> {
     let hmac = Hmac::new(password);
     let mut out = Vec::with_capacity(length);
@@ -219,7 +229,7 @@ mod tests {
             digest(&million),
             "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
         );
-        // Split updates give the same result.
+        /* Split updates give the same result. */
         let mut hasher = Sha256::default();
         for chunk in million.chunks(997) {
             hasher.update(chunk);
@@ -228,7 +238,7 @@ mod tests {
             hex(&hasher.finish()),
             "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
         );
-        // Every length of the last block pads to a whole one.
+        /* Every length of the last block pads to a whole one. */
         for size in 50..=130 {
             let data = vec![b'x'; size];
             let mut split = Sha256::default();
@@ -240,7 +250,7 @@ mod tests {
 
     #[test]
     fn hmac_vectors() {
-        // RFC 4231's test cases 1, 2, and 6 (a key longer than a block).
+        /* RFC 4231's test cases 1, 2, and 6 (a key longer than a block). */
         let code = |key: &[u8], message: &[u8]| hex(&Hmac::new(key).sign(message));
         assert_eq!(
             code(&[0x0b; 20], b"Hi There"),
@@ -272,7 +282,7 @@ mod tests {
             derive(b"password", b"salt", 4096, 32),
             "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a"
         );
-        // RFC 7914's vectors, of two blocks.
+        /* RFC 7914's vectors, of two blocks. */
         assert_eq!(
             derive(b"passwd", b"salt", 1, 64),
             "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc\
@@ -283,7 +293,7 @@ mod tests {
             "4ddcd8f60b98be21830cee5ef22701f9641a4418d04c0414aeff08876b34ab56\
              a1d425a1225833549adb841b51c9b3176a272bdebba1d078478f62b397f33c8d"
         );
-        // A length that is not a whole number of blocks.
+        /* A length that is not a whole number of blocks. */
         assert_eq!(
             derive(b"password", b"salt", 2, 20),
             "ae4d0c95af6b46d32d0adff928f06dd02a303f8e"

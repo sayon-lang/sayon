@@ -1,7 +1,9 @@
-# Functions whose results fit in a register hand them back in one, beside
-# the error, in compiled programs. A failed call leaves its target as it
-# was, errors travel up through every call, and the same functions called
-# through their values give the same results.
+##
+Functions whose results fit in a register hand them back in one, beside
+the error, in compiled programs. A failed call leaves its target as it
+was, errors travel up through every call, and the same functions called
+through their values give the same results.
+##
 
 function halve(value: integer) -> integer
     if value % 2 != 0

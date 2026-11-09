@@ -1,7 +1,9 @@
-# Removing many entries from dictionaries: what is left keeps its order,
-# loops and printing see only what is left, and keys added back go last.
-# Compiled programs leave the places of removed entries empty until enough
-# have been removed, so this goes past that point and back.
+##
+Removing many entries from dictionaries: what is left keeps its order,
+loops and printing see only what is left, and keys added back go last.
+Compiled programs leave the places of removed entries empty until enough
+have been removed, so this goes past that point and back.
+##
 
 function names(count: integer) -> Dict<string, integer>
     table: Dict<string, integer> = []

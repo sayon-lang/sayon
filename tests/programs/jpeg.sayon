@@ -1,10 +1,14 @@
-# JPEG images decoded into canvases, turned as their EXIF orientation says,
-# measured from their header, and drawn scaled.
+##
+JPEG images decoded into canvases, turned as their EXIF orientation says,
+measured from their header, and drawn scaled.
+##
 graphics = import("standard/graphics.sayon")
 strings = import("standard/strings.sayon")
 
-# A JPEG image of 16 by 16 pixels, of red, green, blue, and white quarters,
-# as libjpeg's cjpeg made it (-quality 95 -optimize -sample 2x2).
+##
+A JPEG image of 16 by 16 pixels, of red, green, blue, and white quarters,
+as libjpeg's cjpeg made it (-quality 95 -optimize -sample 2x2).
+##
 function photo() -> Array<byte>
     bytes: Array<byte> = [
         255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 255, 219, 0, 67,
@@ -25,8 +29,10 @@ function photo() -> Array<byte>
     ]
     return bytes
 
-# The image with an EXIF segment after its start that gives an orientation,
-# as a camera writes it.
+##
+The image with an EXIF segment after its start that gives an orientation,
+as a camera writes it.
+##
 function oriented(jpeg: Array<byte>, orientation: integer) -> Array<byte>
     out: Array<byte> = [255, 216, 255, 225, 0, 34]
     exif: Array<byte> = [69, 120, 105, 102, 0, 0, 77, 77, 0, 42, 0, 0, 0, 8, 0, 1, 1, 18, 0, 3, 0, 0, 0, 1, 0, byte(orientation), 0, 0, 0, 0, 0, 0]
@@ -45,8 +51,10 @@ print(show(image.pixel(3, 3)), "/", show(image.pixel(12, 3)), "/", show(image.pi
 size = graphics.image_size(photo())
 print(size.width, size.height)
 
-# Turned a quarter clockwise, red moves to the top right, and blue to the
-# top left.
+##
+Turned a quarter clockwise, red moves to the top right, and blue to the
+top left.
+##
 turned = graphics.decode_image(oriented(photo(), 6))
 print(turned.pixel(12, 3) == image.pixel(3, 3), turned.pixel(3, 3) == image.pixel(3, 12))
 

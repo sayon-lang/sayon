@@ -1,5 +1,7 @@
-// Hello: print a line and end. What starting and ending a program costs,
-// and how small its executable and its memory can be.
+/*
+Hello: print a line and end. What starting and ending a program costs,
+and how small its executable and its memory can be.
+*/
 
 fn main() {
     println!("Hello, world!");

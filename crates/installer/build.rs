@@ -1,12 +1,14 @@
-//! Embeds the release archive the installer unpacks, named by the
-//! `SAYON_INSTALLER_PAYLOAD` environment variable (`scripts/package.ps1` and
-//! `scripts/package.sh` set it). Without it the installer is built empty and
-//! says so when run.
-//!
-//! On Windows it also embeds a manifest that runs the installer without
-//! administrator rights (Windows otherwise asks to elevate any program named
-//! "setup"), and, when a resource compiler is available, the Sayon icon and
-//! version information.
+/*!
+Embeds the release archive the installer unpacks, named by the
+`SAYON_INSTALLER_PAYLOAD` environment variable (`scripts/package.ps1` and
+`scripts/package.sh` set it). Without it the installer is built empty and
+says so when run.
+
+On Windows it also embeds a manifest that runs the installer without
+administrator rights (Windows otherwise asks to elevate any program named
+"setup"), and, when a resource compiler is available, the Sayon icon and
+version information.
+*/
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -25,7 +27,7 @@ fn main() {
     };
     std::fs::write(
         out_dir.join("payload.rs"),
-        format!("/// The release archive to install.\npub static PAYLOAD: &[u8] = {payload};\n"),
+        format!("/** The release archive to install. */\npub static PAYLOAD: &[u8] = {payload};\n"),
     )
     .expect("write payload.rs");
     println!(

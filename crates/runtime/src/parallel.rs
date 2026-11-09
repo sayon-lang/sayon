@@ -1,20 +1,24 @@
-//! Tasks of compiled programs on threads of their own, and the mutexes
-//! they share.
-//!
-//! A parallel task runs a function value on a new thread, which has a
-//! scheduler of its own for the tasks it starts. The checker lets only
-//! values that share nothing with their thread cross to another (no
-//! `Shared`, `Weak`, task, or channel handle, whose counts are not atomic),
-//! so the function's environment and the task's result move between
-//! threads as they are. A mutex is a counted block, shared by every thread
-//! holding a handle to it, with its value and the task holding its lock.
-//!
-//! At the end of the program the main thread cancels the tasks still
-//! running on other threads, waits for each thread to finish, and reports
-//! the failures nothing joined.
+/*!
+Tasks of compiled programs on threads of their own, and the mutexes
+they share.
 
-// The functions called by generated code rely on the same conventions as
-// those of `ffi`, where their contracts are described.
+A parallel task runs a function value on a new thread, which has a
+scheduler of its own for the tasks it starts. The checker lets only
+values that share nothing with their thread cross to another (no
+`Shared`, `Weak`, task, or channel handle, whose counts are not atomic),
+so the function's environment and the task's result move between
+threads as they are. A mutex is a counted block, shared by every thread
+holding a handle to it, with its value and the task holding its lock.
+
+At the end of the program the main thread cancels the tasks still
+running on other threads, waits for each thread to finish, and reports
+the failures nothing joined.
+*/
+
+/*
+The functions called by generated code rely on the same conventions as
+those of `ffi`, where their contracts are described.
+*/
 #![allow(clippy::missing_safety_doc)]
 
 use crate::ffi::{DropFn, SayonError, allocated, released, set_error};
@@ -30,15 +34,15 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// An error made on one thread and taken over by another.
+/** An error made on one thread and taken over by another. */
 struct SentError(*mut SayonError);
 
-// SAFETY: an error is plain text, owned by one thread at a time.
+/* SAFETY: an error is plain text, owned by one thread at a time. */
 unsafe impl Send for SentError {}
 
-/// What a parallel task's handle, its thread, and the program share.
+/** What a parallel task's handle, its thread, and the program share. */
 pub struct Shared {
-    /// The result's words, or the error, once the task has finished.
+    /** The result's words, or the error, once the task has finished. */
     outcome: Mutex<Option<Result<Vec<u64>, SentError>>>,
     cancel: AtomicBool,
     joined: AtomicBool,
@@ -54,7 +58,7 @@ impl Background for Shared {
 }
 
 impl Drop for Shared {
-    /// Destroys a result or error that nothing joined.
+    /** Destroys a result or error that nothing joined. */
     fn drop(&mut self) {
         match self
             .outcome
@@ -64,12 +68,12 @@ impl Drop for Shared {
         {
             Some(Ok(mut words)) => {
                 if let Some(drop) = self.result_drop {
-                    // SAFETY: the words hold a result of the task's type.
+                    /* SAFETY: the words hold a result of the task's type. */
                     unsafe { drop(words.as_mut_ptr() as *mut u8) };
                 }
             }
             Some(Err(mut error)) => {
-                // SAFETY: an error owned by the outcome.
+                /* SAFETY: an error owned by the outcome. */
                 unsafe { crate::ffi::sayon_error_drop(&mut error.0) };
             }
             None => {}
@@ -77,30 +81,30 @@ impl Drop for Shared {
     }
 }
 
-/// A parallel task's handle; it starts like a `TaskBlock` with its kind.
+/** A parallel task's handle; it starts like a `TaskBlock` with its kind. */
 #[repr(C)]
 pub struct ParallelBlock {
-    /// 1, which tells it from a task of the same thread.
+    /** 1, which tells it from a task of the same thread. */
     kind: u32,
     shared: Arc<Shared>,
 }
 
-/// The program's threads, joined at its end.
+/** The program's threads, joined at its end. */
 static THREADS: Mutex<Vec<(Arc<Shared>, std::thread::JoinHandle<()>)>> = Mutex::new(Vec::new());
-/// The status a task's `os.exit` asked for, on any thread.
+/** The status a task's `os.exit` asked for, on any thread. */
 static EXIT: Mutex<Option<i32>> = Mutex::new(None);
 static EXITING: AtomicBool = AtomicBool::new(false);
-/// Whether a task failed without being joined, on another thread.
+/** Whether a task failed without being joined, on another thread. */
 static FAILED: AtomicBool = AtomicBool::new(false);
-/// The parallel tasks that have not finished.
+/** The parallel tasks that have not finished. */
 static RUNNING: AtomicUsize = AtomicUsize::new(0);
 
 thread_local! {
-    /// On a parallel task's thread: the task.
+    /** On a parallel task's thread: the task. */
     static THREAD_TASK: RefCell<Option<Arc<Shared>>> = const { RefCell::new(None) };
 }
 
-/// Whether a task asked the whole program to end.
+/** Whether a task asked the whole program to end. */
 pub(crate) fn exiting() -> bool {
     EXITING.load(Ordering::Relaxed)
 }
@@ -119,12 +123,12 @@ fn exit_with(status: i32) {
     network::wake();
 }
 
-/// Whether tasks run on threads other than this one.
+/** Whether tasks run on threads other than this one. */
 pub(crate) fn others_run() -> bool {
     THREAD_TASK.with(|task| task.borrow().is_some()) || RUNNING.load(Ordering::Acquire) > 0
 }
 
-/// Whether the parallel task this thread runs is to stop.
+/** Whether the parallel task this thread runs is to stop. */
 pub(crate) fn thread_cancelled() -> bool {
     THREAD_TASK.with(|task| {
         task.borrow()
@@ -133,8 +137,10 @@ pub(crate) fn thread_cancelled() -> bool {
     })
 }
 
-/// Starts a task on a thread of its own, running the function value at
-/// `body`, which it takes over, and stores its handle in `out`.
+/**
+Starts a task on a thread of its own, running the function value at
+`body`, which it takes over, and stores its handle in `out`.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_task_spawn_parallel(
     err: *mut *mut SayonError,
@@ -144,7 +150,7 @@ pub unsafe extern "C" fn sayon_task_spawn_parallel(
     out: *mut *mut ParallelBlock,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: `body` is a function value: its code and environment block.
+    /* SAFETY: `body` is a function value: its code and environment block. */
     unsafe {
         let code = *(body as *const *const u8) as usize;
         let environment = *(body.add(8) as *const *mut u8) as usize;
@@ -158,9 +164,9 @@ pub unsafe extern "C" fn sayon_task_spawn_parallel(
             result_drop,
         });
         let worker = shared.clone();
-        // The channels of this thread may go with what the task captured.
+        /* The channels of this thread may go with what the task captured. */
         crate::tasks::cross_channels();
-        // Counted before the thread can finish.
+        /* Counted before the thread can finish. */
         RUNNING.fetch_add(1, Ordering::AcqRel);
         let started = std::thread::Builder::new()
             .name("task".to_string())
@@ -186,14 +192,16 @@ pub unsafe extern "C" fn sayon_task_spawn_parallel(
     }
 }
 
-/// The body of a parallel task's thread.
+/** The body of a parallel task's thread. */
 fn run_thread(shared: Arc<Shared>, code: usize, environment: usize) {
     network::prepare_waking();
     THREAD_TASK.with(|task| *task.borrow_mut() = Some(shared.clone()));
     let mut words = vec![0u64; shared.result_size.div_ceil(8).max(1)];
     let mut error: *mut SayonError = std::ptr::null_mut();
-    // SAFETY: the function value the task took over, whose captures the
-    // checker let cross threads.
+    /*
+    SAFETY: the function value the task took over, whose captures the
+    checker let cross threads.
+    */
     let status = unsafe {
         let status = crate::tasks::call_function(
             code as *const u8,
@@ -204,11 +212,11 @@ fn run_thread(shared: Arc<Shared>, code: usize, environment: usize) {
         crate::tasks::destroy_function_environment(environment as *mut u8);
         status
     };
-    // The tasks it started on this thread end with it.
+    /* The tasks it started on this thread end with it. */
     if crate::tasks::finish_local_tasks(status != 0) > 0 {
         FAILED.store(true, Ordering::Relaxed);
     }
-    // The result may hold channels made here.
+    /* The result may hold channels made here. */
     crate::tasks::cross_channels();
     if let Some(status) = crate::tasks::exit_requested() {
         exit_with(status);
@@ -216,10 +224,10 @@ fn run_thread(shared: Arc<Shared>, code: usize, environment: usize) {
     let outcome = if status == 0 {
         Ok(words)
     } else {
-        // SAFETY: the error the function stored.
+        /* SAFETY: the error the function stored. */
         let code = unsafe { &(*error).code };
         if code == EXIT_CODE {
-            // SAFETY: as above.
+            /* SAFETY: as above. */
             exit_with(host::exit_status(unsafe { &(*error).message }));
         }
         Err(SentError(error))
@@ -229,15 +237,17 @@ fn run_thread(shared: Arc<Shared>, code: usize, environment: usize) {
     network::wake();
 }
 
-/// Waits for a parallel task and moves its result into `out`, or its error
-/// into the error slot.
+/**
+Waits for a parallel task and moves its result into `out`, or its error
+into the error slot.
+*/
 pub(crate) unsafe fn join_task(
     err: *mut *mut SayonError,
     block: *const ParallelBlock,
     out: *mut u8,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: a live handle, and the caller's error slot and destination.
+    /* SAFETY: a live handle, and the caller's error slot and destination. */
     unsafe {
         let shared = &(*block).shared;
         loop {
@@ -280,10 +290,12 @@ pub(crate) unsafe fn join_task(
     }
 }
 
-/// Drops a parallel task's handle: without a join or a detach, the task is
-/// cancelled.
+/**
+Drops a parallel task's handle: without a join or a detach, the task is
+cancelled.
+*/
 pub(crate) unsafe fn drop_task(slot: *mut *mut ParallelBlock) {
-    // SAFETY: the slot holds a live handle, which the caller checked.
+    /* SAFETY: the slot holds a live handle, which the caller checked. */
     unsafe {
         let block = *slot;
         *slot = std::ptr::null_mut();
@@ -298,14 +310,16 @@ pub(crate) unsafe fn drop_task(slot: *mut *mut ParallelBlock) {
 }
 
 pub(crate) unsafe fn detach_task(block: *const ParallelBlock) {
-    // SAFETY: a live handle.
+    /* SAFETY: a live handle. */
     let shared = unsafe { &(*block).shared };
     shared.detached.store(true, Ordering::Relaxed);
 }
 
-/// At the end of the program: cancels the tasks on other threads, waits for
-/// each thread to finish, and reports the failures nothing joined. Gives
-/// the exit status a task's `os.exit` asked for, if one did.
+/**
+At the end of the program: cancels the tasks on other threads, waits for
+each thread to finish, and reports the failures nothing joined. Gives
+the exit status a task's `os.exit` asked for, if one did.
+*/
 pub(crate) fn finish_threads(main_failed: bool) -> Option<i32> {
     let running: Vec<Arc<Shared>> = lock(&THREADS).iter().map(|(s, _)| s.clone()).collect();
     for shared in &running {
@@ -318,7 +332,7 @@ pub(crate) fn finish_threads(main_failed: bool) -> Option<i32> {
         let Some((shared, handle)) = next else {
             break;
         };
-        // Also a task started on another thread meanwhile.
+        /* Also a task started on another thread meanwhile. */
         shared.cancel.store(true, Ordering::Relaxed);
         network::wake();
         let _ = handle.join();
@@ -330,10 +344,10 @@ pub(crate) fn finish_threads(main_failed: bool) -> Option<i32> {
         }
         let outcome = lock(&shared.outcome).take();
         if let Some(Err(mut error)) = outcome {
-            // SAFETY: the error the task ended with.
+            /* SAFETY: the error the task ended with. */
             unsafe {
                 let problem = &*error.0;
-                // When the main task failed, its error is reported instead.
+                /* When the main task failed, its error is reported instead. */
                 if problem.code != CANCELLED_CODE && problem.code != EXIT_CODE && !main_failed {
                     FAILED.store(true, Ordering::Relaxed);
                     report!(
@@ -348,27 +362,27 @@ pub(crate) fn finish_threads(main_failed: bool) -> Option<i32> {
                 crate::ffi::sayon_error_drop(&mut error.0);
             }
         } else if let Some(outcome) = outcome {
-            // A result nobody joined is destroyed with the state.
+            /* A result nobody joined is destroyed with the state. */
             *lock(&shared.outcome) = Some(outcome);
         }
     }
     exit_status()
 }
 
-// ----- mutexes -------------------------------------------------------------------------------
+/* ----- mutexes ------------------------------------------------------------------------------- */
 
-/// A mutex: its value, in words, and which task holds its lock.
+/** A mutex: its value, in words, and which task holds its lock. */
 pub struct MutexBlock {
     references: AtomicUsize,
     holder: Mutex<Option<(std::thread::ThreadId, usize)>>,
     free: Condvar,
     size: usize,
     drop: DropFn,
-    /// Read and written only by the task holding the lock.
+    /** Read and written only by the task holding the lock. */
     value: UnsafeCell<Vec<u64>>,
 }
 
-/// Makes a mutex holding the value at `value`, which it takes over.
+/** Makes a mutex holding the value at `value`, which it takes over. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_mutex_new(
     value: *mut u8,
@@ -378,9 +392,9 @@ pub unsafe extern "C" fn sayon_mutex_new(
 ) {
     let size = size.max(0) as usize;
     let mut words = vec![0u64; size.div_ceil(8).max(1)];
-    // Tasks on other threads may take the value out.
+    /* Tasks on other threads may take the value out. */
     crate::tasks::cross_channels();
-    // SAFETY: `value` holds `size` bytes of the value.
+    /* SAFETY: `value` holds `size` bytes of the value. */
     unsafe {
         std::ptr::copy_nonoverlapping(value, words.as_mut_ptr() as *mut u8, size);
         std::ptr::write_bytes(value, 0, size);
@@ -396,8 +410,10 @@ pub unsafe extern "C" fn sayon_mutex_new(
     }
 }
 
-/// Takes a mutex's lock, waiting for another thread to free it, and moves
-/// its value into `out`.
+/**
+Takes a mutex's lock, waiting for another thread to free it, and moves
+its value into `out`.
+*/
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_mutex_take(
     err: *mut *mut SayonError,
@@ -405,7 +421,7 @@ pub unsafe extern "C" fn sayon_mutex_take(
     out: *mut u8,
     location: *const c_char,
 ) -> i32 {
-    // SAFETY: the slot holds a live mutex.
+    /* SAFETY: the slot holds a live mutex. */
     unsafe {
         let mutex = &**slot;
         let me = (std::thread::current().id(), crate::tasks::current_fiber());
@@ -431,11 +447,11 @@ pub unsafe extern "C" fn sayon_mutex_take(
     }
 }
 
-/// Moves a value back into a mutex and frees its lock.
+/** Moves a value back into a mutex and frees its lock. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_mutex_put(slot: *const *mut MutexBlock, value: *mut u8) {
     crate::tasks::cross_channels();
-    // SAFETY: the slot holds a live mutex whose lock the running task holds.
+    /* SAFETY: the slot holds a live mutex whose lock the running task holds. */
     unsafe {
         let mutex = &**slot;
         let words = &mut *mutex.value.get();
@@ -449,17 +465,17 @@ pub unsafe extern "C" fn sayon_mutex_put(slot: *const *mut MutexBlock, value: *m
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_mutex_clone(src: *const *mut MutexBlock, dst: *mut *mut MutexBlock) {
-    // SAFETY: the source holds a live mutex.
+    /* SAFETY: the source holds a live mutex. */
     unsafe {
         (**src).references.fetch_add(1, Ordering::Relaxed);
         *dst = *src;
     }
 }
 
-/// Drops a handle; the last one destroys the mutex and its value.
+/** Drops a handle; the last one destroys the mutex and its value. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_mutex_release(slot: *mut *mut MutexBlock) {
-    // SAFETY: the slot holds null or a live mutex.
+    /* SAFETY: the slot holds null or a live mutex. */
     unsafe {
         let mutex = *slot;
         if mutex.is_null() {

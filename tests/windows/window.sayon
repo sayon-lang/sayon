@@ -1,5 +1,7 @@
-# A window that shows a few frames and closes itself, the same wherever
-# there is a screen: a desktop, a web page, or an Android app.
+##
+A window that shows a few frames and closes itself, the same wherever
+there is a screen: a desktop, a web page, or an Android app.
+##
 graphics = import("standard/graphics.sayon")
 
 function size_of(event: graphics.Event) -> integer

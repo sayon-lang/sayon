@@ -1,15 +1,17 @@
-//! `sayon run --sandbox`: what keeps a program from anyone from taking more
-//! of the computer than its share. The checker and the interpreter keep it
-//! from what the sandbox does not give it (`sayon_target::SANDBOX`); this
-//! keeps its time and its memory. A watchdog thread stops it after
-//! [`PROCESSOR_SECONDS`] of the processor or [`WALL_SECONDS`] in all, and
-//! Sayon's allocator, which counts what is allocated in the sandbox, past
-//! [`MEMORY`]; the interpreter stops it past [`OUTPUT`] written. The
-//! checking counts, too.
-//!
-//! The operating system backs these, a little past them, in case a mistake
-//! here lets a program through: on Windows a job object, which also starts
-//! no other process; on Linux a limit on processor time.
+/*!
+`sayon run --sandbox`: what keeps a program from anyone from taking more
+of the computer than its share. The checker and the interpreter keep it
+from what the sandbox does not give it (`sayon_target::SANDBOX`); this
+keeps its time and its memory. A watchdog thread stops it after
+[`PROCESSOR_SECONDS`] of the processor or [`WALL_SECONDS`] in all, and
+Sayon's allocator, which counts what is allocated in the sandbox, past
+[`MEMORY`]; the interpreter stops it past [`OUTPUT`] written. The
+checking counts, too.
+
+The operating system backs these, a little past them, in case a mistake
+here lets a program through: on Windows a job object, which also starts
+no other process; on Linux a limit on processor time.
+*/
 
 use crate::status;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,17 +22,21 @@ pub const WALL_SECONDS: u64 = 10;
 pub const MEMORY: usize = 256 << 20;
 pub const OUTPUT: usize = 64 << 10;
 
-/// Set once the program is being stopped, so that only one thread stops it.
+/** Set once the program is being stopped, so that only one thread stops it. */
 static STOPPING: AtomicBool = AtomicBool::new(false);
 
-/// What the allocator calls when the program would hold more than
-/// [`MEMORY`].
+/**
+What the allocator calls when the program would hold more than
+[`MEMORY`].
+*/
 fn out_of_memory() -> ! {
     stop(&format!("it used more than {} MiB of memory", MEMORY >> 20))
 }
 
-/// Puts this process in the sandbox's limits, from now on: what checks and
-/// runs the program in it counts.
+/**
+Puts this process in the sandbox's limits, from now on: what checks and
+runs the program in it counts.
+*/
 pub fn enter() {
     sayon_runtime::alloc::limit(MEMORY, out_of_memory);
     os::back_up();
@@ -55,19 +61,21 @@ pub fn enter() {
     }
 }
 
-/// Says that the sandbox stopped the program, and why; the status to exit
-/// with.
+/**
+Says that the sandbox stopped the program, and why; the status to exit
+with.
+*/
 pub fn stopped(reason: &str) -> u8 {
     eprintln!("the sandbox stopped the program: {reason}");
     status::FATAL
 }
 
-/// Stops the program at once, from wherever it is, saying why.
+/** Stops the program at once, from wherever it is, saying why. */
 pub fn stop(reason: &str) -> ! {
-    // What stopping the program allocates is not counted against it.
+    /* What stopping the program allocates is not counted against it. */
     sayon_runtime::alloc::unlimit();
     if STOPPING.swap(true, Ordering::SeqCst) {
-        // Another thread is stopping it already.
+        /* Another thread is stopping it already. */
         loop {
             std::thread::park();
         }
@@ -88,7 +96,7 @@ mod os {
     const JOB_OBJECT_LIMIT_PROCESS_MEMORY: u32 = 0x0100;
     const JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION: u32 = 0x0400;
 
-    /// `JOBOBJECT_BASIC_LIMIT_INFORMATION`.
+    /** `JOBOBJECT_BASIC_LIMIT_INFORMATION`. */
     #[repr(C)]
     #[derive(Default)]
     struct BasicLimits {
@@ -103,7 +111,7 @@ mod os {
         scheduling_class: u32,
     }
 
-    /// `JOBOBJECT_EXTENDED_LIMIT_INFORMATION`, with its `IO_COUNTERS`.
+    /** `JOBOBJECT_EXTENDED_LIMIT_INFORMATION`, with its `IO_COUNTERS`. */
     #[repr(C)]
     #[derive(Default)]
     struct ExtendedLimits {
@@ -135,11 +143,13 @@ mod os {
         fn AssignProcessToJobObject(job: *mut c_void, process: *mut c_void) -> i32;
     }
 
-    /// The processor time this process has used, in its own code and the
-    /// system's for it.
+    /**
+    The processor time this process has used, in its own code and the
+    system's for it.
+    */
     pub fn processor_time() -> Duration {
         let (mut creation, mut exit, mut kernel, mut user) = (0u64, 0u64, 0u64, 0u64);
-        // SAFETY: four times to fill, for this process's pseudo-handle.
+        /* SAFETY: four times to fill, for this process's pseudo-handle. */
         let read = unsafe {
             GetProcessTimes(
                 GetCurrentProcess(),
@@ -152,14 +162,16 @@ mod os {
         if read == 0 {
             return Duration::ZERO;
         }
-        // In units of 100 nanoseconds.
+        /* In units of 100 nanoseconds. */
         Duration::from_nanos((kernel + user).saturating_mul(100))
     }
 
-    /// A job for this process, which ends it past twice the processor time
-    /// and four times the memory, starts no other process, and shows no
-    /// window when the process fails. Without one the watchdog still stops
-    /// the program.
+    /**
+    A job for this process, which ends it past twice the processor time
+    and four times the memory, starts no other process, and shows no
+    window when the process fails. Without one the watchdog still stops
+    the program.
+    */
     pub fn back_up() {
         let mut limits = ExtendedLimits::default();
         limits.basic.flags = JOB_OBJECT_LIMIT_PROCESS_TIME
@@ -169,8 +181,10 @@ mod os {
         limits.basic.process_time = (2 * PROCESSOR_SECONDS as i64) * 10_000_000;
         limits.basic.active_processes = 1;
         limits.process_memory = 4 * MEMORY;
-        // SAFETY: a new, unnamed job, given limits of the size its class
-        // takes, then this process's pseudo-handle.
+        /*
+        SAFETY: a new, unnamed job, given limits of the size its class
+        takes, then this process's pseudo-handle.
+        */
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
             if job.is_null() {
@@ -214,27 +228,29 @@ mod os {
         fn setrlimit(resource: i32, limit: *const Limit) -> i32;
     }
 
-    /// The processor time this process has used.
+    /** The processor time this process has used. */
     pub fn processor_time() -> Duration {
         let mut time = Timespec {
             seconds: 0,
             nanoseconds: 0,
         };
-        // SAFETY: a time to fill.
+        /* SAFETY: a time to fill. */
         if unsafe { clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &mut time) } != 0 {
             return Duration::ZERO;
         }
         Duration::new(time.seconds as u64, time.nanoseconds as u32)
     }
 
-    /// A limit on processor time, past which the system ends the process:
-    /// twice the sandbox's.
+    /**
+    A limit on processor time, past which the system ends the process:
+    twice the sandbox's.
+    */
     pub fn back_up() {
         let limit = Limit {
             current: 2 * PROCESSOR_SECONDS,
             maximum: 2 * PROCESSOR_SECONDS + 1,
         };
-        // SAFETY: a limit to set.
+        /* SAFETY: a limit to set. */
         unsafe { setrlimit(RLIMIT_CPU, &limit) };
     }
 }
@@ -243,7 +259,7 @@ mod os {
 mod os {
     use std::time::Duration;
 
-    /// Not measured here: the wall's limit stops the program.
+    /** Not measured here: the wall's limit stops the program. */
     pub fn processor_time() -> Duration {
         Duration::ZERO
     }
@@ -255,8 +271,10 @@ mod os {
 mod tests {
     use super::*;
 
-    /// The processor time grows with work, however busy the computer is
-    /// with other things: work goes on until it has grown, or a minute.
+    /**
+    The processor time grows with work, however busy the computer is
+    with other things: work goes on until it has grown, or a minute.
+    */
     #[cfg(any(windows, target_os = "linux"))]
     #[test]
     fn processor_time_counts_work() {

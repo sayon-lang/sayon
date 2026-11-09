@@ -15,7 +15,6 @@ dependencies = [
 name = "sayon-cli"
 version = "0.0.1"
 dependencies = [
- "sayon-check",
  "sayon-codegen",
  "sayon-driver",
  "sayon-interp",

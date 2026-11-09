@@ -1,4 +1,4 @@
-//! The prelude: functions available in every module without an import.
+/*! The prelude: functions available in every module without an import. */
 
 use crate::hir::Builtin;
 use crate::infer::int_type_by_name;
@@ -7,14 +7,16 @@ use sayon_target::Target;
 
 pub enum PreludeItem {
     Builtin(Builtin),
-    /// `move(value)`: an explicit ownership transfer.
+    /** `move(value)`: an explicit ownership transfer. */
     Move,
-    /// A checked numeric conversion such as `integer(x)` or `float32(x)`.
+    /** A checked numeric conversion such as `integer(x)` or `float32(x)`. */
     Conversion(Type),
 }
 
-/// The prelude functions every module can call, but for the numeric
-/// conversions, which are named for their types (`integer`, `float32`).
+/**
+The prelude functions every module can call, but for the numeric
+conversions, which are named for their types (`integer`, `float32`).
+*/
 pub const NAMES: &[&str] = &[
     "print",
     "length",
@@ -46,9 +48,11 @@ pub const NAMES: &[&str] = &[
     "float",
 ];
 
-/// Looks up a prelude function. `host` admits the primitives that only
-/// standard library modules may call; `target` decides the widths of the C
-/// integer conversions.
+/**
+Looks up a prelude function. `host` admits the primitives that only
+standard library modules may call; `target` decides the widths of the C
+integer conversions.
+*/
 pub fn lookup(name: &str, host: bool, target: &Target) -> Option<PreludeItem> {
     if host && let Some(primitive) = sayon_runtime::host::Host::lookup(name) {
         return Some(PreludeItem::Builtin(Builtin::Host(primitive)));
@@ -103,7 +107,7 @@ pub fn lookup(name: &str, host: bool, target: &Target) -> Option<PreludeItem> {
         "clone" => Builtin::Clone,
         "error" => Builtin::Error,
         "raise" => Builtin::Raise,
-        // A conversion, written like `integer32(x)`, that can fail.
+        /* A conversion, written like `integer32(x)`, that can fail. */
         "c_string" => Builtin::Host(sayon_runtime::host::Host::CString),
         "move" => return Some(PreludeItem::Move),
         _ => {
@@ -122,8 +126,10 @@ pub fn lookup(name: &str, host: bool, target: &Target) -> Option<PreludeItem> {
     Some(PreludeItem::Builtin(builtin))
 }
 
-/// Names used by later milestones, reported with a targeted message instead of
-/// "undefined name".
+/**
+Names used by later milestones, reported with a targeted message instead of
+"undefined name".
+*/
 pub fn planned(name: &str) -> Option<(&'static str, &'static str)> {
     Some(match name {
         "Box" => ("explicit shared ownership", "M3"),

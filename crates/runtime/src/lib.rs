@@ -1,12 +1,16 @@
-//! Runtime support for Sayon programs.
-//!
-//! `text` holds the display and parsing rules shared with the interpreter;
-//! `ffi` holds the functions compiled programs call. Output, clocks, and
-//! ending the program go through `console` and `clock`, which a web page's
-//! host provides.
+/*!
+Runtime support for Sayon programs.
 
-/// Writes a line to standard errors, like `eprintln!`, but through
-/// `console`, so that a web page shows it too.
+`text` holds the display and parsing rules shared with the interpreter;
+`ffi` holds the functions compiled programs call. Output, clocks, and
+ending the program go through `console` and `clock`, which a web page's
+host provides.
+*/
+
+/**
+Writes a line to standard errors, like `eprintln!`, but through
+`console`, so that a web page shows it too.
+*/
 macro_rules! report {
     ($($arg:tt)*) => {{
         use std::io::Write as _;
@@ -48,8 +52,10 @@ pub mod unicode_tables;
 pub mod window;
 pub mod zones;
 
-/// Everything linked with the runtime gets its memory from Sayon's
-/// allocator: compiled programs, and the `sayon` tool, whose interpreter
-/// runs programs too.
+/**
+Everything linked with the runtime gets its memory from Sayon's
+allocator: compiled programs, and the `sayon` tool, whose interpreter
+runs programs too.
+*/
 #[global_allocator]
 static ALLOCATOR: alloc::Allocator = alloc::Allocator;
