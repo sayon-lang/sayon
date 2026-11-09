@@ -350,6 +350,28 @@ enum Want {
 struct Scope {
     id: u32,
     slots: Vec<SlotId>,
+    /**
+    The data stack the scope's array locals go on, and the slot holding the
+    scope's mark of it, once it declares one.
+    */
+    mark: Option<(u8, SlotId)>,
+}
+
+/**
+What leaving a scope does, on every way out of it: destroy its values, the
+newest first, then free what it put on a data stack.
+*/
+fn scope_exit(scope: &Scope) -> Vec<Inst> {
+    let mut insts: Vec<Inst> = scope
+        .slots
+        .iter()
+        .rev()
+        .map(|slot| Inst::Drop(Place::slot(*slot)))
+        .collect();
+    if let Some((stack, mark)) = scope.mark {
+        insts.push(Inst::StackRestore { stack, mark });
+    }
+    insts
 }
 
 struct LoopCtx {
@@ -416,6 +438,7 @@ impl<'l, 'p> FnLower<'l, 'p> {
             slots: Vec::new(),
             blocks: Vec::new(),
             is_entry: false,
+            stack_values: Vec::new(),
         };
         FnLower {
             l,
@@ -493,13 +516,14 @@ impl<'l, 'p> FnLower<'l, 'p> {
         self.scopes.push(Scope {
             id,
             slots: Vec::new(),
+            mark: None,
         });
     }
 
     fn pop_scope(&mut self) {
         let scope = self.scopes.pop().expect("scope");
-        for slot in scope.slots.iter().rev() {
-            self.push(Inst::Drop(Place::slot(*slot)));
+        for inst in scope_exit(&scope) {
+            self.push(inst);
         }
     }
 
@@ -517,23 +541,52 @@ impl<'l, 'p> FnLower<'l, 'p> {
         let info = &self.locals[local.0 as usize];
         let ty = self.ty(&info.ty);
         let copy = ty.is_copy();
+        let array = matches!(ty, Type::Array(_));
         let slot = self.new_slot(ty, SlotKind::Value, Some(info.name.clone()));
         self.local_slots.insert(local, slot);
         if !copy {
             let index = *self.block_scopes.last().expect("block scope");
+            if array {
+                self.on_stack(index, slot);
+            }
             self.scopes[index].slots.push(slot);
         }
         slot
     }
 
+    /**
+    Puts the array local `value` of scope number `index` on a data stack,
+    marking the stack first if the scope hasn't yet. The mark comes before
+    the local is given its value, and every way out of the scope from here
+    on restores it (see `scope_exit`).
+
+    Each depth of nested blocks has a stack of its own, round the stacks
+    from the second, which leaves the first for values to come.
+    */
+    fn on_stack(&mut self, index: usize, value: SlotId) {
+        let (stack, mark) = match self.scopes[index].mark {
+            Some(marked) => marked,
+            None => {
+                let depth = self.block_scopes.len() - 1;
+                let stack = 1 + (depth % (sayon_runtime::stacks::MOST - 1)) as u8;
+                let mark =
+                    self.new_slot(Type::INTEGER, SlotKind::Value, Some("<mark>".to_string()));
+                self.push(Inst::StackMark { stack, mark });
+                self.scopes[index].mark = Some((stack, mark));
+                (stack, mark)
+            }
+        };
+        self.f.stack_values.push(StackValue { value, mark, stack });
+    }
+
     fn emit_drops(&mut self, depth: usize) {
-        let slots: Vec<SlotId> = self.scopes[depth..]
+        let insts: Vec<Inst> = self.scopes[depth..]
             .iter()
             .rev()
-            .flat_map(|scope| scope.slots.iter().rev().copied())
+            .flat_map(scope_exit)
             .collect();
-        for slot in slots {
-            self.push(Inst::Drop(Place::slot(slot)));
+        for inst in insts {
+            self.push(inst);
         }
     }
 
@@ -553,14 +606,10 @@ impl<'l, 'p> FnLower<'l, 'p> {
             return *block;
         }
         let block = self.new_block();
-        let slots: Vec<SlotId> = self.scopes[depth..]
+        let mut insts: Vec<Inst> = self.scopes[depth..]
             .iter()
             .rev()
-            .flat_map(|scope| scope.slots.iter().rev().copied())
-            .collect();
-        let mut insts: Vec<Inst> = slots
-            .into_iter()
-            .map(|slot| Inst::Drop(Place::slot(slot)))
+            .flat_map(scope_exit)
             .collect();
         if drop_return {
             insts.push(Inst::Drop(Place::slot(self.f.ret_slot)));

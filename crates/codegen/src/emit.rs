@@ -53,6 +53,12 @@ pub struct Codegen<'m> {
     /// a target without fibers (see `coroutines`).
     coroutines: HashSet<FunctionId>,
     dialect: crate::Dialect,
+    /**
+    Whether arrays may live on data stacks. Not yet on WebAssembly, whose
+    stacks need room the program may never use, nor in a program with tasks,
+    whose scopes take turns and so could end out of order on one stack.
+    */
+    stacks: bool,
 }
 
 /// A function body under construction.
@@ -172,6 +178,7 @@ impl<'m> Codegen<'m> {
             key_ops: HashMap::new(),
             coroutines: crate::coroutines::functions(module),
             dialect,
+            stacks: module.target.processor != "wasm32" && !crate::coroutines::uses_tasks(module),
         }
     }
 
@@ -685,6 +692,10 @@ pub(crate) struct FnEmit<'c, 'm> {
     /// The function's calls that report a failed check, emitted after its
     /// blocks.
     reports: Vec<Report>,
+    /** The array locals kept on a data stack, and the stack of each. */
+    on_stacks: HashMap<SlotId, u8>,
+    /** The slots holding the marks of scopes that keep arrays on a stack. */
+    marks: HashSet<SlotId>,
 }
 
 /// One call of a runtime function that sets the error for a failed check,
@@ -713,6 +724,16 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             coroutine: false,
             direct: None,
             reports: Vec::new(),
+            on_stacks: HashMap::new(),
+            marks: HashSet::new(),
+        }
+    }
+
+    /** The data stack of the array at `place`, when it is a whole local kept on one. */
+    fn stack_of(&self, place: &Place) -> Option<u8> {
+        match (&place.base, place.projection.is_empty()) {
+            (Base::Slot(slot), true) => self.on_stacks.get(slot).copied(),
+            _ => None,
         }
     }
 
@@ -728,6 +749,12 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         let f = self.f;
         self.coroutine = self.cg.coroutines.contains(&FunctionId(index as u32));
         self.direct = self.cg.direct_result(FunctionId(index as u32));
+        if self.cg.stacks {
+            for placed in sayon_ir::stacks::placed(f) {
+                self.on_stacks.insert(placed.value, placed.stack);
+                self.marks.insert(placed.mark);
+            }
+        }
         let mut params = vec!["i64 %argc".to_string()];
         if self.direct.is_none() {
             params.insert(0, "ptr %ret".to_string());
@@ -1224,7 +1251,32 @@ impl<'c, 'm> FnEmit<'c, 'm> {
         match inst {
             Inst::Assign { dest, value } => {
                 let (pointer, ty) = self.place_ptr(dest);
-                self.rvalue(value, &pointer, &ty);
+                match value {
+                    Rvalue::MakeArray { element, items } => {
+                        let stack = self.stack_of(dest);
+                        self.make_array(&pointer, element, items, stack);
+                    }
+                    _ => self.rvalue(value, &pointer, &ty),
+                }
+            }
+            Inst::StackMark { stack, mark } => {
+                if self.marks.contains(mark) {
+                    let word = self.body.tmp();
+                    self.body
+                        .line(format!("{word} = call i64 @sayon_stack_mark(i32 {stack})"));
+                    self.body
+                        .line(format!("store i64 {word}, ptr %s{}", mark.0));
+                }
+            }
+            Inst::StackRestore { stack, mark } => {
+                if self.marks.contains(mark) {
+                    let word = self.body.tmp();
+                    self.body
+                        .line(format!("{word} = load i64, ptr %s{}", mark.0));
+                    self.body.line(format!(
+                        "call void @sayon_stack_restore(i32 {stack}, i64 {word})"
+                    ));
+                }
             }
             Inst::Bind { slot, place, .. } => {
                 let (pointer, _) = self.place_ptr(place);
@@ -1269,9 +1321,14 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                 self.body
                     .line(format!("br i1 {expected}, label %{ready}, label %{grow}"));
                 self.body.start(&grow);
-                self.body.line(format!(
-                    "call void @sayon_array_reserve(ptr {pointer}, i64 1, i64 {size})"
-                ));
+                match self.stack_of(array) {
+                    Some(stack) => self.body.line(format!(
+                        "call void @sayon_array_reserve_on(ptr {pointer}, i64 1, i64 {size}, i32 {stack})"
+                    )),
+                    None => self.body.line(format!(
+                        "call void @sayon_array_reserve(ptr {pointer}, i64 1, i64 {size})"
+                    )),
+                }
                 self.body.line(format!("br label %{ready}"));
                 self.body.start(&ready);
                 let data = self.body.tmp();
@@ -1329,6 +1386,44 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             }
         }
         self.finish_instruction();
+    }
+
+    /**
+    Writes an array literal's elements at `dest`, in storage of exactly their
+    number, on data stack `stack` when one is named.
+    */
+    fn make_array(&mut self, dest: &str, element: &Type, items: &[Operand], stack: Option<u8>) {
+        self.body
+            .line(format!("store %sayon.array zeroinitializer, ptr {dest}"));
+        if items.is_empty() {
+            return;
+        }
+        let size = self.cg.layouts.size_of(element);
+        let count = items.len();
+        match stack {
+            Some(stack) => self.body.line(format!(
+                "call void @sayon_array_exact_on(ptr {dest}, i64 {count}, i64 {size}, i32 {stack})"
+            )),
+            None => self.body.line(format!(
+                "call void @sayon_array_exact(ptr {dest}, i64 {count}, i64 {size})"
+            )),
+        }
+        let data = self.body.tmp();
+        self.body.line(format!("{data} = load ptr, ptr {dest}"));
+        let element_llvm = self.cg.llvm(element);
+        for (index, item) in items.iter().enumerate() {
+            let slot = self.body.tmp();
+            self.body.line(format!(
+                "{slot} = getelementptr inbounds {element_llvm}, ptr {data}, i64 {index}"
+            ));
+            self.store_operand(item, &slot, element);
+        }
+        let length_ptr = self.body.tmp();
+        self.body.line(format!(
+            "{length_ptr} = getelementptr inbounds %sayon.array, ptr {dest}, i32 0, i32 1"
+        ));
+        self.body
+            .line(format!("store i64 {count}, ptr {length_ptr}"));
     }
 
     fn rvalue(&mut self, rvalue: &Rvalue, dest: &str, dest_ty: &Type) {
@@ -1399,34 +1494,7 @@ impl<'c, 'm> FnEmit<'c, 'm> {
                     "call void @sayon_str_concat(ptr {a}, ptr {b}, ptr {dest})"
                 ));
             }
-            Rvalue::MakeArray { element, items } => {
-                self.body
-                    .line(format!("store %sayon.array zeroinitializer, ptr {dest}"));
-                if items.is_empty() {
-                    return;
-                }
-                let size = self.cg.layouts.size_of(element);
-                self.body.line(format!(
-                    "call void @sayon_array_exact(ptr {dest}, i64 {}, i64 {size})",
-                    items.len()
-                ));
-                let data = self.body.tmp();
-                self.body.line(format!("{data} = load ptr, ptr {dest}"));
-                let element_llvm = self.cg.llvm(element);
-                for (index, item) in items.iter().enumerate() {
-                    let slot = self.body.tmp();
-                    self.body.line(format!(
-                        "{slot} = getelementptr inbounds {element_llvm}, ptr {data}, i64 {index}"
-                    ));
-                    self.store_operand(item, &slot, element);
-                }
-                let length_ptr = self.body.tmp();
-                self.body.line(format!(
-                    "{length_ptr} = getelementptr inbounds %sayon.array, ptr {dest}, i32 0, i32 1"
-                ));
-                self.body
-                    .line(format!("store i64 {}, ptr {length_ptr}", items.len()));
-            }
+            Rvalue::MakeArray { element, items } => self.make_array(dest, element, items, None),
             Rvalue::MakeDict {
                 key,
                 value,
@@ -3930,6 +3998,10 @@ declare void @sayon_builder_end(ptr, ptr)
 declare i32 @sayon_print(ptr, ptr, ptr)
 declare void @sayon_array_reserve(ptr, i64, i64)
 declare void @sayon_array_exact(ptr, i64, i64)
+declare void @sayon_array_reserve_on(ptr, i64, i64, i32)
+declare void @sayon_array_exact_on(ptr, i64, i64, i32)
+declare i64 @sayon_stack_mark(i32) nounwind
+declare void @sayon_stack_restore(i32, i64) nounwind
 declare void @sayon_array_free(ptr, i64)
 declare i32 @sayon_check_index(ptr, i64, i64, ptr) cold
 declare void @sayon_dict_new(ptr, ptr, i64)

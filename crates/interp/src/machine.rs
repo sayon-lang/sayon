@@ -1024,6 +1024,11 @@ impl<'m> Machine<'m> {
                 });
             }
             Inst::MutexPut { mutex, value } => self.mutex_put(mutex, value),
+            /*
+            The interpreter keeps every value apart, where Rust puts it, so
+            it has no data stacks to mark yet.
+            */
+            Inst::StackMark { .. } | Inst::StackRestore { .. } => {}
         }
     }
 

@@ -2,6 +2,7 @@
 
 pub mod ir;
 pub mod lower;
+pub mod stacks;
 
 pub use ir::*;
 pub use lower::{LowerOutput, lower, lower_with_tests};

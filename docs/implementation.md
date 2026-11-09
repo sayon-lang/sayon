@@ -202,6 +202,14 @@ Memory freed into a class stays with the class for its next block, so a program'
 
 The allocator counts what a program holds only in the sandbox (`sayon run --sandbox`), which sets a limit and what to do past it; elsewhere the counting is one branch that is never taken. The count of live runtime objects behind the `SAYON_DEBUG_ALLOC` report is kept only when that variable is set, since counting from several threads costs every allocation a locked instruction.
 
+### Data stacks
+
+Sayon is moving its values off the heap onto data stacks (`crates/runtime/src/stacks.rs`), as section 5 of the design describes. A data stack is a reservation of address space, committed as it fills, whose top moves up as values go on it; a scope notes the top when it starts and puts it back when it ends, which frees everything it put there in one store. A thread has eight, cut from one reservation of 4 GiB each on 64-bit targets, reserved the first time the thread uses them (`crates/runtime/src/scopes.rs`). Memory is committed in steps of at least 64 KiB, or an eighth of what the stack holds, and given back when a scope's end leaves more than 64 MiB committed above the top.
+
+So far arrays go there, in compiled programs for Windows, Linux, and Android, when the program has no tasks. Lowering marks a block's stack at its first array local, one stack per depth of nested blocks from the second, and restores it after the block's values are destroyed on every way out: the end of the block, `break`, `continue`, `return`, and an error. An array stays on its stack when its function makes it with a literal, once, and never moves it whole (`crates/ir/src/stacks.rs`); every other array, and every array in the interpreter, keeps its storage on the heap.
+
+An array on a stack grows where it is while it ends at the stack's top and no scope has opened on that stack since its storage was made. Each stack counts its open scopes, and the word before an array's elements holds the count from when it was made. Otherwise the array moves to the heap and grows there; the place it left is freed with its scope. Freeing an array's storage skips storage on a stack, which the runtime tells by its address.
+
 ## Packages
 
 A package is identified by its source: `path:<folder>`, relative to the root package and written with `/`, `git:<url>#<commit>`, or `registry:<address>#<name>@<version>`. `sayon install` first chooses the versions of registry packages (below), then walks the manifests depth first from the root, recording for each package its name, version, and dependency edges (`alias = source`), and fails on a cycle. The lock is written to a temporary file and renamed over `sayon.lock`, so it is never half written; the same graph always renders the same text.

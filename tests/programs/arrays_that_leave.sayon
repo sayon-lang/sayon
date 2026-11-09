@@ -1,0 +1,55 @@
+##
+Arrays that leave the function that made them keep their storage on the
+heap: returned, put in other values, captured, given to a parameter that
+takes them over, or given a new array again and again. Beside them, the
+arrays kept on a data stack go on working.
+##
+type Basket = [name: string, items: Array<string>]
+
+function make(count: integer) -> Array<integer>
+    made = []
+    for number in range(count)
+        push(made, number)
+    return made
+
+function keep(own values: Array<integer>) -> integer
+    held = values
+    return length(held)
+
+function counter() -> function() -> integer
+    seen = [0]
+    return function() -> integer
+        push(seen, length(seen))
+        return length(seen)
+
+function main()
+    made = make(5)
+    push(made, 5)
+    print(made)
+
+    print(keep([1, 2, 3]))
+
+    rows = []
+    for round in range(4)
+        row = [round]
+        push(row, round * 10)
+        push(rows, row)
+    print(rows)
+
+    basket = Basket(name = "fruit", items = ["apple"])
+    push(basket.items, "pear")
+    print(basket)
+
+    count = counter()
+    first = count()
+    print(first, count())
+
+    latest = [0]
+    for round in range(5)
+        latest = [round, round]
+    print(latest)
+
+    local = [1, 2]
+    moved = local
+    push(moved, 3)
+    print(moved)

@@ -85,6 +85,18 @@ pub struct Stack {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Mark(usize);
 
+impl Mark {
+    /** The mark as a word, which generated code keeps in a slot of its own. */
+    pub fn word(self) -> usize {
+        self.0
+    }
+
+    /** A mark that generated code kept as a word; [`Stack::restore`] checks it. */
+    pub fn from_word(word: usize) -> Mark {
+        Mark(word)
+    }
+}
+
 /** Why a stack could not take more. */
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Full {
@@ -181,7 +193,7 @@ Sayon itself can break. Tests see a panic instead, so that they can check
 that the rule is enforced.
 */
 #[cold]
-fn broken(what: &str) -> ! {
+pub(crate) fn broken(what: &str) -> ! {
     #[cfg(test)]
     panic!("{what}");
     #[cfg(not(test))]
@@ -214,6 +226,12 @@ impl Stack {
     #[inline]
     pub fn mark(&self) -> Mark {
         Mark(self.top)
+    }
+
+    /** Where the stack's values end. */
+    #[inline]
+    pub fn top(&self) -> *mut u8 {
+        self.top as *mut u8
     }
 
     /**
@@ -380,6 +398,27 @@ impl Stacks {
         }
         &mut self.stacks[index]
     }
+
+    /** The number of the stack whose reservation holds `address`, if one of the set does. */
+    #[inline]
+    pub fn index_of(&self, address: usize) -> Option<usize> {
+        let offset = address.checked_sub(self.base)?;
+        if offset >= self.size {
+            return None;
+        }
+        Some(offset / (self.size / self.count))
+    }
+}
+
+/**
+The tests of the runtime count what every stack of the program commits, and
+change the limit and checking mode, which all stacks share, so those that
+use stacks run one at a time.
+*/
+#[cfg(test)]
+pub(crate) fn alone() -> std::sync::MutexGuard<'static, ()> {
+    static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    ONE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl Drop for Stacks {
@@ -569,19 +608,21 @@ mod os {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, MutexGuard};
 
     /** Stacks of 1 MiB, small enough for a test to fill. */
     const SMALL: usize = 1 << 20;
 
-    /**
-    The tests count what every stack of the program commits, and change the
-    limit and checking mode, which all stacks share, so they run one at a
-    time.
-    */
-    fn alone() -> MutexGuard<'static, ()> {
-        static ONE: Mutex<()> = Mutex::new(());
-        ONE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    #[test]
+    fn each_address_belongs_to_the_stack_that_holds_it() {
+        let _alone = alone();
+        let mut stacks = Stacks::reserve(3, SMALL).unwrap();
+        let first = stacks.stack(0).take(8, 8).unwrap() as usize;
+        let third = stacks.stack(2).take(8, 8).unwrap() as usize;
+        assert_eq!(stacks.index_of(first), Some(0));
+        assert_eq!(stacks.index_of(first + SMALL), Some(1));
+        assert_eq!(stacks.index_of(third), Some(2));
+        assert_eq!(stacks.index_of(first - 1), None);
+        assert_eq!(stacks.index_of(first + 3 * SMALL), None);
     }
 
     #[test]

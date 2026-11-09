@@ -1,0 +1,94 @@
+##
+Arrays a function makes and keeps to itself live on a data stack in compiled
+programs, and are freed when their block ends. They grow where they are, move
+to the heap when they can't, and leave nothing behind on any way out of a
+block: its end, break, continue, return, and an error.
+##
+collections = import("standard/collections.sayon")
+
+function squares(count: integer) -> integer
+    values = []
+    for number in range(count)
+        push(values, number * number)
+    total = 0
+    for value in values
+        total += value
+    return total
+
+# Grows the caller's array while an array of its own sits above it.
+function append_doubled(update target: Array<integer>, count: integer)
+    scratch = [0]
+    for number in range(count)
+        push(scratch, number)
+        push(target, number * 2)
+    print("scratch held", length(scratch))
+
+function first_over(limit: integer) -> integer
+    for round in range(10)
+        candidates = [round, round + 1, round + 2]
+        for candidate in candidates
+            if candidate * candidate > limit
+                return candidate
+    return -1
+
+function fails_inside(count: integer) -> integer
+    held = []
+    for number in range(count)
+        push(held, number)
+    if length(held) > 3
+        error("held {length(held)}")
+    return length(held)
+
+function depth(level: integer) -> integer
+    path = [level]
+    if level == 0
+        return length(path)
+    return depth(level - 1) + length(path)
+
+function main()
+    print(squares(10), squares(1000))
+    totals = []
+    for round in range(1000)
+        row = []
+        for column in range(round % 50)
+            push(row, column)
+        push(totals, length(row))
+    print(length(totals), totals[49], totals[999])
+
+    target = [1]
+    append_doubled(target, 100)
+    print(length(target), target[0], target[100])
+
+    found = []
+    for number in range(20)
+        tries = [number, number * 2]
+        if number % 3 == 0
+            continue
+        if number > 10
+            break
+        push(found, tries[1])
+    print(found)
+
+    print(first_over(30))
+
+    try
+        print(fails_inside(10))
+    catch problem
+        print("caught:", problem.message)
+    print(fails_inside(2))
+
+    print(depth(500))
+
+    big = []
+    for number in range(300000)
+        push(big, number)
+    print(length(big), big[299999])
+
+    words = ["pear", "fig", "apple", "a longer word than twenty-three bytes"]
+    push(words, "kiwi")
+    collections.sort(words)
+    print(words)
+
+    numbers = [5, 3, 8, 1, 9]
+    seen = view(numbers, 1, 4)
+    print(length(seen), seen[0])

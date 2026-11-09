@@ -164,6 +164,22 @@ pub struct Function {
     pub slots: Vec<Slot>,
     pub blocks: Vec<Block>,
     pub is_entry: bool,
+    /**
+    The array locals that lowering put on a data stack, each with the slot
+    holding its scope's mark. Code generation keeps on the stack those that
+    [`crate::stacks::placed`] finds the function keeps to itself.
+    */
+    pub stack_values: Vec<StackValue>,
+}
+
+/** An array local on a data stack, and the scope that frees it. */
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StackValue {
+    pub value: SlotId,
+    /** The slot that holds the mark of the scope declaring the value. */
+    pub mark: SlotId,
+    /** The data stack the value's storage goes on. */
+    pub stack: u8,
 }
 
 impl Function {
@@ -464,6 +480,20 @@ pub enum Inst {
     MutexPut {
         mutex: Operand,
         value: Operand,
+    },
+    /** Notes where data stack `stack`'s top is, in `mark`, as a scope begins. */
+    StackMark {
+        stack: u8,
+        mark: SlotId,
+    },
+    /**
+    Puts data stack `stack`'s top back where `mark` noted it, freeing what the
+    scope put there. It comes on every way out of the scope, after the
+    scope's values are destroyed.
+    */
+    StackRestore {
+        stack: u8,
+        mark: SlotId,
     },
 }
 

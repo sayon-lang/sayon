@@ -15,6 +15,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use crate::scopes::{self, Room};
 use crate::text;
 use std::alloc::{Layout, alloc, dealloc, realloc};
 use std::ffi::{CStr, c_char};
@@ -748,23 +749,50 @@ fn array_layout(capacity: usize, element_size: usize) -> Layout {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sayon_array_exact(a: *mut SayonArray, count: i64, element_size: i64) {
     // SAFETY: `a` is a valid array whose storage came from this module.
-    unsafe {
-        let array = &mut *a;
-        if count <= array.cap {
-            return;
-        }
-        if array.cap > 0 {
-            return sayon_array_reserve(a, count - array.len, element_size);
-        }
-        let layout = array_layout(count as usize, element_size.max(1) as usize);
-        allocated();
-        let pointer = alloc(layout);
-        if pointer.is_null() {
-            std::alloc::handle_alloc_error(layout);
-        }
-        array.ptr = pointer;
-        array.cap = count;
+    unsafe { exact(&mut *a, count, element_size, None) }
+}
+
+/**
+As `sayon_array_exact`, for an array the compiler keeps on data stack `stack`
+(see `scopes`): storage it starts goes there when there is room.
+*/
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sayon_array_exact_on(
+    a: *mut SayonArray,
+    count: i64,
+    element_size: i64,
+    stack: i32,
+) {
+    /* SAFETY: `a` is a valid array whose storage came from this module or a data stack. */
+    unsafe { exact(&mut *a, count, element_size, Some(stack as usize)) }
+}
+
+/** Gives `array` room for exactly `count` elements, starting its storage on `stack` if one is named. */
+unsafe fn exact(array: &mut SayonArray, count: i64, element_size: i64, stack: Option<usize>) {
+    if count <= array.cap {
+        return;
     }
+    if array.cap > 0 {
+        /* SAFETY: the caller's valid array. */
+        return unsafe { reserve(array, count - array.len, element_size, stack) };
+    }
+    let size = element_size.max(1) as usize;
+    if let Some(stack) = stack
+        && let Some(elements) = scopes::place(count as usize, size, stack)
+    {
+        array.ptr = elements;
+        array.cap = count;
+        return;
+    }
+    let layout = array_layout(count as usize, size);
+    allocated();
+    /* SAFETY: a layout of nonzero size. */
+    let pointer = unsafe { alloc(layout) };
+    if pointer.is_null() {
+        std::alloc::handle_alloc_error(layout);
+    }
+    array.ptr = pointer;
+    array.cap = count;
 }
 
 /// Ensures room for `additional` more elements.
@@ -775,31 +803,89 @@ pub unsafe extern "C" fn sayon_array_reserve(
     element_size: i64,
 ) {
     // SAFETY: `a` is a valid array whose storage came from this module.
-    unsafe {
-        let array = &mut *a;
-        let needed = array.len as usize + additional as usize;
-        if needed <= array.cap as usize {
+    unsafe { reserve(&mut *a, additional, element_size, None) }
+}
+
+/**
+As `sayon_array_reserve`, for an array the compiler keeps on data stack
+`stack` (see `scopes`): storage it starts goes there when there is room.
+*/
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sayon_array_reserve_on(
+    a: *mut SayonArray,
+    additional: i64,
+    element_size: i64,
+    stack: i32,
+) {
+    /* SAFETY: `a` is a valid array whose storage came from this module or a data stack. */
+    unsafe { reserve(&mut *a, additional, element_size, Some(stack as usize)) }
+}
+
+/**
+Gives `array` room for `additional` more elements. Storage it starts goes on
+`stack` if one is named; storage on a stack grows there when `scopes` allows
+it and otherwise moves to the heap; storage on the heap grows on the heap.
+*/
+unsafe fn reserve(
+    array: &mut SayonArray,
+    additional: i64,
+    element_size: i64,
+    stack: Option<usize>,
+) {
+    let needed = array.len as usize + additional as usize;
+    if needed <= array.cap as usize {
+        return;
+    }
+    let size = element_size.max(1) as usize;
+    let capacity = needed.max(array.cap as usize * 2).max(4);
+    let new_layout = array_layout(capacity, size);
+    let pointer = if array.ptr.is_null() || array.cap == 0 {
+        if let Some(stack) = stack
+            && let Some(elements) = scopes::place(capacity, size, stack)
+        {
+            array.ptr = elements;
+            array.cap = capacity as i64;
             return;
         }
-        let size = element_size.max(1) as usize;
-        let capacity = needed.max(array.cap as usize * 2).max(4);
-        let new_layout = array_layout(capacity, size);
-        let pointer = if array.ptr.is_null() || array.cap == 0 {
-            allocated();
-            alloc(new_layout)
-        } else {
-            realloc(
-                array.ptr,
-                array_layout(array.cap as usize, size),
-                new_layout.size(),
-            )
-        };
-        if pointer.is_null() {
-            std::alloc::handle_alloc_error(new_layout);
+        allocated();
+        /* SAFETY: a layout of nonzero size. */
+        unsafe { alloc(new_layout) }
+    } else {
+        match scopes::grow(array.ptr, array.cap as usize, capacity, size) {
+            Room::Grown => {
+                array.cap = capacity as i64;
+                return;
+            }
+            Room::Moving => {
+                allocated();
+                /* SAFETY: a layout of nonzero size. */
+                let moved = unsafe { alloc(new_layout) };
+                if !moved.is_null() {
+                    /*
+                    SAFETY: the array's elements, into new storage with room for them. Their
+                    old place stays on its stack until its scope ends, and is never read again.
+                    */
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(array.ptr, moved, array.len as usize * size)
+                    };
+                }
+                moved
+            }
+            /* SAFETY: storage from this module's heap, with its layout. */
+            Room::Heap => unsafe {
+                realloc(
+                    array.ptr,
+                    array_layout(array.cap as usize, size),
+                    new_layout.size(),
+                )
+            },
         }
-        array.ptr = pointer;
-        array.cap = capacity as i64;
+    };
+    if pointer.is_null() {
+        std::alloc::handle_alloc_error(new_layout);
     }
+    array.ptr = pointer;
+    array.cap = capacity as i64;
 }
 
 /// Releases array storage (elements must already be destroyed) and leaves it empty.
@@ -808,7 +894,7 @@ pub unsafe extern "C" fn sayon_array_free(a: *mut SayonArray, element_size: i64)
     // SAFETY: valid array.
     unsafe {
         let array = &mut *a;
-        if !array.ptr.is_null() && array.cap > 0 {
+        if !array.ptr.is_null() && array.cap > 0 && !scopes::holds(array.ptr) {
             released();
             dealloc(
                 array.ptr,
