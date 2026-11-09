@@ -92,3 +92,22 @@ function main()
     numbers = [5, 3, 8, 1, 9]
     seen = view(numbers, 1, 4)
     print(length(seen), seen[0])
+
+    ##
+    An array the outer block keeps gets its storage seven blocks in, and
+    outlives them: an array made after them must not take its place.
+    ##
+    outer = []
+    deep = true
+    if deep
+        if deep
+            if deep
+                if deep
+                    if deep
+                        if deep
+                            if deep
+                                inner = [1, 2, 3]
+                                push(outer, length(inner))
+                                push(outer, 7)
+    after = [8, 9, 10, 11, 12, 13, 14, 15]
+    print(outer, length(after))

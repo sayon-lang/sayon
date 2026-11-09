@@ -574,15 +574,26 @@ impl<'l, 'p> FnLower<'l, 'p> {
     the local is given its value, and every way out of the scope from here
     on restores it (see `scope_exit`).
 
-    Each depth of nested blocks has a stack of its own, round the stacks
-    from the second, which leaves the first for values to come.
+    Each depth of nested blocks has a stack of its own, from the second,
+    which leaves the first for values to come. Blocks nested deeper than
+    there are stacks keep their values on the heap.
+
+    IMPORTANT: within one call, every open block marks a stack of its own.
+    A value can get its storage after its block began, when a deeper block
+    pushes to it, and that storage must lie above no mark but its own
+    block's: a deeper block marking the same stack would free the storage
+    when it ended, while the value lives on. Guarded by the deep blocks in
+    `arrays_on_stacks.sayon`.
     */
     fn on_stack(&mut self, index: usize, value: SlotId) {
+        let depth = self.block_scopes.len() - 1;
+        if depth >= sayon_runtime::stacks::MOST - 1 {
+            return;
+        }
         let (stack, mark) = match self.scopes[index].mark {
             Some(marked) => marked,
             None => {
-                let depth = self.block_scopes.len() - 1;
-                let stack = 1 + (depth % (sayon_runtime::stacks::MOST - 1)) as u8;
+                let stack = 1 + depth as u8;
                 let mark =
                     self.new_slot(Type::INTEGER, SlotKind::Value, Some("<mark>".to_string()));
                 self.push(Inst::StackMark { stack, mark });
