@@ -1,0 +1,51 @@
+##
+Edit distance: the fewest one-letter insertions, deletions, and changes that
+turn one pseudo-random word of four letters into another, for twenty pairs
+of words, by dynamic programming over two rows. Small integers, the least of
+three numbers, and arrays walked in step.
+##
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+function word(size: integer, update state: integer) -> Array<byte>
+    letters: Array<byte> = []
+    for _letter in range(size)
+        state = (state * 1103515245 + 12345) % 2147483648
+        push(letters, byte(state / 65536 % 4))
+    return letters
+
+function distance(first: Array<byte>, second: Array<byte>) -> integer
+    previous: Array<integer> = []
+    current: Array<integer> = []
+    for index in range(length(second) + 1)
+        push(previous, index)
+        push(current, 0)
+    for i in range(1, length(first) + 1)
+        current[0] = i
+        for j in range(1, length(second) + 1)
+            cost = 1
+            if first[i - 1] == second[j - 1]
+                cost = 0
+            best = previous[j - 1] + cost
+            if previous[j] + 1 < best
+                best = previous[j] + 1
+            if current[j - 1] + 1 < best
+                best = current[j - 1] + 1
+            current[j] = best
+        kept = previous
+        previous = current
+        current = kept
+    return previous[length(second)]
+
+function main()
+    size = 100
+    arguments = os.arguments()
+    if length(arguments) > 0
+        size = strings.parse_integer(arguments[0])
+    state = 42
+    total = 0
+    for _pair in range(20)
+        first = word(size, state)
+        second = word(size, state)
+        total += distance(first, second)
+    print("{total} edits over 20 pairs of {size} letters")

@@ -1,0 +1,86 @@
+##
+Dijkstra: the shortest distances from one place to every other on a
+pseudo-random map of n places, each with four one-way roads out of it, using
+a binary heap as the list of places to visit next. An array of roads for
+every place, small structures, and a heap kept in an array.
+##
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+type Road = [to: integer, cost: integer]
+type Entry = [distance: integer, place: integer]
+
+# Puts an entry in the heap, whose first `size` places hold its entries.
+function put(update heap: Array<Entry>, update size: integer, entry: Entry)
+    if size == length(heap)
+        push(heap, entry)
+    else
+        heap[size] = entry
+    child = size
+    size += 1
+    while child > 0
+        parent = (child - 1) / 2
+        if heap[parent].distance <= heap[child].distance
+            break
+        swap(heap, parent, child)
+        child = parent
+
+# Takes the entry with the least distance out of the heap.
+function take(update heap: Array<Entry>, update size: integer) -> Entry
+    least = heap[0]
+    size -= 1
+    heap[0] = heap[size]
+    parent = 0
+    while true
+        left = 2 * parent + 1
+        if left >= size
+            break
+        child = left
+        if left + 1 < size and heap[left + 1].distance < heap[left].distance
+            child = left + 1
+        if heap[parent].distance <= heap[child].distance
+            break
+        swap(heap, parent, child)
+        parent = child
+    return least
+
+function main()
+    places = 1000
+    arguments = os.arguments()
+    if length(arguments) > 0
+        places = strings.parse_integer(arguments[0])
+    roads: Array<Array<Road>> = []
+    for _place in range(places)
+        push(roads, [])
+    state = 42
+    for from in range(places)
+        for _road in range(4)
+            state = (state * 1103515245 + 12345) % 2147483648
+            to = state / 16 % places
+            state = (state * 1103515245 + 12345) % 2147483648
+            cost = state / 65536 % 100 + 1
+            push(roads[from], Road(to = to, cost = cost))
+    distances: Array<integer> = []
+    for _place in range(places)
+        push(distances, -1)
+    heap: Array<Entry> = []
+    size = 0
+    put(heap, size, Entry(distance = 0, place = 0))
+    while size > 0
+        entry = take(heap, size)
+        if distances[entry.place] >= 0
+            continue
+        distances[entry.place] = entry.distance
+        for road in roads[entry.place]
+            if distances[road.to] < 0
+                put(heap, size, Entry(distance = entry.distance + road.cost, place = road.to))
+    reached = 0
+    total = 0
+    farthest = 0
+    for distance in distances
+        if distance >= 0
+            reached += 1
+            total += distance
+            if distance > farthest
+                farthest = distance
+    print("{reached} places reached, distances add up to {total}, the farthest is {farthest}")

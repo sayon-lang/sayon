@@ -89,7 +89,13 @@ function all_benchmarks() -> Array<Benchmark>
         Benchmark(name = "word_count", inputs = ["1000000", "4000000", "10000000"]),
         Benchmark(name = "sort", inputs = ["1000000", "3000000", "10000000"]),
         Benchmark(name = "text", inputs = ["300000", "1000000", "3000000"]),
-        Benchmark(name = "threads", inputs = ["1000000", "4000000", "10000000"])
+        Benchmark(name = "threads", inputs = ["1000000", "4000000", "10000000"]),
+        Benchmark(name = "nqueens", inputs = ["12", "13"]),
+        Benchmark(name = "life", inputs = ["50", "200", "500"]),
+        Benchmark(name = "edit_distance", inputs = ["500", "1000", "2000"]),
+        Benchmark(name = "dijkstra", inputs = ["100000", "300000", "1000000"]),
+        Benchmark(name = "json", inputs = ["100000", "300000", "1000000"]),
+        Benchmark(name = "vm", inputs = ["1000000", "3000000", "10000000"])
     ]
 
 # The name of a program file on this system.

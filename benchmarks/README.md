@@ -1,6 +1,6 @@
 # Benchmarks
 
-Fourteen programs, each written three times: in Sayon, in C++, and in Rust. Every version does the same work in the same way and prints the same thing, so the only difference is the language and its compiler. Each runs at two or three inputs, from a fraction of a second up to several seconds, so you can see how each language holds up as the work grows.
+Twenty programs, each written three times: in Sayon, in C++, and in Rust. Every version does the same work in the same way and prints the same thing, so the only difference is the language and its compiler. Each runs at two or three inputs, from a fraction of a second up to several seconds, so you can see how each language holds up as the work grows.
 
 Each program's folder has a README that says what it does, what's the same in all three versions, what differs and why, and tables of the latest numbers at every input: processor time, the fastest and slowest runs, peak memory, time on the clock, and how long each compiler took. [RESULTS.md](RESULTS.md) puts them all side by side.
 
@@ -22,6 +22,12 @@ Each program's folder has a README that says what it does, what's the same in al
 | [sort](sort/README.md) | Sorts millions of pseudo-random integers with the standard library | Comparing and moving integers in memory |
 | [text](text/README.md) | Formats millions of lines, joins them, splits them up again, and searches them | String formatting, joining, splitting, searching |
 | [threads](threads/README.md) | Follows the Collatz sequence from every number below a limit, on four threads | Integer work spread over the processor's cores |
+| [nqueens](nqueens/README.md) | Counts the ways to put n queens on an n by n board so that none attacks another | Recursion and backtracking, small arrays of flags |
+| [life](life/README.md) | Runs Conway's Game of Life on a board whose edges wrap around | A grid read in nested loops, eight neighbours for every cell |
+| [edit_distance](edit_distance/README.md) | Counts the fewest one-letter edits that turn one word into another, for twenty pairs of long words | Dynamic programming over two rows of integers |
+| [dijkstra](dijkstra/README.md) | Finds the shortest distances from one place to every other on a random map | An array of roads for every place, and a binary heap |
+| [json](json/README.md) | Writes a big JSON document as one string, then parses it back | Building a long string, and a parser walking its bytes |
+| [vm](vm/README.md) | Runs a little program on a stack machine, one instruction at a time | An interpreter's loop: a match on each instruction's code |
 
 The random numbers come from the same simple generator in all three versions, written out in each, so every version sees the same data.
 

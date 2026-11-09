@@ -1,0 +1,91 @@
+##
+JSON: write a document of n records as one long string, then read it back
+with a parser that walks its bytes, counting the records, adding up the
+numbers, and counting the letters of the strings and the trues. Building a
+big string, then a loop over bytes that calls itself for nested values.
+##
+os = import("standard/os.sayon")
+strings = import("standard/strings.sayon")
+
+type Totals = [objects: integer, numbers: integer, letters: integer, trues: integer]
+
+function skip_space(text: View<byte>, update at: integer)
+    while at < length(text) and text[at] == 32
+        at += 1
+
+function read_string(text: View<byte>, update at: integer, update totals: Totals)
+    at += 1
+    start = at
+    while text[at] != 34
+        at += 1
+    totals.letters += at - start
+    at += 1
+
+function read_number(text: View<byte>, update at: integer, update totals: Totals)
+    number = 0
+    while at < length(text) and text[at] >= 48 and text[at] <= 57
+        number = number * 10 + integer(text[at]) - 48
+        at += 1
+    totals.numbers += number
+
+function read_value(text: View<byte>, update at: integer, update totals: Totals)
+    skip_space(text, at)
+    letter = text[at]
+    if letter == 123
+        totals.objects += 1
+        at += 1
+        skip_space(text, at)
+        if text[at] == 125
+            at += 1
+            return
+        while true
+            skip_space(text, at)
+            read_string(text, at, totals)
+            skip_space(text, at)
+            at += 1
+            read_value(text, at, totals)
+            skip_space(text, at)
+            at += 1
+            if text[at - 1] != 44
+                return
+    elseif letter == 91
+        at += 1
+        skip_space(text, at)
+        if text[at] == 93
+            at += 1
+            return
+        while true
+            read_value(text, at, totals)
+            skip_space(text, at)
+            at += 1
+            if text[at - 1] != 44
+                return
+    elseif letter == 34
+        read_string(text, at, totals)
+    elseif letter == 116
+        totals.trues += 1
+        at += 4
+    elseif letter == 102
+        at += 5
+    else
+        read_number(text, at, totals)
+
+function main()
+    count = 1000
+    arguments = os.arguments()
+    if length(arguments) > 0
+        count = strings.parse_integer(arguments[0])
+    text = "["
+    state = 42
+    for index in range(count)
+        if index > 0
+            text += ", "
+        state = (state * 1103515245 + 12345) % 2147483648
+        text += "{{\"id\": {index}, \"name\": \"item{state % 1000}\", \"tags\": [\"red\", \"green\"], \"price\": {state / 16 % 100000}, \"ok\": {state % 2 == 0}}}"
+    text += "]"
+    totals = Totals(objects = 0, numbers = 0, letters = 0, trues = 0)
+    at = 0
+    read_value(strings.byte_view(text), at, totals)
+    print(
+        "{bytelength(text)} bytes, {totals.objects} objects, numbers adding up to {totals.numbers}, {totals.letters} letters, {totals.trues} true"
+    )
