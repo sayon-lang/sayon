@@ -144,7 +144,7 @@ The references that change along with the compiler stay here, in `docs`:
 
 ## Benchmarks
 
-[benchmarks](benchmarks) holds fourteen programs written in Sayon, C++, and Rust that do the same work, from printing one line to sorting ten million numbers, and a runner, written in Sayon, that builds them all, checks that they print the same thing, and measures them at two or three input sizes each. Every Rust program is also built with its overflow checks on, to show what checking costs. Each program's README says what differs between its versions and why, [RESULTS.md](benchmarks/RESULTS.md) has the latest numbers side by side, and `measurements.json` every run's.
+[benchmarks](benchmarks) holds twenty programs written in Sayon, C++, and Rust that do the same work, from printing one line to sorting ten million numbers, and a runner, written in Sayon, that builds them all, checks that they print the same thing, and measures them at two or three input sizes each. Every Rust program is also built with its overflow checks on, to show what checking costs. Each program's README says what differs between its versions and why, [RESULTS.md](benchmarks/RESULTS.md) has the latest numbers side by side, and `measurements.json` every run's.
 
 ## Building from source
 
