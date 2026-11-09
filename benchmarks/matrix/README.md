@@ -18,43 +18,43 @@ Processor time, the median of 7 runs:
 
 | Input | C++ | Rust | Rust, checked | Sayon | Sayon against the better |
 |---:|---:|---:|---:|---:|---:|
-| 400 | 94 ms | 47 ms | 47 ms | 0.11 s | too short to tell |
-| 700 | 0.47 s | 0.25 s | 0.25 s | 0.64 s | 2.56× |
-| 1000 | 1.47 s | 0.84 s | 0.83 s | 1.95 s | 2.31× |
+| 400 | 31 ms | 31 ms | 31 ms | 47 ms | too short to tell |
+| 700 | 0.34 s | 0.11 s | 0.16 s | 0.34 s | 3.14× |
+| 1000 | 0.81 s | 0.50 s | 0.52 s | 1.06 s | 2.12× |
 
 The fastest and slowest runs:
 
 | Input | C++ | Rust | Rust, checked | Sayon |
 |---:|---:|---:|---:|---:|
-| 400 | 78 ms to 94 ms | 31 ms to 47 ms | 31 ms to 47 ms | 0.11 s to 0.12 s |
-| 700 | 0.44 s to 0.53 s | 0.22 s to 0.31 s | 0.22 s to 0.31 s | 0.55 s to 0.70 s |
-| 1000 | 1.36 s to 1.58 s | 0.77 s to 0.91 s | 0.70 s to 0.86 s | 1.89 s to 2.08 s |
+| 400 | 16 ms to 78 ms | 16 ms to 47 ms | 0 ms to 63 ms | 16 ms to 0.12 s |
+| 700 | 0.20 s to 0.34 s | 63 ms to 0.27 s | 47 ms to 0.20 s | 0.27 s to 0.56 s |
+| 1000 | 0.59 s to 0.97 s | 0.31 s to 0.64 s | 0.31 s to 0.69 s | 1.02 s to 1.19 s |
 
 Peak memory:
 
 | Input | C++ | Rust | Rust, checked | Sayon | Sayon against the better |
 |---:|---:|---:|---:|---:|---:|
-| 400 | 8.3 MB | 9.0 MB | 8.0 MB | 7.3 MB | 0.89× |
-| 700 | 18.3 MB | 16.2 MB | 16.2 MB | 14.6 MB | 0.90× |
-| 1000 | 27.1 MB | 27.9 MB | 27.9 MB | 26.3 MB | 0.97× |
+| 400 | 8.8 MB | 9.0 MB | 9.0 MB | 7.4 MB | 0.83× |
+| 700 | 18.8 MB | 16.2 MB | 16.2 MB | 14.6 MB | 0.90× |
+| 1000 | 27.6 MB | 27.9 MB | 27.9 MB | 26.3 MB | 0.95× |
 
 Time on the clock, from starting the program to its end:
 
 | Input | C++ | Rust | Rust, checked | Sayon | Sayon against the better |
 |---:|---:|---:|---:|---:|---:|
-| 400 | 92 ms | 46 ms | 47 ms | 0.12 s | 2.68× |
-| 700 | 0.56 s | 0.28 s | 0.35 s | 0.69 s | 2.47× |
-| 1000 | 1.76 s | 1.08 s | 1.11 s | 2.23 s | 2.06× |
+| 400 | 0.14 s | 71 ms | 71 ms | 0.18 s | 2.56× |
+| 700 | 0.67 s | 0.37 s | 0.37 s | 0.90 s | 2.45× |
+| 1000 | 1.94 s | 1.12 s | 1.12 s | 2.48 s | 2.22× |
 
 Building:
 
 | | C++ | Rust | Rust, checked | Sayon |
 |---|---:|---:|---:|---:|
-| Time to build | 1.43 s | 0.66 s | 0.84 s | 0.49 s |
+| Time to build | 2.23 s | 1.72 s | 1.32 s | 0.78 s |
 | Executable | 149 KB | 159 KB | 159 KB | 308 KB |
 
-At the largest input, Sayon took 2.31× the processor time of the faster of C++ and Rust, and held the least memory, 0.97× that of the leaner one. With its overflow checks on, Rust took 0.98× its own processor time without them.
+At the largest input, Sayon took 2.12× the processor time of the faster of C++ and Rust, and held the least memory, 0.95× that of the leaner one. With its overflow checks on, Rust took 1.03× its own processor time without them.
 
-Measured on 2026-11-08 on Intel(R) Core(TM) i3-7100U CPU @ 2.40GHz, windows, 7 runs of each build at each input. C++: clang version 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5) with `-O2`. Rust: rustc 1.98.1 (48a229cea 2026-09-01) with `-C opt-level=3`, and again with `-C overflow-checks=on`. Sayon: sayon 0.0.1 with `--release`.
+Measured on 2026-11-09 on Intel(R) Core(TM) i3-7100U CPU @ 2.40GHz, windows, 7 runs of each build at each input. C++: clang version 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5) with `-O2`. Rust: rustc 1.98.1 (48a229cea 2026-09-01) with `-C opt-level=3`, and again with `-C overflow-checks=on`. Sayon: sayon 0.0.1 with `--release`.
 
 <!-- end of results -->
