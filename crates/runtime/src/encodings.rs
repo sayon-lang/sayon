@@ -217,8 +217,7 @@ impl Decoder {
         let complete = crate::text::char_boundary(data, data.len());
         match std::str::from_utf8(&data[..complete]) {
             Ok(valid) => text.push_str(valid),
-            Err(error) if self.lossy => {
-                let _ = error;
+            Err(_) if self.lossy => {
                 text.push_str(&String::from_utf8_lossy(&data[..complete]));
             }
             Err(error) => {

@@ -824,7 +824,7 @@ impl<'a> Checker<'a> {
     }
 
     fn unify_operands(&mut self, left: &hir::Expr, right: &hir::Expr, op: BinaryOp) {
-        if let Err(error) = self.unifier.unify(&left.ty, &right.ty) {
+        if self.unifier.unify(&left.ty, &right.ty).is_err() {
             let l = self.unifier.resolve_for_display(&left.ty);
             let r = self.unifier.resolve_for_display(&right.ty);
             let mut diagnostic = Diagnostic::error(
@@ -855,7 +855,6 @@ impl<'a> Checker<'a> {
             if let Some(help) = help {
                 diagnostic = diagnostic.help(help);
             }
-            let _ = error;
             self.error(diagnostic);
         }
     }

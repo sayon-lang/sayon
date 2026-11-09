@@ -151,7 +151,7 @@ impl<'a> Lexer<'a> {
             return;
         }
         if content.trim_end_matches([' ', '\t']) == "##" {
-            self.block_comment(line_begin, content_start, line_end);
+            self.block_comment(content_start, line_end);
             return;
         }
         if content.starts_with('#') {
@@ -247,7 +247,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn block_comment(&mut self, line_begin: usize, content_start: usize, line_end: usize) {
+    fn block_comment(&mut self, content_start: usize, line_end: usize) {
         let opening = self.span(content_start, content_start + 2);
         self.pos = line_end;
         self.consume_newline();
@@ -271,7 +271,6 @@ impl<'a> Lexer<'a> {
             self.pos = end;
             self.consume_newline();
         }
-        let _ = line_begin;
         self.diagnostics.push(
             Diagnostic::error(
                 "E_UNTERMINATED_COMMENT",

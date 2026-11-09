@@ -2013,9 +2013,6 @@ impl<'a> Checker<'a> {
             A recursive call inside the component being inferred; type
             arguments are filled in once the component is generalized.
             */
-            if !explicit.is_empty() && !signature.params.is_empty() {
-                let _ = span;
-            }
             let params = signature.params.clone();
             let ret = signature.ret.clone();
             return (signature, params, Vec::new(), ret);

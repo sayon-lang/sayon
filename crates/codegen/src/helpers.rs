@@ -48,7 +48,6 @@ impl<'m> Codegen<'m> {
         &mut self,
         body: &mut Body,
         pointer: &str,
-        ty: &Type,
         members: &[(u32, Type)],
         mut case: impl FnMut(&mut Self, &mut Body, &Type, &str),
     ) -> String {
@@ -71,7 +70,6 @@ impl<'m> Codegen<'m> {
             body.start(label);
             case(self, body, member, &done);
         }
-        let _ = ty;
         body.start(&done);
         tag
     }
@@ -234,7 +232,7 @@ impl<'m> Codegen<'m> {
                 let acc = body.alloca("i64");
                 body.line(format!("store i64 0, ptr {acc}"));
                 let members = self.tagged_members(ty);
-                let tag = self.union_switch(body, "%p", ty, &members, |cg, b, member, done| {
+                let tag = self.union_switch(body, "%p", &members, |cg, b, member, done| {
                     let hash = cg.helper(Helper::Hash, member);
                     let payload = offset_pointer(b, "%p", 8);
                     let part = b.tmp();
@@ -383,7 +381,7 @@ impl<'m> Codegen<'m> {
                     .into_iter()
                     .filter(|(_, m)| needs_drop(m))
                     .collect();
-                self.union_switch(body, "%p", ty, &members, |cg, b, member, done| {
+                self.union_switch(body, "%p", &members, |cg, b, member, done| {
                     let payload = b.tmp();
                     b.line(format!(
                         "{payload} = getelementptr inbounds i8, ptr %p, i64 8"
@@ -574,7 +572,7 @@ impl<'m> Codegen<'m> {
                     .into_iter()
                     .filter(|(_, m)| needs_drop(m))
                     .collect();
-                self.union_switch(body, "%src", ty, &members, |cg, b, member, done| {
+                self.union_switch(body, "%src", &members, |cg, b, member, done| {
                     let from = b.tmp();
                     b.line(format!(
                         "{from} = getelementptr inbounds i8, ptr %src, i64 8"
@@ -745,7 +743,7 @@ impl<'m> Codegen<'m> {
                 ));
                 body.start(&compare);
                 let members = self.tagged_members(ty);
-                self.union_switch(body, "%a", ty, &members, |cg, b, member, _| {
+                self.union_switch(body, "%a", &members, |cg, b, member, _| {
                     let pa = b.tmp();
                     b.line(format!("{pa} = getelementptr inbounds i8, ptr %a, i64 8"));
                     let pb = b.tmp();
@@ -965,7 +963,7 @@ impl<'m> Codegen<'m> {
             }
             Type::Union(_) => {
                 let members = self.tagged_members(ty);
-                self.union_switch(body, "%value", ty, &members, |cg, b, member, done| {
+                self.union_switch(body, "%value", &members, |cg, b, member, done| {
                     let payload = b.tmp();
                     b.line(format!(
                         "{payload} = getelementptr inbounds i8, ptr %value, i64 8"

@@ -240,7 +240,7 @@ there.
 # Safety
 `memory`, when there is one, holds the structure C wrote.
 */
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", any(windows, target_os = "linux")))]
 unsafe fn given_back(
     ty: &Type,
     integers: [u64; 2],

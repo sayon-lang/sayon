@@ -1708,7 +1708,7 @@ impl<'t> Parser<'t> {
             }
             TokenKind::String(parts) => {
                 self.advance();
-                ExprKind::String(self.string_segments(parts, span))
+                ExprKind::String(self.string_segments(parts))
             }
             TokenKind::Keyword(Keyword::True) => {
                 self.advance();
@@ -1847,7 +1847,7 @@ impl<'t> Parser<'t> {
         Ok(self.new_expr(kind, start.to(end)))
     }
 
-    fn string_segments(&mut self, parts: &[StringPart], literal_span: Span) -> Vec<StringSegment> {
+    fn string_segments(&mut self, parts: &[StringPart]) -> Vec<StringSegment> {
         let mut segments = Vec::new();
         for part in parts {
             match part {
@@ -1885,7 +1885,6 @@ impl<'t> Parser<'t> {
                 }
             }
         }
-        let _ = literal_span;
         segments
     }
 }
