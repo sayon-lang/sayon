@@ -14,4 +14,43 @@ Little. Sayon checks every index against its array, as Rust does where it can't 
 
 <!-- results: run.sayon writes this part -->
 
+Processor time, the median of 7 runs:
+
+| Input | C++ | Rust | Rust, checked | Sayon | Sayon against the better |
+|---:|---:|---:|---:|---:|---:|
+| 12 | 94 ms | 78 ms | 94 ms | 0.11 s | 1.40× |
+| 13 | 0.45 s | 0.41 s | 0.45 s | 0.55 s | 1.35× |
+
+The fastest and slowest runs:
+
+| Input | C++ | Rust | Rust, checked | Sayon |
+|---:|---:|---:|---:|---:|
+| 12 | 78 ms to 0.11 s | 78 ms to 94 ms | 78 ms to 94 ms | 94 ms to 0.11 s |
+| 13 | 0.44 s to 0.48 s | 0.41 s to 0.44 s | 0.44 s to 0.47 s | 0.53 s to 0.56 s |
+
+Peak memory:
+
+| Input | C++ | Rust | Rust, checked | Sayon | Sayon against the better |
+|---:|---:|---:|---:|---:|---:|
+| 12 | 3.1 MB | 3.4 MB | 3.4 MB | 3.2 MB | 1.05× |
+| 13 | 3.1 MB | 3.4 MB | 3.4 MB | 3.2 MB | 1.04× |
+
+Time on the clock, from starting the program to its end:
+
+| Input | C++ | Rust | Rust, checked | Sayon | Sayon against the better |
+|---:|---:|---:|---:|---:|---:|
+| 12 | 91 ms | 82 ms | 89 ms | 0.10 s | 1.27× |
+| 13 | 0.46 s | 0.43 s | 0.46 s | 0.55 s | 1.29× |
+
+Building:
+
+| | C++ | Rust | Rust, checked | Sayon |
+|---|---:|---:|---:|---:|
+| Time to build | 1.18 s | 0.56 s | 0.63 s | 0.42 s |
+| Executable | 148 KB | 136 KB | 137 KB | 303 KB |
+
+At the largest input, Sayon took 1.35× the processor time of the faster of C++ and Rust, and held 1.04× the memory of the leaner one. With its overflow checks on, Rust took 1.12× its own processor time without them.
+
+Measured on 2026-11-09 on Intel(R) Core(TM) i3-7100U CPU @ 2.40GHz, windows, 7 runs of each build at each input. C++: clang version 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5) with `-O2`. Rust: rustc 1.98.1 (48a229cea 2026-09-01) with `-C opt-level=3`, and again with `-C overflow-checks=on`. Sayon: sayon 0.0.1 with `--release`.
+
 <!-- end of results -->
