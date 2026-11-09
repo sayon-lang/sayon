@@ -2053,11 +2053,19 @@ impl<'c, 'm> FnEmit<'c, 'm> {
             }
             Terminator::ReturnError => {
                 let value = self.body.tmp();
-                self.body
-                    .line(format!("{value} = load ptr, ptr {}", self.error_slot()));
                 if self.direct.is_some() {
+                    // The slot holds the error that sent the function here,
+                    // never null. Saying so lets LLVM see, once it inlines
+                    // the function, that this path fails, so the caller's
+                    // own path on success keeps what it knew.
+                    self.body.line(format!(
+                        "{value} = load ptr, ptr {}, !nonnull !{{}}",
+                        self.error_slot()
+                    ));
                     self.give_back("zeroinitializer", &value);
                 } else {
+                    self.body
+                        .line(format!("{value} = load ptr, ptr {}", self.error_slot()));
                     self.body.line(format!("store ptr {value}, ptr %err"));
                     self.finish("1");
                 }
